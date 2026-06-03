@@ -1,0 +1,25 @@
+{
+  "name": "@ecommerce/infra",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./alchemy.run": "./alchemy.run.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "dev": "alchemy dev",
+    "deploy": "alchemy deploy",
+    "destroy": "alchemy destroy",
+    "test": "bun test ./alchemy.run.test.ts",
+    "test:integration": "bun test ./alchemy.integration.test.ts"
+  },
+  "dependencies": {
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@ecommerce/config": "workspace:*",
+    "alchemy": "catalog:",
+    "typescript": "catalog:"
+  }
+}

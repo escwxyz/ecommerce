@@ -1,0 +1,7 @@
+{
+  "extends": "@ecommerce/config/tsconfig.base.json",
+  "compilerOptions": {
+    "strictNullChecks": true,
+    "types": ["bun-types", "node", "@cloudflare/workers-types"]
+  }
+}
