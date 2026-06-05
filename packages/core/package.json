@@ -20,6 +20,9 @@
     "./modules": {
       "default": "./src/modules/index.ts"
     },
+    "./permissions": {
+      "default": "./src/permissions/index.ts"
+    },
     "./plugins": {
       "default": "./src/plugins/index.ts"
     },

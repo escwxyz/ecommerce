@@ -43,10 +43,10 @@ ecommerce/
 │   ├── core/                    # Commerce kernel: module contracts, Effect service tags, events, workflows, plugin contracts
 │   ├── api/                     # oRPC router assembly from auth, modules, and plugin route fragments
 │   ├── auth/                    # Shared auth/session/user/permission types, Better Auth factories, auth service contracts
-│   ├── db/                      # Shared database contracts and schema coordination
-│   ├── db-d1/                   # Cloudflare D1 Drizzle adapter, D1 migrations, request-scoped D1 behavior
-│   ├── db-libsql/               # Future SQLite/libSQL Drizzle adapter
-│   ├── db-postgres/             # Future PostgreSQL Drizzle adapter
+│   ├── db/                      # Shared Kysely database contracts and migration coordination
+│   ├── db-d1/                   # Cloudflare D1 Kysely adapter, D1 migrations, request-scoped D1 behavior
+│   ├── db-libsql/               # Future SQLite/libSQL Kysely adapter
+│   ├── db-postgres/             # Future PostgreSQL Kysely adapter
 │   ├── modules/
 │   │   ├── store/               # Store configuration and defaults
 │   │   ├── customer/            # Customer domain
@@ -67,10 +67,10 @@ ecommerce/
 
 Boundary rules:
 
-- `packages/core` and pure commerce modules MUST NOT import `cloudflare:workers`, Hono server types, TanStack Start UI code, or concrete Drizzle adapter packages.
+- `packages/core` and pure commerce modules MUST NOT import `cloudflare:workers`, Hono server types, TanStack Start UI code, or concrete database adapter runtime packages.
 - `apps/server` is composition only; reusable auth, module, workflow, plugin, and database contracts belong in packages.
 - `packages/auth` is shared. Other packages should import auth/session/permission types from it, never from `apps/server`.
-- Database support is adapter-based. D1 is first class for Cloudflare, but module logic must depend on database/repository contracts rather than D1 directly.
+- Database support is adapter-based and Kysely is the primary relational storage abstraction. D1 is first class for Cloudflare, but module logic must depend on database/repository contracts rather than D1 directly.
 - Plugins have two tiers: trusted native plugins and sandboxed Dynamic Worker plugins through Cloudflare Worker Loader with capability-enforced bridge APIs.
 - Admin extensibility is metadata-driven. Modules and plugins contribute navigation, screens, widgets, permissions, and API references through typed contracts.
 

@@ -11,8 +11,8 @@ This project was created with [Better-T-Stack](https://github.com/AmanVarshney01
 - **Hono** - Lightweight, performant server framework
 - **oRPC** - End-to-end type-safe APIs with OpenAPI integration
 - **workers** - Runtime environment
-- **Drizzle** - TypeScript-first ORM
-- **SQLite/Turso** - Database engine
+- **Kysely** - Type-safe SQL query builder for primary relational storage
+- **Cloudflare D1** - First production primary database adapter
 - **Authentication** - Better-Auth
 - **Oxlint** - Oxlint + Oxfmt (linting & formatting)
 - **Turborepo** - Optimized monorepo build system
@@ -38,9 +38,9 @@ bun install
 
 ## Database Setup
 
-This project uses SQLite with Drizzle ORM.
+This project uses Cloudflare D1 for the first production primary database adapter, with Kysely as the shared commerce query/migration layer.
 
-1. Start the local SQLite database (optional):
+1. Start the local D1 database (optional):
    D1 local development and migrations are handled automatically by Alchemy during dev and deploy.
 
 2. Update your `.env` file in the `apps/server` directory with the appropriate connection details if needed.
@@ -90,7 +90,7 @@ If you want to add app-specific blocks instead of shared primitives, run the sha
 
 The deployment stack lives in `packages/infra/alchemy.run.ts` and uses Alchemy v2's Effect stack model:
 
-- `Cloudflare.D1Database` provisions the shared D1 database and applies SQL files from `packages/db/src/migrations`.
+- `Cloudflare.D1Database` provisions the shared D1 database and applies SQL files from `packages/db-d1/src/migrations/sql`.
 - `Cloudflare.Worker` deploys the Hono + oRPC API from `apps/server/src/index.ts`.
 - `Cloudflare.Vite` deploys the TanStack Start admin app from `apps/web`.
 - Runtime values are declared through Alchemy `env` bindings. The installed Alchemy v2 beta uses `env`, not the older `bindings` property, and `Cloudflare.Vite`, not `TanStackStart`.
@@ -136,7 +136,8 @@ ecommerce/
 │   ├── ui/                      # Shared admin UI primitives
 │   ├── api/                     # oRPC router assembly
 │   ├── auth/                    # Shared auth contracts and runtime factory
-│   ├── db/                      # Shared database contracts and schema coordination
+│   ├── db/                      # Shared Kysely database contracts and migration coordination
+│   ├── db-d1/                   # Cloudflare D1 Kysely adapter and D1 migration artifacts
 │   ├── infra/                   # Alchemy stacks and Cloudflare resources
 │   ├── env/                     # Typed environment access
 │   └── config/                  # Shared TS/build/tooling config
@@ -152,6 +153,6 @@ ecommerce/
 - `bun run dev:web`: Start only the web application
 - `bun run dev:server`: Start only the server
 - `bun run check-types`: Check TypeScript types across all apps
-- `bun run db:push`: Push schema changes to database
-- `bun run db:generate`: Generate database client/types
+- `bun run db:push`: Apply local D1 migrations from the D1 adapter package
+- `bun run db:generate`: Validate Kysely migration definitions
 - `bun run check`: Run Oxlint and Oxfmt

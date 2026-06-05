@@ -4,6 +4,7 @@ import { Effect } from "effect";
 
 import { MissingModuleDependencyError } from "../errors/index";
 import { defineCommerceModule } from "../modules/index";
+import { createCommercePermission } from "../permissions/index";
 import {
   assertSandboxBridgeCapability,
   composeNativePlugins,
@@ -52,6 +53,12 @@ describe("native plugin contracts", () => {
             label: "Analytics Search",
           },
         ],
+        permissions: [
+          createCommercePermission({
+            action: "read",
+            resource: "analytics",
+          }),
+        ],
         storage: [
           {
             namespace: "analytics-cache",
@@ -78,6 +85,7 @@ describe("native plugin contracts", () => {
       contractKey: "provider:search",
       kind: "search",
     });
+    expect(plugin.contributions.permissions?.[0]?.key).toBe("analytics:read");
     expect(plugin.contributions.storage?.[0]?.namespace).toBe(
       "analytics-cache"
     );
@@ -204,6 +212,97 @@ describe("native plugin contracts", () => {
     ).toThrow(/Unsupported permission "analytics:read"/);
   });
 
+  it("validates native plugin admin permissions against declared descriptors by default", () => {
+    const plugin = defineNativePlugin({
+      manifest: {
+        capabilities: [],
+        id: "analytics",
+        version: "1.0.0",
+      },
+      contributions: {
+        adminSurfaces: [
+          {
+            key: "analytics:navigation",
+            kind: "navigation",
+            label: "Analytics",
+            permission: "analytics:read",
+          },
+        ],
+        permissions: [
+          createCommercePermission({
+            action: "read",
+            resource: "analytics",
+          }),
+        ],
+      },
+    });
+
+    const composition = composeNativePlugins([plugin]);
+
+    expect(composition.permissions.statement).toEqual({
+      analytics: ["read"],
+    });
+  });
+
+  it("rejects undeclared native plugin admin permissions by default", () => {
+    const plugin = defineNativePlugin({
+      manifest: {
+        capabilities: [],
+        id: "analytics",
+        version: "1.0.0",
+      },
+      contributions: {
+        adminSurfaces: [
+          {
+            key: "analytics:navigation",
+            kind: "navigation",
+            label: "Analytics",
+            permission: "analytics:read",
+          },
+        ],
+      },
+    });
+
+    expect(() => composeNativePlugins([plugin])).toThrow(
+      /Unsupported commerce permission "analytics:read"/
+    );
+  });
+
+  it("rejects duplicate native plugin and module permission declarations", () => {
+    const plugin = defineNativePlugin({
+      manifest: {
+        capabilities: [],
+        id: "catalog-plugin",
+        version: "1.0.0",
+      },
+      contributions: {
+        modules: [
+          defineCommerceModule({
+            key: "product",
+            contributions: {
+              permissions: [
+                createCommercePermission({
+                  action: "read",
+                  resource: "product",
+                }),
+              ],
+            },
+          }),
+        ],
+        permissions: [
+          createCommercePermission({
+            action: "read",
+            resource: "product",
+          }),
+        ],
+      },
+    });
+
+    expect(() => composeNativePlugins([plugin])).toThrow(
+      /Duplicate commerce permission "product:read"/
+    );
+  });
+
   it("composes plugin modules through existing module dependency validation", () => {
     const plugin = defineNativePlugin({
       manifest: {
@@ -294,6 +393,7 @@ describe("sandbox plugin contracts", () => {
           routes: ["tax.quote"],
           hooks: ["cart.updated"],
           adminSurfaces: ["tax.settings"],
+          permissionRequirements: ["product:read"],
         },
         entrypoints: [
           {
@@ -427,5 +527,40 @@ describe("sandbox plugin contracts", () => {
         type: "routeResponse",
       })
     ).toBe(false);
+  });
+
+  it("validates sandbox permission requirements when a validator is provided", () => {
+    expect(() =>
+      defineSandboxPlugin({
+        manifest: {
+          bundle: {
+            integrity: {
+              algorithm: "sha256",
+              value: "hash",
+            },
+            mainModule: "src/index.js",
+            r2Key: "plugins/bad/index.js",
+            version: "1.0.0+hash",
+          },
+          capabilities: ["bridge:log"],
+          contributions: {
+            permissionRequirements: ["analytics:read"],
+          },
+          entrypoints: [
+            {
+              key: "bad.route",
+              kind: "route",
+            },
+          ],
+          id: "bad",
+          version: "1.0.0",
+        },
+        permissionValidator: (permission) => {
+          if (permission !== "product:read") {
+            throw new Error(`Unsupported permission "${permission}".`);
+          }
+        },
+      })
+    ).toThrow(/Unsupported permission "analytics:read"/);
   });
 });

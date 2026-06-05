@@ -7,6 +7,7 @@ import {
 } from "../errors/index";
 import { ClockService } from "../services/index";
 import {
+  composeCommerceModulePermissions,
   composeCommerceModules,
   defineCommerceModule,
   validateCommerceModules,
@@ -56,6 +57,13 @@ describe("commerce module composition", () => {
             path: "/dashboard",
           },
         ],
+        permissions: [
+          {
+            action: "read",
+            key: "product:read",
+            resource: "product",
+          },
+        ],
       },
     });
 
@@ -67,6 +75,14 @@ describe("commerce module composition", () => {
     );
     expect(productModule.contributions?.adminSurfaces?.[0]?.label).toBe(
       "Products"
+    );
+    expect(graph.permissions.statement).toEqual({
+      product: ["read"],
+    });
+    expect(composeCommerceModulePermissions([productModule]).statement).toEqual(
+      {
+        product: ["read"],
+      }
     );
   });
 

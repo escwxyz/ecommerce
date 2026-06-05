@@ -7,6 +7,12 @@ import {
   DuplicateModuleError,
   MissingModuleDependencyError,
 } from "../errors/index";
+import type {
+  CommercePermissionComposition,
+  CommercePermissionContribution,
+  CommercePermissionDescriptor,
+} from "../permissions/index";
+import { composeCommercePermissions } from "../permissions/index";
 import type { CommercePluginContributionSet } from "../plugins/index";
 import type {
   CommerceWorkflowDefinition,
@@ -50,6 +56,7 @@ export interface CommerceModuleContributions {
   readonly apiFragments?: readonly CommerceModuleApiFragment[];
   readonly adminSurfaces?: readonly CommerceAdminSurface[];
   readonly eventTypes?: readonly string[];
+  readonly permissions?: readonly CommercePermissionDescriptor[];
   readonly workflowSteps?: readonly CommerceWorkflowStep[];
   readonly workflows?: readonly CommerceWorkflowDefinition[];
   readonly pluginContributions?: CommercePluginContributionSet;
@@ -90,6 +97,7 @@ export interface CommerceModuleGraph<
 > {
   readonly modules: Modules;
   readonly byKey: ReadonlyMap<CommerceModuleKey, CommerceModuleDefinition>;
+  readonly permissions: CommercePermissionComposition;
   readonly orderedKeys: readonly CommerceModuleKey[];
 }
 
@@ -210,6 +218,23 @@ export const composeCommerceModules = <
   return {
     modules,
     byKey,
+    permissions: composeCommerceModulePermissions(modules),
     orderedKeys,
   };
 };
+
+export const getCommerceModulePermissionContributions = (
+  modules: readonly CommerceModuleDefinition[]
+): readonly CommercePermissionContribution[] =>
+  modules.map((moduleDefinition) => ({
+    permissions: moduleDefinition.contributions?.permissions ?? [],
+    source: {
+      key: moduleDefinition.key,
+      type: "module",
+    },
+  }));
+
+export const composeCommerceModulePermissions = (
+  modules: readonly CommerceModuleDefinition[]
+): CommercePermissionComposition =>
+  composeCommercePermissions(getCommerceModulePermissionContributions(modules));

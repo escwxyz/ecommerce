@@ -31,7 +31,9 @@
       "@types/react-dom": "^19.2.3",
       "@effect/platform-bun": ">=4.0.0-beta.74 || >=4.0.0",
       "@effect/platform-node": ">=4.0.0-beta.74 || >=4.0.0",
-      "effect": ">=4.0.0-beta.74 || >=4.0.0"
+      "effect": ">=4.0.0-beta.74 || >=4.0.0",
+      "kysely": "0.28.17",
+      "kysely-d1": "^0.4.0"
     }
   },
   "type": "module",
@@ -65,6 +67,9 @@
     "turbo": "^2.8.12",
     "typescript": "catalog:",
     "ultracite": "7.8.1"
+  },
+  "overrides": {
+    "kysely": "0.28.17"
   },
   "packageManager": "bun@1.3.12"
 }

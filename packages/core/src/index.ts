@@ -46,9 +46,25 @@ export {
   type MissingDependencyKeys,
   type ValidateModuleDependencies,
   composeCommerceModules,
+  composeCommerceModulePermissions,
   defineCommerceModule,
+  getCommerceModulePermissionContributions,
   validateCommerceModules,
 } from "./modules/index";
+export {
+  type CommercePermissionComposition,
+  type CommercePermissionContribution,
+  type CommercePermissionDescriptor,
+  type CommercePermissionInput,
+  type CommercePermissionKey,
+  type CommercePermissionSource,
+  type CommercePermissionSourceType,
+  type CommercePermissionStatement,
+  composeCommercePermissions,
+  createCommercePermission,
+  createCommercePermissionValidator,
+  normalizeCommercePermission,
+} from "./permissions/index";
 export {
   type CommercePluginContributionSet,
   type CommercePluginExtensionPoint,

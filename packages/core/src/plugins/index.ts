@@ -8,7 +8,19 @@ import type {
   CommerceModuleApiFragment,
   CommerceModuleDefinition,
 } from "../modules/index";
-import { composeCommerceModules } from "../modules/index";
+import {
+  composeCommerceModules,
+  getCommerceModulePermissionContributions,
+} from "../modules/index";
+import type {
+  CommercePermissionComposition,
+  CommercePermissionDescriptor,
+  CommercePermissionInput,
+} from "../permissions/index";
+import {
+  composeCommercePermissions,
+  createCommercePermissionValidator,
+} from "../permissions/index";
 import type {
   CommerceWorkflowDefinition,
   CommerceWorkflowStep,
@@ -112,6 +124,7 @@ export interface CommercePluginContributionSet {
   readonly hooks?: readonly string[];
   readonly workflowSteps?: readonly string[];
   readonly adminSurfaces?: readonly string[];
+  readonly permissionRequirements?: readonly CommercePermissionInput[];
 }
 
 export interface CommercePluginManifest {
@@ -287,6 +300,7 @@ export interface NativePluginLifecycle<Error = never, Requirements = never> {
 
 export interface NativePluginContributions {
   readonly modules?: readonly CommerceModuleDefinition[];
+  readonly permissions?: readonly CommercePermissionDescriptor[];
   readonly apiFragments?: readonly CommerceModuleApiFragment[];
   readonly providers?: readonly CommercePluginProviderDescriptor[];
   readonly lifecycleHooks?: readonly string[];
@@ -317,6 +331,7 @@ export interface NativePluginComposition {
   readonly activePlugins: readonly NativePluginRegistration[];
   readonly modules: readonly CommerceModuleDefinition[];
   readonly moduleGraph: ReturnType<typeof composeCommerceModules>;
+  readonly permissions: CommercePermissionComposition;
   readonly apiFragments: readonly CommerceModuleApiFragment[];
   readonly providers: readonly CommercePluginProviderDescriptor[];
   readonly workflowSteps: readonly CommerceWorkflowStep[];
@@ -420,7 +435,8 @@ const assertSupportedSandboxCapabilities = (
 };
 
 const assertValidContributionSet = (
-  contributions: CommercePluginContributionSet | undefined
+  contributions: CommercePluginContributionSet | undefined,
+  permissionValidator?: (permission: CommercePermissionInput) => void
 ): void => {
   if (!contributions) {
     return;
@@ -444,6 +460,10 @@ const assertValidContributionSet = (
 
   for (const adminSurface of contributions.adminSurfaces ?? []) {
     assertNonEmptyString(adminSurface, "Sandbox admin surface contribution");
+  }
+
+  for (const permission of contributions.permissionRequirements ?? []) {
+    permissionValidator?.(permission);
   }
 };
 
@@ -492,6 +512,7 @@ const assertValidSandboxEntrypoints = (
 
 export const defineSandboxPlugin = (registration: {
   readonly manifest: Omit<SandboxPluginManifest, "tier">;
+  readonly permissionValidator?: (permission: CommercePermissionInput) => void;
   readonly state?: SandboxPluginLifecycleState;
 }): SandboxPluginRegistration => {
   const manifest: SandboxPluginManifest = {
@@ -513,7 +534,10 @@ export const defineSandboxPlugin = (registration: {
   assertSupportedSandboxCapabilities(manifest.capabilities);
   assertValidSandboxBundle(manifest.bundle);
   assertValidSandboxEntrypoints(manifest.entrypoints);
-  assertValidContributionSet(manifest.contributions);
+  assertValidContributionSet(
+    manifest.contributions,
+    registration.permissionValidator
+  );
 
   for (const storage of manifest.storage ?? []) {
     assertNonEmptyString(storage.namespace, "Sandbox storage namespace");
@@ -707,13 +731,32 @@ export const composeNativePlugins = <
   }
 
   const activePlugins = plugins.filter((plugin) => plugin.state === "active");
+  const modules = collectActiveContributions(
+    activePlugins,
+    (plugin) => plugin.contributions.modules
+  );
+  const moduleGraph = composeCommerceModules(modules);
+  const permissions = composeCommercePermissions([
+    ...getCommerceModulePermissionContributions(modules),
+    ...activePlugins.map((plugin) => ({
+      permissions: plugin.contributions.permissions ?? [],
+      source: {
+        key: plugin.manifest.id,
+        type: "plugin" as const,
+      },
+    })),
+  ]);
+  const composedPermissionValidator =
+    createCommercePermissionValidator(permissions);
+  const adminPermissionValidator =
+    options.permissionValidator ?? composedPermissionValidator;
   const adminSurfaceKeys = new Map<string, string>();
 
   for (const plugin of activePlugins) {
     for (const surface of plugin.contributions.adminSurfaces ?? []) {
       const permission = normalizeAdminPermission(surface.permission);
       if (permission) {
-        options.permissionValidator?.(permission);
+        adminPermissionValidator(permission);
       }
 
       assertUniqueValue({
@@ -725,11 +768,6 @@ export const composeNativePlugins = <
     }
   }
 
-  const modules = collectActiveContributions(
-    activePlugins,
-    (plugin) => plugin.contributions.modules
-  );
-
   return {
     activePlugins,
     adminSurfaces: collectActiveContributions(
@@ -740,8 +778,9 @@ export const composeNativePlugins = <
       activePlugins,
       (plugin) => plugin.contributions.apiFragments
     ),
-    moduleGraph: composeCommerceModules(modules),
+    moduleGraph,
     modules,
+    permissions,
     plugins,
     providers: collectActiveContributions(
       activePlugins,
