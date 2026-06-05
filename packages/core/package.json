@@ -1,0 +1,48 @@
+{
+  "name": "@ecommerce/core",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./errors": {
+      "default": "./src/errors/index.ts"
+    },
+    "./admin": {
+      "default": "./src/admin/index.ts"
+    },
+    "./brand": {
+      "default": "./src/brand/index.ts"
+    },
+    "./events": {
+      "default": "./src/events/index.ts"
+    },
+    "./modules": {
+      "default": "./src/modules/index.ts"
+    },
+    "./plugins": {
+      "default": "./src/plugins/index.ts"
+    },
+    "./services": {
+      "default": "./src/services/index.ts"
+    },
+    "./testing": {
+      "default": "./src/testing/index.ts"
+    },
+    "./workflows": {
+      "default": "./src/workflows/index.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "bun test ./src"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@ecommerce/config": "workspace:*",
+    "bun-types": "catalog:",
+    "typescript": "catalog:"
+  }
+}
