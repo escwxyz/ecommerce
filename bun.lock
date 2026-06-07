@@ -101,6 +101,7 @@
         "@ecommerce/db": "workspace:*",
         "@ecommerce/env": "workspace:*",
         "@ecommerce/product": "workspace:*",
+        "@ecommerce/store": "workspace:*",
         "@orpc/client": "catalog:",
         "@orpc/openapi": "catalog:",
         "@orpc/server": "catalog:",
@@ -147,6 +148,7 @@
       "name": "@ecommerce/db",
       "dependencies": {
         "@ecommerce/product": "workspace:*",
+        "@ecommerce/store": "workspace:*",
         "kysely": "catalog:",
         "zod": "catalog:",
       },
@@ -226,6 +228,32 @@
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
         "kysely-d1": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/modules/store": {
+      "name": "@ecommerce/store",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ecommerce/core": "workspace:*",
+        "@orpc/contract": "catalog:",
+        "@orpc/server": "catalog:",
+        "effect": "catalog:",
+        "kysely": "catalog:",
+        "nanoid": "^5.1.6",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/payment-provider": {
+      "name": "@ecommerce/payment-provider",
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -530,9 +558,13 @@
 
     "@ecommerce/infra": ["@ecommerce/infra@workspace:packages/infra"],
 
+    "@ecommerce/payment-provider": ["@ecommerce/payment-provider@workspace:packages/payment-provider"],
+
     "@ecommerce/platform-cloudflare": ["@ecommerce/platform-cloudflare@workspace:packages/platform-cloudflare"],
 
     "@ecommerce/product": ["@ecommerce/product@workspace:packages/modules/product"],
+
+    "@ecommerce/store": ["@ecommerce/store@workspace:packages/modules/store"],
 
     "@ecommerce/ui": ["@ecommerce/ui@workspace:packages/ui"],
 
