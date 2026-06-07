@@ -4,6 +4,8 @@ import { authMigration } from "./schema/auth";
 import type { AuthDatabase } from "./schema/auth";
 import { productMigration } from "./schema/product";
 import type { ProductDatabase } from "./schema/product";
+import { storeMigration } from "./schema/store";
+import type { StoreDatabase } from "./schema/store";
 
 export * from "./adapters";
 export * from "./dialect-helpers";
@@ -12,6 +14,8 @@ export * from "./migrations";
 export * as authSchema from "./schema/auth";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as productSchema from "./schema/product";
+// oxlint-disable-next-line oxc/no-barrel-file
+export * as storeSchema from "./schema/store";
 
 /**
  * Shared Kysely database assembly for commerce-owned primary relational data.
@@ -19,7 +23,8 @@ export * as productSchema from "./schema/product";
  * concrete dialect instances at the adapter edge.
  */
 // oxlint-disable-next-line typescript/no-empty-interface typescript/no-empty-object-type
-export interface CommerceDatabase extends AuthDatabase, ProductDatabase {}
+export interface CommerceDatabase
+  extends AuthDatabase, StoreDatabase, ProductDatabase {}
 
 export type CommerceKyselyDatabase = Kysely<CommerceDatabase>;
 export type CommerceDatabaseSchema = CommerceDatabase;
@@ -27,5 +32,6 @@ export type CommerceDatabaseSchemaKey = keyof CommerceDatabaseSchema;
 
 export const commerceMigrations = {
   "000_auth": authMigration,
-  "001_product": productMigration,
+  "001_store": storeMigration,
+  "002_product": productMigration,
 } as const;
