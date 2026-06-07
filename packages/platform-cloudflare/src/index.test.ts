@@ -301,6 +301,65 @@ describe("cloudflare workflow runtime adapter", () => {
     expect(fakeNamespace.fetches).toHaveLength(1);
   });
 
+  it("deduplicates workflow starts across runtime instances with shared metadata", async () => {
+    const workflowBinding = createFakeWorkflowBinding();
+    const fakeQueue = createFakeQueue();
+    const fakeNamespace = createFakeDurableObjectNamespace();
+    const { publisher } = createEventCollector();
+    const metadata = createInMemoryWorkflowMetadataStore();
+    const clock = createStaticClock(new Date("2026-06-06T13:30:00.000Z"));
+    const workflow = defineWorkflow({
+      key: "checkout.reserve",
+      version: 1,
+      steps: [],
+    });
+    const request = {
+      workflow,
+      correlationId: "corr_dupe_2",
+      idempotencyKey: "checkout:cart_2",
+      input: { cartId: "cart_2" },
+      subject: {
+        id: "cart_2",
+        type: "cart",
+      },
+    } as const;
+
+    const firstRuntime = createCloudflareWorkflowRuntime({
+      bindings: {
+        coordinator: fakeNamespace.namespace,
+        dispatchQueue: fakeQueue.queue as Queue<never>,
+        workflow: workflowBinding.binding,
+      },
+      clock,
+      ids: createSequenceIdGenerator(["run_cf_shared_1", "evt_cf_shared_1"]),
+      metadataStore: metadata.store,
+      publisher,
+    });
+
+    const first = await firstRuntime.start(request);
+
+    const secondRuntime = createCloudflareWorkflowRuntime({
+      bindings: {
+        coordinator: fakeNamespace.namespace,
+        dispatchQueue: fakeQueue.queue as Queue<never>,
+        workflow: workflowBinding.binding,
+      },
+      clock,
+      ids: createSequenceIdGenerator(["run_cf_shared_2", "evt_cf_shared_2"]),
+      metadataStore: metadata.store,
+      publisher,
+    });
+
+    const second = await secondRuntime.start(request);
+
+    expect(second.runId).toBe(first.runId);
+    expect(fakeQueue.messages).toHaveLength(1);
+    expect(fakeNamespace.fetches).toHaveLength(1);
+    expect(metadata.records.get(first.runId)?.idempotencyKey).toBe(
+      "checkout:cart_2"
+    );
+  });
+
   it("reconciles Cloudflare instance status back to the shared contract", async () => {
     const workflowBinding = createFakeWorkflowBinding();
     const { publisher } = createEventCollector();

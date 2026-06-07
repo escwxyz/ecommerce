@@ -180,7 +180,29 @@ export interface CommerceWorkflowMetadataRecord {
   readonly updatedAt: Date;
 }
 
+export interface CommerceWorkflowMetadataRegistrationResult {
+  readonly status: "created" | "duplicate";
+  readonly record: CommerceWorkflowMetadataRecord;
+}
+
 export interface CommerceWorkflowMetadataStore {
+  getRun(
+    runId: CommerceWorkflowRunId
+  ):
+    | Promise<CommerceWorkflowMetadataRecord | null>
+    | CommerceWorkflowMetadataRecord
+    | null;
+  findRunByIdempotencyKey(
+    query: CommerceWorkflowDuplicateQuery
+  ):
+    | Promise<CommerceWorkflowMetadataRecord | null>
+    | CommerceWorkflowMetadataRecord
+    | null;
+  registerRun(
+    record: CommerceWorkflowMetadataRecord
+  ):
+    | Promise<CommerceWorkflowMetadataRegistrationResult>
+    | CommerceWorkflowMetadataRegistrationResult;
   upsertRun(record: CommerceWorkflowMetadataRecord): Promise<void> | void;
   appendEvent(
     event: CommerceEventEnvelope<string, unknown>

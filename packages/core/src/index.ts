@@ -185,6 +185,7 @@ export {
   type CommerceWorkflowIdempotencyKey,
   type CommerceWorkflowKey,
   type CommerceWorkflowMetadataRecord,
+  type CommerceWorkflowMetadataRegistrationResult,
   type CommerceWorkflowMetadataStore,
   type CommerceWorkflowReconcileRequest,
   type CommerceWorkflowRunError,

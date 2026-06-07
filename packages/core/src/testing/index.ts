@@ -78,21 +78,61 @@ export const createEventCollector = () => {
 
 export const createInMemoryWorkflowMetadataStore = (): {
   readonly records: Map<string, CommerceWorkflowMetadataRecord>;
+  readonly idempotencyIndex: Map<string, CommerceWorkflowMetadataRecord>;
   readonly events: CommerceEventEnvelope[];
   readonly store: CommerceWorkflowMetadataStore;
 } => {
   const records = new Map<string, CommerceWorkflowMetadataRecord>();
+  const idempotencyIndex = new Map<string, CommerceWorkflowMetadataRecord>();
   const events: CommerceEventEnvelope[] = [];
 
   return {
     records,
+    idempotencyIndex,
     events,
     store: {
       appendEvent: (event) => {
         events.push(event);
       },
+      findRunByIdempotencyKey: ({ workflowKey, idempotencyKey }) =>
+        Promise.resolve(
+          idempotencyIndex.get(`${workflowKey}:${idempotencyKey}`) ?? null
+        ),
+      getRun: (runId) => Promise.resolve(records.get(runId) ?? null),
+      registerRun: (record) => {
+        const duplicateKey = record.idempotencyKey
+          ? `${record.workflowKey}:${record.idempotencyKey}`
+          : null;
+        const duplicate = duplicateKey
+          ? (idempotencyIndex.get(duplicateKey) ?? null)
+          : null;
+
+        if (duplicate) {
+          return Promise.resolve({
+            record: duplicate,
+            status: "duplicate" as const,
+          });
+        }
+
+        records.set(record.runId, record);
+
+        if (duplicateKey) {
+          idempotencyIndex.set(duplicateKey, record);
+        }
+
+        return Promise.resolve({
+          record,
+          status: "created" as const,
+        });
+      },
       upsertRun: (record) => {
         records.set(record.runId, record);
+        if (record.idempotencyKey) {
+          idempotencyIndex.set(
+            `${record.workflowKey}:${record.idempotencyKey}`,
+            record
+          );
+        }
       },
     },
   };
