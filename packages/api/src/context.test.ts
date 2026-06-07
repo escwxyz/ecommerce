@@ -34,6 +34,8 @@ describe("createContext", () => {
     });
 
     expect(context.auth).toBe(auth);
-    expect(context.session?.user.email).toBe("ada@example.com");
+    expect(context.session?.user).toMatchObject({
+      email: "ada@example.com",
+    });
   });
 });

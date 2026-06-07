@@ -19,6 +19,7 @@
     "@ecommerce/db": "workspace:*",
     "@ecommerce/env": "workspace:*",
     "@ecommerce/product": "workspace:*",
+    "@ecommerce/store": "workspace:*",
     "@orpc/client": "catalog:",
     "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",

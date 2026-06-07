@@ -10,6 +10,9 @@
     },
     "./schema/product": {
       "default": "./src/schema/product.ts"
+    },
+    "./schema/store": {
+      "default": "./src/schema/store.ts"
     }
   },
   "scripts": {
@@ -18,6 +21,7 @@
   },
   "dependencies": {
     "@ecommerce/product": "workspace:*",
+    "@ecommerce/store": "workspace:*",
     "kysely": "catalog:",
     "zod": "catalog:"
   },

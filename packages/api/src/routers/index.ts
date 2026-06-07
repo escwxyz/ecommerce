@@ -1,6 +1,8 @@
 import type { AdminMetadataModel } from "@ecommerce/core/admin";
 import type { CreateProductRouteFragmentOptions } from "@ecommerce/product/router";
 import { createProductRouteFragment } from "@ecommerce/product/router";
+import type { CreateStoreRouteFragmentOptions } from "@ecommerce/store/router";
+import { createStoreRouteFragment } from "@ecommerce/store/router";
 import { z } from "zod";
 
 import { createAdminMetadataModel } from "../admin-metadata";
@@ -114,13 +116,19 @@ export const coreRouteFragment = createApiRouteFragment({
 
 export interface CreateBuiltinRouteFragmentsOptions {
   readonly product?: CreateProductRouteFragmentOptions;
+  readonly store?: CreateStoreRouteFragmentOptions;
 }
 
 export const createBuiltinRouteFragments = ({
   product,
+  store,
 }: CreateBuiltinRouteFragmentsOptions = {}) =>
   [
     coreRouteFragment,
+    createApiRouteFragment({
+      ...createStoreRouteFragment(store),
+      owner: "module",
+    }),
     createApiRouteFragment({
       ...createProductRouteFragment(product),
       owner: "module",

@@ -6,8 +6,9 @@ import {
 } from "@ecommerce/core";
 import type { CommercePermissionInput } from "@ecommerce/core/permissions";
 import { productModule } from "@ecommerce/product/module";
+import { storeModule } from "@ecommerce/store/module";
 
-export const builtinPermissionModules = [productModule] as const;
+export const builtinPermissionModules = [storeModule, productModule] as const;
 
 export const builtinPermissionComposition = composeCommerceModulePermissions(
   builtinPermissionModules

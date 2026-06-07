@@ -8,6 +8,8 @@ import {
 } from "@ecommerce/core/testing";
 import { createInMemoryProductRepository } from "@ecommerce/product";
 import { resetProductState } from "@ecommerce/product/testing";
+import { createInMemoryStoreRepository } from "@ecommerce/store";
+import { resetStoreState } from "@ecommerce/store/testing";
 import { OpenAPIGenerator } from "@orpc/openapi";
 import { call, ORPCError } from "@orpc/server";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
@@ -41,12 +43,14 @@ const createTestContext = (session: AuthSession = null) =>
 describe("api assembly", () => {
   it("assembles built-in route fragments into the root router", async () => {
     resetProductState();
+    resetStoreState();
 
     const assembly = createApiAssembly({
       fragments: builtinRouteFragments,
     });
 
     expect(assembly.fragments).toEqual(builtinRouteFragments);
+    expect(assembly.router).toHaveProperty("storeSettingsGet");
     expect(assembly.router).toHaveProperty("productList");
 
     const healthCheck = assembly.router.healthCheck.callable({
@@ -62,6 +66,13 @@ describe("api assembly", () => {
         session: createStoreAdminAuthSession(),
       },
     } as const;
+
+    await expect(
+      call(assembly.router.storeSettingsGet, undefined, productContext)
+    ).resolves.toMatchObject({
+      defaultCurrencyCode: "USD",
+      name: "Default store",
+    });
 
     await expect(
       call(assembly.router.productList, undefined, productContext)
@@ -195,17 +206,24 @@ describe("api assembly", () => {
   it("exports the assembled root router from a stable public surface", () => {
     expect(apiAssembly.router).toHaveProperty("healthCheck");
     expect(apiAssembly.router).toHaveProperty("privateData");
+    expect(apiAssembly.router).toHaveProperty("storeSettingsUpdate");
     expect(apiAssembly.router).toHaveProperty("productCreate");
   });
 
-  it("creates root assemblies with injected product dependencies", async () => {
-    const repository = createInMemoryProductRepository();
+  it("creates root assemblies with injected module dependencies", async () => {
+    const productRepository = createInMemoryProductRepository();
+    const storeRepository = createInMemoryStoreRepository();
     const assembly = createApiRootAssembly({
       routes: {
         product: {
           clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
           idGenerator: createSequenceIdGenerator(["prod_api_injected"]),
-          repository,
+          repository: productRepository,
+        },
+        store: {
+          clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+          idGenerator: createSequenceIdGenerator(["store_api_injected"]),
+          repository: storeRepository,
         },
       },
     });
@@ -219,6 +237,21 @@ describe("api assembly", () => {
 
     await expect(
       call(
+        assembly.router.storeSettingsUpdate,
+        {
+          defaultCurrencyCode: "EUR",
+          name: "Injected Store",
+          supportedCurrencyCodes: ["USD", "EUR"],
+        },
+        productContext
+      )
+    ).resolves.toMatchObject({
+      id: "store_api_injected",
+      name: "Injected Store",
+    });
+
+    await expect(
+      call(
         assembly.router.productCreate,
         {
           handle: "injected-product",
@@ -229,7 +262,7 @@ describe("api assembly", () => {
     ).resolves.toMatchObject({
       id: "prod_api_injected",
     });
-    await expect(repository.listProducts()).resolves.toHaveLength(1);
+    await expect(productRepository.listProducts()).resolves.toHaveLength(1);
   });
 
   it("rejects invalid input before procedure business logic runs", async () => {
@@ -277,6 +310,8 @@ describe("api assembly", () => {
     });
 
     expect(spec.paths?.["/health"]?.get?.responses).toHaveProperty("200");
+    expect(spec.paths?.["/store"]?.patch?.requestBody).toBeDefined();
+    expect(spec.paths?.["/store"]?.patch?.responses).toHaveProperty("200");
     expect(spec.paths?.["/products"]?.post?.requestBody).toBeDefined();
     expect(spec.paths?.["/products"]?.post?.responses).toHaveProperty("200");
   });

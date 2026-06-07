@@ -36,7 +36,7 @@ export const createCustomerAuthSession = ({
 
 export const createStoreAdminAuthSession = ({
   id = "user_admin",
-  permissions = ["product:read", "product:write"],
+  permissions = ["store:read", "store:write", "product:read", "product:write"],
 }: {
   readonly id?: string;
   readonly permissions?: readonly AuthPermissionKey[];
