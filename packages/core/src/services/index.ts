@@ -2,6 +2,8 @@ import { Context, Layer } from "effect";
 
 import type { CommerceEventEnvelope } from "../events/index";
 import type { CommerceModuleGraph } from "../modules/index";
+import type { CommerceQueuePublisher } from "../queues/index";
+import type { StatefulCoordinator } from "../stateful/index";
 import type {
   CommerceWorkflowMetadataStore,
   CommerceWorkflowRuntime,
@@ -62,6 +64,10 @@ export type WorkflowRuntimeService = CommerceWorkflowRuntime;
 
 export type WorkflowMetadataStoreService = CommerceWorkflowMetadataStore;
 
+export type StatefulCoordinatorService = StatefulCoordinator;
+
+export type QueuePublisherService = CommerceQueuePublisher;
+
 export const ClockService = Context.Service<ClockService>(
   "@ecommerce/core/ClockService"
 );
@@ -99,6 +105,15 @@ export const WorkflowMetadataStoreService =
     "@ecommerce/core/WorkflowMetadataStoreService"
   );
 
+export const StatefulCoordinatorService =
+  Context.Service<StatefulCoordinatorService>(
+    "@ecommerce/core/StatefulCoordinatorService"
+  );
+
+export const QueuePublisherService = Context.Service<QueuePublisherService>(
+  "@ecommerce/core/QueuePublisherService"
+);
+
 export const clockLayer = (service: ClockService) =>
   Layer.succeed(ClockService, service);
 
@@ -126,3 +141,9 @@ export const workflowRuntimeLayer = (service: WorkflowRuntimeService) =>
 export const workflowMetadataStoreLayer = (
   service: WorkflowMetadataStoreService
 ) => Layer.succeed(WorkflowMetadataStoreService, service);
+
+export const statefulCoordinatorLayer = (service: StatefulCoordinatorService) =>
+  Layer.succeed(StatefulCoordinatorService, service);
+
+export const queuePublisherLayer = (service: QueuePublisherService) =>
+  Layer.succeed(QueuePublisherService, service);

@@ -26,8 +26,14 @@
     "./plugins": {
       "default": "./src/plugins/index.ts"
     },
+    "./queues": {
+      "default": "./src/queues/index.ts"
+    },
     "./services": {
       "default": "./src/services/index.ts"
+    },
+    "./stateful": {
+      "default": "./src/stateful/index.ts"
     },
     "./testing": {
       "default": "./src/testing/index.ts"

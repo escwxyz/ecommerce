@@ -1,0 +1,22 @@
+{
+  "name": "@ecommerce/platform-cloudflare",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "bun test ./src"
+  },
+  "dependencies": {
+    "@ecommerce/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "@ecommerce/config": "workspace:*",
+    "bun-types": "catalog:",
+    "typescript": "catalog:"
+  }
+}
