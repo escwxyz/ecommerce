@@ -438,6 +438,7 @@ const createBridgeContext = () => ({
   grantedCapabilities: [
     "bridge:fetch",
     "bridge:log",
+    "route:respond",
     "bridge:storage",
   ] as const,
   grantedStorageNamespaces: ["settings"],
@@ -500,7 +501,12 @@ describe("cloudflare sandbox plugin runtime", () => {
         deniedCapabilities: [],
         deniedStorageNamespaces: [],
         grantedAllowedHosts: ["api.example.com"],
-        grantedCapabilities: ["bridge:fetch", "bridge:log", "bridge:storage"],
+        grantedCapabilities: [
+          "bridge:fetch",
+          "bridge:log",
+          "bridge:storage",
+          "route:respond",
+        ],
         grantedStorageNamespaces: ["settings"],
         pluginId: "tax-sandbox",
       },
@@ -638,6 +644,15 @@ describe("cloudflare sandbox plugin runtime", () => {
     ).rejects.toMatchObject({
       code: "capability-denied",
     });
+    await expect(
+      restrictedBridge.routeResponse({
+        body: { quoted: false },
+        status: 200,
+        type: "routeResponse",
+      })
+    ).rejects.toMatchObject({
+      code: "capability-denied",
+    });
     expect(auditEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -648,6 +663,10 @@ describe("cloudflare sandbox plugin runtime", () => {
         expect.objectContaining({
           decision: "deny",
           operationType: "fetch",
+        }),
+        expect.objectContaining({
+          decision: "deny",
+          operationType: "routeResponse",
         }),
       ])
     );
@@ -709,6 +728,24 @@ describe("cloudflare sandbox plugin runtime", () => {
         },
       })
     ).toThrow(/Unsupported permission "product:read"/);
+  });
+
+  it("allows route responses when route capability is granted", async () => {
+    const bridge = createSandboxBridge({
+      context: createBridgeContext(),
+    });
+
+    await expect(
+      bridge.routeResponse({
+        body: { quoted: true },
+        status: 200,
+        type: "routeResponse",
+      })
+    ).resolves.toEqual({
+      body: { quoted: true },
+      status: 200,
+      type: "routeResponse",
+    });
   });
 
   it("gates activation on bundle integrity, grants, and Worker Loader availability", () => {

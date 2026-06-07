@@ -164,7 +164,9 @@ export interface SandboxBridge {
   storageRead(namespace: string, key: string): Promise<unknown>;
   storageWrite(namespace: string, key: string, value: unknown): Promise<void>;
   commerceAction(action: string, input: unknown): Promise<unknown>;
-  routeResponse(response: SandboxEntrypointResponse): SandboxEntrypointResponse;
+  routeResponse(
+    response: SandboxEntrypointResponse
+  ): Promise<SandboxEntrypointResponse>;
 }
 
 export interface CreateSandboxBridgeOptions {
@@ -522,7 +524,23 @@ export const createSandboxBridge = ({
         })
       );
     },
-    routeResponse: (response: SandboxEntrypointResponse) => {
+    routeResponse: async (response: SandboxEntrypointResponse) => {
+      const denial = await requireCapability({
+        audit,
+        capability: "route:respond",
+        context,
+        operationType: "routeResponse",
+      });
+
+      if (denial) {
+        throw createSandboxRuntimeError({
+          code: "capability-denied",
+          message: denial.reason,
+          pluginId: context.pluginId,
+          correlationId: context.correlationId,
+        });
+      }
+
       if (!isSandboxEntrypointResponse(response)) {
         throw createSandboxRuntimeError({
           code: "invalid-response",
