@@ -1,2 +1,2 @@
-export { defineApiContractRoute } from "./define-api-contract-route";
+export { defineApiContractRoute } from "@ecommerce/module-contracts";
 export { storeContractRouter } from "./store.contract";

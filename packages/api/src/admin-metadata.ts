@@ -1,5 +1,6 @@
 import { composeAdminMetadata } from "@ecommerce/core/admin";
 import { productAdminMetadata } from "@ecommerce/product/admin";
+import { regionSalesChannelAdminMetadata } from "@ecommerce/region-sales-channel/admin";
 import { storeAdminMetadata } from "@ecommerce/store/admin";
 
 import type { Context } from "./context";
@@ -21,7 +22,11 @@ const getContextPermissionKeys = (context: Context): readonly string[] => {
 
 export const createAdminMetadataModel = (context: Context) =>
   composeAdminMetadata({
-    contributions: [storeAdminMetadata, productAdminMetadata],
+    contributions: [
+      storeAdminMetadata,
+      productAdminMetadata,
+      regionSalesChannelAdminMetadata,
+    ],
     permissionValidator: validateBuiltinCommercePermission,
     permissions: getContextPermissionKeys(context),
   });

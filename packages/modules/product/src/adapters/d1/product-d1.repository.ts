@@ -14,6 +14,13 @@ export interface CreateD1ProductRepositoryOptions {
   readonly db: ProductD1Database;
 }
 
+const PRODUCT_HANDLE_UNIQUE_CONSTRAINT =
+  "UNIQUE constraint failed: product.handle";
+
+const isDuplicateProductHandleError = (error: unknown): boolean =>
+  error instanceof Error &&
+  error.message.includes(PRODUCT_HANDLE_UNIQUE_CONSTRAINT);
+
 const toProductRecord = (row: ProductRow): ProductRecord => ({
   createdAt: new Date(row.created_at),
   handle: row.handle,
@@ -56,17 +63,27 @@ export const createD1ProductRepository = ({
     return rows.map(toProductRecord);
   },
   saveProduct: async (record) => {
-    await db
-      .insertInto("product")
-      .values({
-        created_at: record.createdAt.getTime(),
-        handle: record.handle,
-        id: record.id,
-        status: record.status,
-        title: record.title,
-        updated_at: record.updatedAt.getTime(),
-      })
-      .execute();
+    try {
+      await db
+        .insertInto("product")
+        .values({
+          created_at: record.createdAt.getTime(),
+          handle: record.handle,
+          id: record.id,
+          status: record.status,
+          title: record.title,
+          updated_at: record.updatedAt.getTime(),
+        })
+        .execute();
+    } catch (error) {
+      if (isDuplicateProductHandleError(error)) {
+        throw new Error(`Product handle "${record.handle}" already exists.`, {
+          cause: error,
+        });
+      }
+
+      throw error;
+    }
 
     return record;
   },

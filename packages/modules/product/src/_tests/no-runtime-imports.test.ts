@@ -15,6 +15,9 @@ const forbiddenImport = (specifier: string): boolean =>
   specifier.startsWith("../../../apps/server") ||
   specifier.startsWith("@ecommerce/server");
 
+const forbiddenRuntimeTokenPattern =
+  /\b(?:DurableObjectNamespace|DurableObjectStub|DurableObjectState)\b/;
+
 const listSourceFiles = (directory: string): string[] => {
   const files: string[] = [];
 
@@ -48,6 +51,10 @@ describe("product module boundaries", () => {
           matched.push(relative(sourceRoot, filePath));
           break;
         }
+      }
+
+      if (forbiddenRuntimeTokenPattern.test(source)) {
+        matched.push(relative(sourceRoot, filePath));
       }
 
       return matched;

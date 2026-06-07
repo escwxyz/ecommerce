@@ -44,8 +44,8 @@
   },
   "dependencies": {
     "@ecommerce/core": "workspace:*",
+    "@ecommerce/module-contracts": "workspace:*",
     "@ecommerce/utils": "workspace:*",
-    "@orpc/contract": "catalog:",
     "@orpc/server": "catalog:",
     "effect": "catalog:",
     "kysely": "catalog:",

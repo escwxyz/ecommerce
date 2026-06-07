@@ -8,6 +8,7 @@ import {
 } from "@ecommerce/core/testing";
 import { createInMemoryProductRepository } from "@ecommerce/product";
 import { resetProductState } from "@ecommerce/product/testing";
+import { createResettableInMemoryRegionSalesChannelRepository } from "@ecommerce/region-sales-channel";
 import { createInMemoryStoreRepository } from "@ecommerce/store";
 import { resetStoreState } from "@ecommerce/store/testing";
 import { OpenAPIGenerator } from "@orpc/openapi";
@@ -52,6 +53,8 @@ describe("api assembly", () => {
     expect(assembly.fragments).toEqual(builtinRouteFragments);
     expect(assembly.router).toHaveProperty("storeSettingsGet");
     expect(assembly.router).toHaveProperty("productList");
+    expect(assembly.router).toHaveProperty("regionList");
+    expect(assembly.router).toHaveProperty("salesChannelList");
 
     const healthCheck = assembly.router.healthCheck.callable({
       context: createTestContext(),
@@ -63,7 +66,18 @@ describe("api assembly", () => {
       context: {
         auth,
         authorization: authorizationEvaluator,
-        session: createStoreAdminAuthSession(),
+        session: createStoreAdminAuthSession({
+          permissions: [
+            "store:read",
+            "store:write",
+            "product:read",
+            "product:write",
+            "region:read",
+            "region:write",
+            "sales-channel:read",
+            "sales-channel:write",
+          ],
+        }),
       },
     } as const;
 
@@ -208,10 +222,14 @@ describe("api assembly", () => {
     expect(apiAssembly.router).toHaveProperty("privateData");
     expect(apiAssembly.router).toHaveProperty("storeSettingsUpdate");
     expect(apiAssembly.router).toHaveProperty("productCreate");
+    expect(apiAssembly.router).toHaveProperty("regionCreate");
+    expect(apiAssembly.router).toHaveProperty("salesChannelCreate");
   });
 
   it("creates root assemblies with injected module dependencies", async () => {
     const productRepository = createInMemoryProductRepository();
+    const regionSalesChannelRepository =
+      createResettableInMemoryRegionSalesChannelRepository();
     const storeRepository = createInMemoryStoreRepository();
     const assembly = createApiRootAssembly({
       routes: {
@@ -219,6 +237,24 @@ describe("api assembly", () => {
           clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
           idGenerator: createSequenceIdGenerator(["prod_api_injected"]),
           repository: productRepository,
+        },
+        regionSalesChannel: {
+          region: {
+            clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+            idGenerator: createSequenceIdGenerator([
+              "reg_api_injected",
+              "evt_reg",
+            ]),
+            repository: regionSalesChannelRepository,
+          },
+          salesChannel: {
+            clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+            idGenerator: createSequenceIdGenerator([
+              "sc_api_injected",
+              "evt_sc",
+            ]),
+            repository: regionSalesChannelRepository,
+          },
         },
         store: {
           clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
@@ -231,7 +267,18 @@ describe("api assembly", () => {
       context: {
         auth,
         authorization: authorizationEvaluator,
-        session: createStoreAdminAuthSession(),
+        session: createStoreAdminAuthSession({
+          permissions: [
+            "store:read",
+            "store:write",
+            "product:read",
+            "product:write",
+            "region:read",
+            "region:write",
+            "sales-channel:read",
+            "sales-channel:write",
+          ],
+        }),
       },
     } as const;
 
@@ -261,6 +308,31 @@ describe("api assembly", () => {
       )
     ).resolves.toMatchObject({
       id: "prod_api_injected",
+    });
+    await expect(
+      call(
+        assembly.router.regionCreate,
+        {
+          countries: ["US"],
+          currencyCode: "USD",
+          name: "United States",
+        },
+        productContext
+      )
+    ).resolves.toMatchObject({
+      id: "reg_api_injected",
+    });
+    await expect(
+      call(
+        assembly.router.salesChannelCreate,
+        {
+          name: "Web",
+          status: "active",
+        },
+        productContext
+      )
+    ).resolves.toMatchObject({
+      id: "sc_api_injected",
     });
     await expect(productRepository.listProducts()).resolves.toHaveLength(1);
   });
@@ -314,5 +386,11 @@ describe("api assembly", () => {
     expect(spec.paths?.["/store"]?.patch?.responses).toHaveProperty("200");
     expect(spec.paths?.["/products"]?.post?.requestBody).toBeDefined();
     expect(spec.paths?.["/products"]?.post?.responses).toHaveProperty("200");
+    expect(spec.paths?.["/regions"]?.post?.requestBody).toBeDefined();
+    expect(spec.paths?.["/regions"]?.post?.responses).toHaveProperty("200");
+    expect(spec.paths?.["/sales-channels"]?.post?.requestBody).toBeDefined();
+    expect(spec.paths?.["/sales-channels"]?.post?.responses).toHaveProperty(
+      "200"
+    );
   });
 });

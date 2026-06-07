@@ -128,7 +128,7 @@ const createSqliteProductTable = (sqlite: Database) => {
       updated_at integer not null
     )
   `);
-  sqlite.run("create index product_handle_idx on product(handle)");
+  sqlite.run("create unique index product_handle_idx on product(handle)");
 };
 
 const createFakeD1Binding = (sqlite: Database) => ({
@@ -213,8 +213,40 @@ runProductRepositoryContract("D1 product repository", () => {
   };
 });
 
+describe("D1 product repository persistence constraints", () => {
+  it("rejects duplicate handles at the storage layer", async () => {
+    const sqlite = new Database(":memory:");
+    createSqliteProductTable(sqlite);
+    const db = createKyselyD1ProductDatabase(sqlite);
+    const repository = createD1ProductRepository({ db });
+    const createdAt = new Date("2026-01-01T00:00:00.000Z");
+
+    await repository.saveProduct({
+      createdAt,
+      handle: "duplicate-handle",
+      id: createProductId("prod_first"),
+      status: "draft",
+      title: "First product",
+      updatedAt: createdAt,
+    });
+
+    await expect(
+      repository.saveProduct({
+        createdAt,
+        handle: "duplicate-handle",
+        id: createProductId("prod_second"),
+        status: "draft",
+        title: "Second product",
+        updatedAt: createdAt,
+      })
+    ).rejects.toThrow(/Product handle "duplicate-handle" already exists/);
+
+    sqlite.close();
+  });
+});
+
 describe("product Kysely migration", () => {
-  it("creates the product table and index for D1-compatible SQLite", async () => {
+  it("creates the product table and unique handle index for D1-compatible SQLite", async () => {
     const sqlite = new Database(":memory:");
     const db = createKyselyD1ProductDatabase(sqlite);
 
@@ -226,9 +258,18 @@ describe("product Kysely migration", () => {
     const index = sqlite
       .query("select name from sqlite_master where type = 'index' and name = ?")
       .get("product_handle_idx");
+    const uniqueIndex = sqlite
+      .query("pragma index_list('product')")
+      .all() as Array<{ name: string; unique: number }>;
 
     expect(table).toBeDefined();
     expect(index).toBeDefined();
+    expect(
+      uniqueIndex.find((candidate) => candidate.name === "product_handle_idx")
+    ).toMatchObject({
+      name: "product_handle_idx",
+      unique: 1,
+    });
     sqlite.close();
   });
 });

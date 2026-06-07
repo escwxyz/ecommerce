@@ -59,6 +59,7 @@ export const productMigration: Migration = {
     await db.schema
       .createIndex(productHandleIndexName)
       .ifNotExists()
+      .unique()
       .on(productTableName)
       .column("handle")
       .execute();

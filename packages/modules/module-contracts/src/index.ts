@@ -1,7 +1,5 @@
 import { oc } from "@orpc/contract";
 
-const DEFAULT_STORE_TAGS = ["Store"] as const;
-
 export interface DefineApiContractRouteOptions {
   readonly deprecated?: boolean;
   readonly description: string;
@@ -14,7 +12,7 @@ export interface DefineApiContractRouteOptions {
 }
 
 export const defineApiContractRoute = ({
-  tags = DEFAULT_STORE_TAGS,
+  tags = [],
   ...options
 }: DefineApiContractRouteOptions) =>
   oc.route({
