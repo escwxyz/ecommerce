@@ -10,15 +10,25 @@ export interface CreateContextOptions {
   context: HonoContext;
 }
 
-export async function createContext({ auth, context }: CreateContextOptions) {
+export interface Context {
+  readonly auth: unknown;
+  readonly authorization: typeof authorizationEvaluator;
+  readonly session: {
+    readonly user?: unknown | null;
+  } | null;
+}
+
+export async function createContext({
+  auth,
+  context,
+}: CreateContextOptions): Promise<Context> {
   const session = await auth.api.getSession({
     headers: context.req.raw.headers,
   });
+
   return {
     auth,
     authorization: authorizationEvaluator,
     session,
   };
 }
-
-export type Context = Awaited<ReturnType<typeof createContext>>;

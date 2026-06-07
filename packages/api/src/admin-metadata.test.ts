@@ -32,16 +32,45 @@ describe("admin metadata API", () => {
       apiAssembly.router.adminMetadata,
       undefined,
       createContext(
-        createStoreAdminAuthSession({ permissions: ["product:read"] })
+        createStoreAdminAuthSession({ permissions: ["store:read"] })
       )
     );
 
     expect(model.surfaces.map((surface) => surface.id)).toEqual([
-      "module:product:navigation",
+      "module:store:navigation",
     ]);
     expect(model.surfaces[0]?.operations).toMatchObject({
-      list: { key: "productList" },
+      read: { key: "storeSettingsGet" },
     });
+  });
+
+  it("exposes product and store admin metadata for fully privileged admins", async () => {
+    const model = await call(
+      apiAssembly.router.adminMetadata,
+      undefined,
+      createContext()
+    );
+
+    expect(model.surfaces.map((surface) => surface.id)).toEqual([
+      "module:store:navigation",
+      "module:product:navigation",
+      "module:store:resource",
+      "module:product:resource",
+    ]);
+  });
+
+  it("rejects store operations when the required permission is missing", async () => {
+    await expect(
+      call(
+        apiAssembly.router.storeSettingsUpdate,
+        {
+          name: "Denied Store",
+        },
+        createContext(
+          createCustomerAuthSession({ permissions: ["store:read"] })
+        )
+      )
+    ).rejects.toBeInstanceOf(ORPCError);
   });
 
   it("rejects product operations when the required permission is missing", async () => {
