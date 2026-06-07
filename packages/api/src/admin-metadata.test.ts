@@ -48,7 +48,20 @@ describe("admin metadata API", () => {
     const model = await call(
       apiAssembly.router.adminMetadata,
       undefined,
-      createContext()
+      createContext(
+        createStoreAdminAuthSession({
+          permissions: [
+            "store:read",
+            "store:write",
+            "product:read",
+            "product:write",
+            "region:read",
+            "region:write",
+            "sales-channel:read",
+            "sales-channel:write",
+          ],
+        })
+      )
     );
 
     expect(model.surfaces.map((surface) => surface.id)).toEqual([
@@ -56,6 +69,10 @@ describe("admin metadata API", () => {
       "module:product:navigation",
       "module:store:resource",
       "module:product:resource",
+      "module:region-sales-channel:regions-navigation",
+      "module:region-sales-channel:regions-resource",
+      "module:region-sales-channel:sales-channels-navigation",
+      "module:region-sales-channel:sales-channels-resource",
     ]);
   });
 
@@ -83,6 +100,22 @@ describe("admin metadata API", () => {
         },
         createContext(
           createCustomerAuthSession({ permissions: ["product:read"] })
+        )
+      )
+    ).rejects.toBeInstanceOf(ORPCError);
+  });
+
+  it("rejects region operations when the required permission is missing", async () => {
+    await expect(
+      call(
+        apiAssembly.router.regionCreate,
+        {
+          countries: ["US"],
+          currencyCode: "USD",
+          name: "Denied region",
+        },
+        createContext(
+          createCustomerAuthSession({ permissions: ["region:read"] })
         )
       )
     ).rejects.toBeInstanceOf(ORPCError);
