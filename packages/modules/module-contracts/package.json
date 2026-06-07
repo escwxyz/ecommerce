@@ -1,0 +1,21 @@
+{
+  "name": "@ecommerce/module-contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@orpc/contract": "catalog:"
+  },
+  "devDependencies": {
+    "@ecommerce/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

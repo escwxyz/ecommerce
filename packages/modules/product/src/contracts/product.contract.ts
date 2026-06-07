@@ -1,3 +1,4 @@
+import { defineApiContractRoute } from "@ecommerce/module-contracts";
 import { z } from "zod";
 
 import {
@@ -6,7 +7,6 @@ import {
   ProductApiRecordSchema,
   ProductIdentifierSchema,
 } from "../domain";
-import { defineApiContractRoute } from "./define-api-contract-route";
 
 export const productContractRouter = {
   productCreate: defineApiContractRoute({
@@ -16,6 +16,7 @@ export const productContractRouter = {
     path: "/products",
     successDescription: "Product draft created.",
     summary: "Create product",
+    tags: ["Products"],
   })
     .input(CreateProductInputSchema)
     .output(ProductApiRecordSchema),
@@ -26,6 +27,7 @@ export const productContractRouter = {
     path: "/products/{id}",
     successDescription: "Product returned.",
     summary: "Get product",
+    tags: ["Products"],
   })
     .input(ProductIdentifierSchema)
     .output(ProductApiRecordSchema.nullable()),
@@ -36,6 +38,7 @@ export const productContractRouter = {
     path: "/products",
     successDescription: "Products returned.",
     summary: "List products",
+    tags: ["Products"],
   })
     .input(z.unknown())
     .output(ProductApiListSchema),

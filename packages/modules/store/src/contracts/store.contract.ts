@@ -1,3 +1,4 @@
+import { defineApiContractRoute } from "@ecommerce/module-contracts";
 import { z } from "zod";
 
 import {
@@ -5,7 +6,6 @@ import {
   StoreDefaultsApiRecordSchema,
   UpdateStoreSettingsInputSchema,
 } from "../domain";
-import { defineApiContractRoute } from "./define-api-contract-route";
 
 export const storeContractRouter = {
   storeDefaultsGet: defineApiContractRoute({
@@ -15,6 +15,7 @@ export const storeContractRouter = {
     path: "/store/defaults",
     successDescription: "Store defaults returned.",
     summary: "Get store defaults",
+    tags: ["Store"],
   })
     .input(z.unknown())
     .output(StoreDefaultsApiRecordSchema),
@@ -25,6 +26,7 @@ export const storeContractRouter = {
     path: "/store",
     successDescription: "Store settings returned.",
     summary: "Get store settings",
+    tags: ["Store"],
   })
     .input(z.unknown())
     .output(StoreApiRecordSchema),
@@ -36,6 +38,7 @@ export const storeContractRouter = {
     path: "/store",
     successDescription: "Store settings updated.",
     summary: "Update store settings",
+    tags: ["Store"],
   })
     .input(UpdateStoreSettingsInputSchema)
     .output(StoreApiRecordSchema),

@@ -1,3 +1,4 @@
+import { defineApiContractRoute } from "@ecommerce/module-contracts";
 import { z } from "zod";
 
 import {
@@ -13,7 +14,6 @@ import {
   SalesChannelIdentifierSchema,
   ValidateRegionInputSchema,
 } from "../domain";
-import { defineApiContractRoute } from "./define-api-contract-route";
 
 const RegionValidationApiResultSchema = z.object({
   allowed: z.boolean(),

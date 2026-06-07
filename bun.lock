@@ -213,13 +213,24 @@
         "typescript": "catalog:",
       },
     },
+    "packages/modules/module-contracts": {
+      "name": "@ecommerce/module-contracts",
+      "version": "0.0.0",
+      "dependencies": {
+        "@orpc/contract": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "typescript": "catalog:",
+      },
+    },
     "packages/modules/product": {
       "name": "@ecommerce/product",
       "version": "0.0.0",
       "dependencies": {
         "@ecommerce/core": "workspace:*",
+        "@ecommerce/module-contracts": "workspace:*",
         "@ecommerce/utils": "workspace:*",
-        "@orpc/contract": "catalog:",
         "@orpc/server": "catalog:",
         "effect": "catalog:",
         "kysely": "catalog:",
@@ -238,7 +249,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@ecommerce/core": "workspace:*",
-        "@orpc/contract": "catalog:",
+        "@ecommerce/module-contracts": "workspace:*",
         "@orpc/server": "catalog:",
         "effect": "catalog:",
         "kysely": "catalog:",
@@ -256,7 +267,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@ecommerce/core": "workspace:*",
-        "@orpc/contract": "catalog:",
+        "@ecommerce/module-contracts": "workspace:*",
         "@orpc/server": "catalog:",
         "effect": "catalog:",
         "kysely": "catalog:",
@@ -577,6 +588,8 @@
     "@ecommerce/env": ["@ecommerce/env@workspace:packages/env"],
 
     "@ecommerce/infra": ["@ecommerce/infra@workspace:packages/infra"],
+
+    "@ecommerce/module-contracts": ["@ecommerce/module-contracts@workspace:packages/modules/module-contracts"],
 
     "@ecommerce/payment-provider": ["@ecommerce/payment-provider@workspace:packages/payment-provider"],
 
