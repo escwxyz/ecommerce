@@ -66,6 +66,19 @@ export {
   normalizeCommercePermission,
 } from "./permissions/index";
 export {
+  defineQueueMessage,
+  type CommerceQueueConsumeContext,
+  type CommerceQueueConsumer,
+  type CommerceQueueDeadLetter,
+  type CommerceQueueMessage,
+  type CommerceQueueMessageMetadata,
+  type CommerceQueuePublishOptions,
+  type CommerceQueuePublishResult,
+  type CommerceQueuePublisher,
+  type CommerceQueueRetryPolicy,
+  type CommerceQueueSubject,
+} from "./queues/index";
+export {
   type CommercePluginContributionSet,
   type CommercePluginExtensionPoint,
   type CommercePluginManifest,
@@ -112,6 +125,8 @@ export {
   IdGeneratorService,
   LoggerService,
   ModuleRegistryService,
+  QueuePublisherService,
+  StatefulCoordinatorService,
   WorkflowMetadataStoreService,
   WorkflowRuntimeService,
   authContextLayer,
@@ -121,6 +136,8 @@ export {
   idGeneratorLayer,
   loggerLayer,
   moduleRegistryLayer,
+  queuePublisherLayer,
+  statefulCoordinatorLayer,
   workflowMetadataStoreLayer,
   workflowRuntimeLayer,
   type AuthContextService as AuthContextServiceShape,
@@ -134,9 +151,19 @@ export {
   type LogLevel,
   type LoggerService as LoggerServiceShape,
   type ModuleRegistryService as ModuleRegistryServiceShape,
+  type QueuePublisherService as QueuePublisherServiceShape,
+  type StatefulCoordinatorService as StatefulCoordinatorServiceShape,
   type WorkflowMetadataStoreService as WorkflowMetadataStoreServiceShape,
   type WorkflowRuntimeService as WorkflowRuntimeServiceShape,
 } from "./services/index";
+export {
+  defineStatefulCoordinationRequest,
+  type StatefulCoordinationMetadata,
+  type StatefulCoordinationRequest,
+  type StatefulCoordinationResult,
+  type StatefulCoordinationSubject,
+  type StatefulCoordinator,
+} from "./stateful/index";
 export {
   createEventCollector,
   createInMemoryWorkflowMetadataStore,
@@ -158,6 +185,7 @@ export {
   type CommerceWorkflowIdempotencyKey,
   type CommerceWorkflowKey,
   type CommerceWorkflowMetadataRecord,
+  type CommerceWorkflowMetadataRegistrationResult,
   type CommerceWorkflowMetadataStore,
   type CommerceWorkflowReconcileRequest,
   type CommerceWorkflowRunError,

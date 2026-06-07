@@ -18,6 +18,9 @@ const forbiddenImport = (specifier: string): boolean =>
   specifier.startsWith("drizzle-orm/node-postgres") ||
   specifier.startsWith("drizzle-orm/postgres-js");
 
+const forbiddenRuntimeTokenPattern =
+  /\b(?:DurableObjectNamespace|DurableObjectStub|DurableObjectState)\b/;
+
 const listSourceFiles = (directory: string): string[] => {
   const files: string[] = [];
 
@@ -53,6 +56,10 @@ describe("core runtime boundaries", () => {
         }
       }
 
+      if (forbiddenRuntimeTokenPattern.test(source)) {
+        matched.push(relative(sourceRoot, filePath));
+      }
+
       return matched;
     });
 
@@ -72,6 +79,10 @@ describe("core runtime boundaries", () => {
           matched.push(relative(sourceRoot, filePath));
           break;
         }
+      }
+
+      if (forbiddenRuntimeTokenPattern.test(source)) {
+        matched.push(relative(sourceRoot, filePath));
       }
 
       return matched;

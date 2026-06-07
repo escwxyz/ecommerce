@@ -13,6 +13,7 @@ export default defineConfig({
         ".agents/**",
         ".claude/**",
         "*.test.ts",
+        "openspec/**",
       ]
     : [],
   rules: {

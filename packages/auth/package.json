@@ -1,0 +1,42 @@
+{
+  "name": "@ecommerce/auth",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./access-control": {
+      "default": "./src/access-control.ts"
+    },
+    "./authorization": {
+      "default": "./src/authorization.ts"
+    },
+    "./factory": {
+      "default": "./src/factory.ts"
+    },
+    "./permissions": {
+      "default": "./src/permissions.ts"
+    },
+    "./testing": {
+      "default": "./src/testing.ts"
+    },
+    "./types": {
+      "default": "./src/types.ts"
+    }
+  },
+  "scripts": {
+    "auth:gen": "bunx @better-auth/cli@latest generate --config ./src/cli-auth.ts --output ../db-d1/src/migrations/sql/0000_auth.sql --yes",
+    "check-types": "tsc -b",
+    "test": "bun test ./src/*.test.ts"
+  },
+  "dependencies": {
+    "better-auth": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@ecommerce/config": "workspace:*",
+    "bun-types": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -9,5 +9,6 @@ export default defineConfig({
     ".agents/**",
     ".claude/**",
     ".codex/*",
+    "openspec/**",
   ],
 });

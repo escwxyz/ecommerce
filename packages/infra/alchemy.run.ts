@@ -36,7 +36,7 @@ const requiredServerConfig = {
 const providers = Layer.mergeAll(Cloudflare.providers());
 
 export const database = Cloudflare.D1Database("Database", {
-  migrationsDir: fromPackageRoot("../../packages/db/src/migrations"),
+  migrationsDir: fromPackageRoot("../../packages/db-d1/src/migrations/sql"),
   migrationsTable: "d1_migrations",
 });
 
