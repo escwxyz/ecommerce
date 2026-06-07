@@ -1,0 +1,29 @@
+{
+  "name": "@ecommerce/db",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./schema/auth": {
+      "default": "./src/schema/auth.ts"
+    },
+    "./schema/product": {
+      "default": "./src/schema/product.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "bun test ./src"
+  },
+  "dependencies": {
+    "@ecommerce/product": "workspace:*",
+    "kysely": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@ecommerce/config": "workspace:*",
+    "bun-types": "catalog:",
+    "typescript": "catalog:"
+  }
+}
