@@ -8,6 +8,8 @@ import type {
   ProductApiRecord,
   ProductIdentifierInput,
   ProductRecord,
+  ProductVariantValidationInput,
+  UpdateProductCatalogInput,
 } from "../domain";
 import { createProductId, serializeProductId } from "../domain";
 import { productPermissions } from "../permissions";
@@ -58,6 +60,10 @@ const assertPermission = (
 };
 
 const serializeProduct = (product: ProductRecord): ProductApiRecord => ({
+  catalog: {
+    ...product.catalog,
+    publishedAt: product.catalog.publishedAt?.toISOString() ?? null,
+  },
   createdAt: product.createdAt.toISOString(),
   handle: product.handle,
   id: serializeProductId(product.id),
@@ -135,6 +141,23 @@ export const createProductRouteFragment = ({
         return product ? serializeProduct(product) : null;
       }
     ),
+    productCatalogUpdate: protectedImplementation.productCatalogUpdate.handler(
+      async ({
+        context,
+        input,
+      }: {
+        readonly context: ProductModuleContext;
+        readonly input: UpdateProductCatalogInput;
+      }) => {
+        assertPermission(
+          context.session,
+          productPermissions.write,
+          context.authorization
+        );
+
+        return serializeProduct(await service.updateProductCatalog(input));
+      }
+    ),
     productList: protectedImplementation.productList.handler(
       async ({ context }) => {
         assertPermission(
@@ -148,6 +171,27 @@ export const createProductRouteFragment = ({
         return records.map(serializeProduct);
       }
     ),
+    productVariantValidate:
+      protectedImplementation.productVariantValidate.handler(
+        ({
+          context,
+          input,
+        }: {
+          readonly context: ProductModuleContext;
+          readonly input: ProductVariantValidationInput;
+        }) => {
+          assertPermission(
+            context.session,
+            productPermissions.read,
+            context.authorization
+          );
+
+          return service.validateProductVariant({
+            productId: createProductId(input.productId),
+            variantId: input.variantId,
+          });
+        }
+      ),
   });
 
   return {
