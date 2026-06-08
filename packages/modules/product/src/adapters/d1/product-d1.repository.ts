@@ -47,6 +47,25 @@ const insertValues = async <Table extends keyof ProductDatabase>(
   await db.insertInto(table).values(values).execute();
 };
 
+const insertValuesIgnoringConflicts = async <
+  Table extends keyof ProductDatabase,
+>(
+  db: ProductD1Database,
+  table: Table,
+  values: readonly Insertable<ProductDatabase[Table]>[],
+  conflictColumn: keyof ProductDatabase[Table]
+): Promise<void> => {
+  if (values.length === 0) {
+    return;
+  }
+
+  await db
+    .insertInto(table)
+    .values(values)
+    .onConflict((conflict) => conflict.column(conflictColumn).doNothing())
+    .execute();
+};
+
 const selectProductCatalog = async (
   db: ProductD1Database,
   productId: string,
@@ -343,14 +362,15 @@ const writeProductCatalogRows = async (
       }))
     )
   );
-  await insertValues(
+  await insertValuesIgnoringConflicts(
     db,
     "product_collection",
     catalog.collections.map((collection) => ({
       handle: collection.handle,
       id: collection.id,
       title: collection.title,
-    }))
+    })),
+    "id"
   );
   await insertValues(
     db,
@@ -360,7 +380,7 @@ const writeProductCatalogRows = async (
       product_id: productId,
     }))
   );
-  await insertValues(
+  await insertValuesIgnoringConflicts(
     db,
     "product_category",
     catalog.categories.map((category) => ({
@@ -368,7 +388,8 @@ const writeProductCatalogRows = async (
       id: category.id,
       parent_id: category.parentId ?? null,
       title: category.title,
-    }))
+    })),
+    "id"
   );
   await insertValues(
     db,
@@ -390,13 +411,14 @@ const writeProductCatalogRows = async (
       url: media.url,
     }))
   );
-  await insertValues(
+  await insertValuesIgnoringConflicts(
     db,
     "product_tag",
     catalog.tags.map((tag) => ({
       id: `ptag_${tag}`,
       value: tag,
-    }))
+    })),
+    "id"
   );
   await insertValues(
     db,

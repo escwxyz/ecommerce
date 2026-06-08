@@ -11,6 +11,7 @@ import { D1Dialect } from "kysely-d1";
 import { createD1ProductRepository } from "../adapters/d1";
 import {
   createProductId,
+  productCatalogMigration,
   productMigration,
   type ProductDatabase,
   type ProductRepository,
@@ -496,6 +497,68 @@ describe("D1 product repository persistence constraints", () => {
 
     sqlite.close();
   });
+
+  it("updates products with shared catalog references without duplicating global rows", async () => {
+    const sqlite = new Database(":memory:");
+    createSqliteProductTable(sqlite);
+    const db = createKyselyD1ProductDatabase(sqlite);
+    const repository = createD1ProductRepository({ db });
+    const createdAt = new Date("2026-01-01T00:00:00.000Z");
+
+    const initial = {
+      ...createProductRecord("prod_shared_refs", createdAt),
+      catalog: {
+        ...emptyCatalog,
+        categories: [
+          {
+            handle: "shirts",
+            id: "pcat_shirts",
+            title: "Shirts",
+          },
+        ],
+        collections: [
+          {
+            handle: "summer",
+            id: "pcol_summer",
+            title: "Summer",
+          },
+        ],
+        tags: ["featured"],
+      },
+    };
+
+    await repository.saveProduct(initial);
+
+    const updated = {
+      ...initial,
+      catalog: {
+        ...initial.catalog,
+        metadata: { season: "summer" },
+        searchableText: "Shared reference update",
+      },
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    };
+
+    await expect(repository.updateProduct(updated)).resolves.toEqual(updated);
+
+    const countRows = (tableName: string) =>
+      sqlite.query(`select count(*) as count from ${tableName}`).get() as {
+        count: number;
+      };
+
+    expect(countRows("product_collection").count).toBe(1);
+    expect(countRows("product_collection_product").count).toBe(1);
+    expect(countRows("product_category").count).toBe(1);
+    expect(countRows("product_category_product").count).toBe(1);
+    expect(countRows("product_tag").count).toBe(1);
+    expect(countRows("product_tags").count).toBe(1);
+
+    await expect(repository.findProductById(updated.id)).resolves.toEqual(
+      updated
+    );
+
+    sqlite.close();
+  });
 });
 
 describe("product Kysely migration", () => {
@@ -525,6 +588,34 @@ describe("product Kysely migration", () => {
 
     expect(table).toBeDefined();
     expect(index).toBeDefined();
+    expect(columns.map((column) => column.name)).not.toContain(
+      "catalog_metadata"
+    );
+    expect(
+      uniqueIndex.find((candidate) => candidate.name === "product_handle_idx")
+    ).toMatchObject({
+      name: "product_handle_idx",
+      unique: 1,
+    });
+    sqlite.close();
+  });
+
+  it("upgrades an existing product table with catalog expansion tables", async () => {
+    const sqlite = new Database(":memory:");
+    const db = createKyselyD1ProductDatabase(sqlite);
+
+    await productMigration.up(db);
+    await productCatalogMigration.up(db);
+
+    const tableNames = sqlite
+      .query("select name from sqlite_master where type = 'table'")
+      .all() as Array<{ name: string }>;
+    const columns = sqlite
+      .query("pragma table_info('product')")
+      .all() as Array<{
+      name: string;
+    }>;
+
     expect(tableNames.map((candidate) => candidate.name)).toEqual(
       expect.arrayContaining([
         "product_variant",
