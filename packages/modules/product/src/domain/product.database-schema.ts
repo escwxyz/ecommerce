@@ -192,30 +192,267 @@ export type ProductInsert = Insertable<ProductTable>;
 export type ProductDatabaseSchema = ProductDatabase;
 export type ProductSchemaKey = keyof ProductDatabase;
 
+const dropProductCatalogTables = async (db: Kysely<unknown>): Promise<void> => {
+  await db.schema.dropTable(productTypeProductTableName).ifExists().execute();
+  await db.schema.dropTable(productTagsTableName).ifExists().execute();
+  await db.schema
+    .dropTable(productCategoryProductTableName)
+    .ifExists()
+    .execute();
+  await db.schema
+    .dropTable(productCollectionProductTableName)
+    .ifExists()
+    .execute();
+  await db.schema.dropTable(productVariantOptionTableName).ifExists().execute();
+  await db.schema.dropTable(productMediaTableName).ifExists().execute();
+  await db.schema.dropTable(productOptionValueTableName).ifExists().execute();
+  await db.schema.dropTable(productOptionTableName).ifExists().execute();
+  await db.schema.dropTable(productVariantTableName).ifExists().execute();
+  await db.schema.dropTable(productTypeTableName).ifExists().execute();
+  await db.schema.dropTable(productTagTableName).ifExists().execute();
+  await db.schema.dropTable(productCategoryTableName).ifExists().execute();
+  await db.schema.dropTable(productCollectionTableName).ifExists().execute();
+};
+
+const createProductCatalogTables = async (
+  db: Kysely<unknown>
+): Promise<void> => {
+  await db.schema
+    .createTable(productVariantTableName)
+    .ifNotExists()
+    .addColumn("id", "text", (column) => column.primaryKey())
+    .addColumn("product_id", "text", (column) =>
+      column.notNull().references(`${productTableName}.id`).onDelete("cascade")
+    )
+    .addColumn("title", "text", (column) => column.notNull())
+    .addColumn("sku", "text")
+    .addColumn("status", "text", (column) => column.notNull())
+    .addColumn("option_value_ids", "text", (column) => column.notNull())
+    .addColumn("searchable_text", "text")
+    .addColumn("metadata", "text", (column) => column.notNull())
+    .execute();
+
+  await db.schema
+    .createIndex(productVariantProductIndexName)
+    .ifNotExists()
+    .on(productVariantTableName)
+    .column("product_id")
+    .execute();
+
+  await db.schema
+    .createTable(productOptionTableName)
+    .ifNotExists()
+    .addColumn("id", "text", (column) => column.primaryKey())
+    .addColumn("product_id", "text", (column) =>
+      column.notNull().references(`${productTableName}.id`).onDelete("cascade")
+    )
+    .addColumn("title", "text", (column) => column.notNull())
+    .addColumn("metadata", "text", (column) => column.notNull())
+    .execute();
+
+  await db.schema
+    .createIndex(productOptionProductTitleIndexName)
+    .ifNotExists()
+    .unique()
+    .on(productOptionTableName)
+    .columns(["product_id", "title"])
+    .execute();
+
+  await db.schema
+    .createTable(productOptionValueTableName)
+    .ifNotExists()
+    .addColumn("id", "text", (column) => column.primaryKey())
+    .addColumn("option_id", "text", (column) =>
+      column
+        .notNull()
+        .references(`${productOptionTableName}.id`)
+        .onDelete("cascade")
+    )
+    .addColumn("label", "text", (column) => column.notNull())
+    .addColumn("value", "text", (column) => column.notNull())
+    .addColumn("metadata", "text", (column) => column.notNull())
+    .execute();
+
+  await db.schema
+    .createIndex(productOptionValueOptionIndexName)
+    .ifNotExists()
+    .unique()
+    .on(productOptionValueTableName)
+    .columns(["option_id", "value"])
+    .execute();
+
+  await db.schema
+    .createTable(productVariantOptionTableName)
+    .ifNotExists()
+    .addColumn("variant_id", "text", (column) =>
+      column
+        .notNull()
+        .references(`${productVariantTableName}.id`)
+        .onDelete("cascade")
+    )
+    .addColumn("option_value_id", "text", (column) =>
+      column
+        .notNull()
+        .references(`${productOptionValueTableName}.id`)
+        .onDelete("cascade")
+    )
+    .addPrimaryKeyConstraint("product_variant_option_pk", [
+      "variant_id",
+      "option_value_id",
+    ])
+    .execute();
+
+  await db.schema
+    .createTable(productCollectionTableName)
+    .ifNotExists()
+    .addColumn("id", "text", (column) => column.primaryKey())
+    .addColumn("handle", "text", (column) => column.notNull())
+    .addColumn("title", "text", (column) => column.notNull())
+    .execute();
+
+  await db.schema
+    .createIndex(productCollectionHandleIndexName)
+    .ifNotExists()
+    .unique()
+    .on(productCollectionTableName)
+    .column("handle")
+    .execute();
+
+  await db.schema
+    .createTable(productCollectionProductTableName)
+    .ifNotExists()
+    .addColumn("product_id", "text", (column) =>
+      column.notNull().references(`${productTableName}.id`).onDelete("cascade")
+    )
+    .addColumn("product_collection_id", "text", (column) =>
+      column
+        .notNull()
+        .references(`${productCollectionTableName}.id`)
+        .onDelete("cascade")
+    )
+    .addPrimaryKeyConstraint("product_collection_product_pk", [
+      "product_id",
+      "product_collection_id",
+    ])
+    .execute();
+
+  await db.schema
+    .createTable(productCategoryTableName)
+    .ifNotExists()
+    .addColumn("id", "text", (column) => column.primaryKey())
+    .addColumn("handle", "text", (column) => column.notNull())
+    .addColumn("title", "text", (column) => column.notNull())
+    .addColumn("parent_id", "text")
+    .execute();
+
+  await db.schema
+    .createIndex(productCategoryHandleIndexName)
+    .ifNotExists()
+    .unique()
+    .on(productCategoryTableName)
+    .column("handle")
+    .execute();
+
+  await db.schema
+    .createTable(productCategoryProductTableName)
+    .ifNotExists()
+    .addColumn("product_id", "text", (column) =>
+      column.notNull().references(`${productTableName}.id`).onDelete("cascade")
+    )
+    .addColumn("product_category_id", "text", (column) =>
+      column
+        .notNull()
+        .references(`${productCategoryTableName}.id`)
+        .onDelete("cascade")
+    )
+    .addPrimaryKeyConstraint("product_category_product_pk", [
+      "product_id",
+      "product_category_id",
+    ])
+    .execute();
+
+  await db.schema
+    .createTable(productMediaTableName)
+    .ifNotExists()
+    .addColumn("id", "text", (column) => column.primaryKey())
+    .addColumn("product_id", "text", (column) =>
+      column.notNull().references(`${productTableName}.id`).onDelete("cascade")
+    )
+    .addColumn("url", "text", (column) => column.notNull())
+    .addColumn("type", "text", (column) => column.notNull())
+    .addColumn("alt_text", "text")
+    .addColumn("metadata", "text", (column) => column.notNull())
+    .execute();
+
+  await db.schema
+    .createTable(productTagTableName)
+    .ifNotExists()
+    .addColumn("id", "text", (column) => column.primaryKey())
+    .addColumn("value", "text", (column) => column.notNull())
+    .execute();
+
+  await db.schema
+    .createIndex(productTagValueIndexName)
+    .ifNotExists()
+    .unique()
+    .on(productTagTableName)
+    .column("value")
+    .execute();
+
+  await db.schema
+    .createTable(productTagsTableName)
+    .ifNotExists()
+    .addColumn("product_id", "text", (column) =>
+      column.notNull().references(`${productTableName}.id`).onDelete("cascade")
+    )
+    .addColumn("product_tag_id", "text", (column) =>
+      column
+        .notNull()
+        .references(`${productTagTableName}.id`)
+        .onDelete("cascade")
+    )
+    .addPrimaryKeyConstraint("product_tags_pk", [
+      "product_id",
+      "product_tag_id",
+    ])
+    .execute();
+
+  await db.schema
+    .createTable(productTypeTableName)
+    .ifNotExists()
+    .addColumn("id", "text", (column) => column.primaryKey())
+    .addColumn("value", "text", (column) => column.notNull())
+    .execute();
+
+  await db.schema
+    .createIndex(productTypeValueIndexName)
+    .ifNotExists()
+    .unique()
+    .on(productTypeTableName)
+    .column("value")
+    .execute();
+
+  await db.schema
+    .createTable(productTypeProductTableName)
+    .ifNotExists()
+    .addColumn("product_id", "text", (column) =>
+      column.notNull().references(`${productTableName}.id`).onDelete("cascade")
+    )
+    .addColumn("product_type_id", "text", (column) =>
+      column
+        .notNull()
+        .references(`${productTypeTableName}.id`)
+        .onDelete("cascade")
+    )
+    .addPrimaryKeyConstraint("product_type_product_pk", [
+      "product_id",
+      "product_type_id",
+    ])
+    .execute();
+};
+
 export const productMigration: Migration = {
   down: async (db: Kysely<unknown>) => {
-    await db.schema.dropTable(productTypeProductTableName).ifExists().execute();
-    await db.schema.dropTable(productTagsTableName).ifExists().execute();
-    await db.schema
-      .dropTable(productCategoryProductTableName)
-      .ifExists()
-      .execute();
-    await db.schema
-      .dropTable(productCollectionProductTableName)
-      .ifExists()
-      .execute();
-    await db.schema
-      .dropTable(productVariantOptionTableName)
-      .ifExists()
-      .execute();
-    await db.schema.dropTable(productMediaTableName).ifExists().execute();
-    await db.schema.dropTable(productOptionValueTableName).ifExists().execute();
-    await db.schema.dropTable(productOptionTableName).ifExists().execute();
-    await db.schema.dropTable(productVariantTableName).ifExists().execute();
-    await db.schema.dropTable(productTypeTableName).ifExists().execute();
-    await db.schema.dropTable(productTagTableName).ifExists().execute();
-    await db.schema.dropTable(productCategoryTableName).ifExists().execute();
-    await db.schema.dropTable(productCollectionTableName).ifExists().execute();
     await db.schema.dropTable(productTableName).ifExists().execute();
   },
   up: async (db: Kysely<unknown>) => {
@@ -226,11 +463,6 @@ export const productMigration: Migration = {
       .addColumn("handle", "text", (column) => column.notNull())
       .addColumn("title", "text", (column) => column.notNull())
       .addColumn("status", "text", (column) => column.notNull())
-      .addColumn("catalog_metadata", "text", (column) => column.notNull())
-      .addColumn("catalog_searchable_text", "text", (column) =>
-        column.notNull()
-      )
-      .addColumn("catalog_published_at", "integer")
       .addColumn("created_at", "integer", (column) => column.notNull())
       .addColumn("updated_at", "integer", (column) => column.notNull())
       .execute();
@@ -242,259 +474,43 @@ export const productMigration: Migration = {
       .on(productTableName)
       .column("handle")
       .execute();
+  },
+};
 
+export const productCatalogMigration: Migration = {
+  down: async (db: Kysely<unknown>) => {
+    await dropProductCatalogTables(db);
     await db.schema
-      .createTable(productVariantTableName)
-      .ifNotExists()
-      .addColumn("id", "text", (column) => column.primaryKey())
-      .addColumn("product_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productTableName}.id`)
-          .onDelete("cascade")
+      .alterTable(productTableName)
+      .dropColumn("catalog_published_at")
+      .execute();
+    await db.schema
+      .alterTable(productTableName)
+      .dropColumn("catalog_searchable_text")
+      .execute();
+    await db.schema
+      .alterTable(productTableName)
+      .dropColumn("catalog_metadata")
+      .execute();
+  },
+  up: async (db: Kysely<unknown>) => {
+    await db.schema
+      .alterTable(productTableName)
+      .addColumn("catalog_metadata", "text", (column) =>
+        column.notNull().defaultTo("{}")
       )
-      .addColumn("title", "text", (column) => column.notNull())
-      .addColumn("sku", "text")
-      .addColumn("status", "text", (column) => column.notNull())
-      .addColumn("option_value_ids", "text", (column) => column.notNull())
-      .addColumn("searchable_text", "text")
-      .addColumn("metadata", "text", (column) => column.notNull())
       .execute();
-
     await db.schema
-      .createIndex(productVariantProductIndexName)
-      .ifNotExists()
-      .on(productVariantTableName)
-      .column("product_id")
-      .execute();
-
-    await db.schema
-      .createTable(productOptionTableName)
-      .ifNotExists()
-      .addColumn("id", "text", (column) => column.primaryKey())
-      .addColumn("product_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productTableName}.id`)
-          .onDelete("cascade")
+      .alterTable(productTableName)
+      .addColumn("catalog_searchable_text", "text", (column) =>
+        column.notNull().defaultTo("")
       )
-      .addColumn("title", "text", (column) => column.notNull())
-      .addColumn("metadata", "text", (column) => column.notNull())
+      .execute();
+    await db.schema
+      .alterTable(productTableName)
+      .addColumn("catalog_published_at", "integer")
       .execute();
 
-    await db.schema
-      .createIndex(productOptionProductTitleIndexName)
-      .ifNotExists()
-      .unique()
-      .on(productOptionTableName)
-      .columns(["product_id", "title"])
-      .execute();
-
-    await db.schema
-      .createTable(productOptionValueTableName)
-      .ifNotExists()
-      .addColumn("id", "text", (column) => column.primaryKey())
-      .addColumn("option_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productOptionTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addColumn("label", "text", (column) => column.notNull())
-      .addColumn("value", "text", (column) => column.notNull())
-      .addColumn("metadata", "text", (column) => column.notNull())
-      .execute();
-
-    await db.schema
-      .createIndex(productOptionValueOptionIndexName)
-      .ifNotExists()
-      .unique()
-      .on(productOptionValueTableName)
-      .columns(["option_id", "value"])
-      .execute();
-
-    await db.schema
-      .createTable(productVariantOptionTableName)
-      .ifNotExists()
-      .addColumn("variant_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productVariantTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addColumn("option_value_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productOptionValueTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addPrimaryKeyConstraint("product_variant_option_pk", [
-        "variant_id",
-        "option_value_id",
-      ])
-      .execute();
-
-    await db.schema
-      .createTable(productCollectionTableName)
-      .ifNotExists()
-      .addColumn("id", "text", (column) => column.primaryKey())
-      .addColumn("handle", "text", (column) => column.notNull())
-      .addColumn("title", "text", (column) => column.notNull())
-      .execute();
-
-    await db.schema
-      .createIndex(productCollectionHandleIndexName)
-      .ifNotExists()
-      .unique()
-      .on(productCollectionTableName)
-      .column("handle")
-      .execute();
-
-    await db.schema
-      .createTable(productCollectionProductTableName)
-      .ifNotExists()
-      .addColumn("product_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addColumn("product_collection_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productCollectionTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addPrimaryKeyConstraint("product_collection_product_pk", [
-        "product_id",
-        "product_collection_id",
-      ])
-      .execute();
-
-    await db.schema
-      .createTable(productCategoryTableName)
-      .ifNotExists()
-      .addColumn("id", "text", (column) => column.primaryKey())
-      .addColumn("handle", "text", (column) => column.notNull())
-      .addColumn("title", "text", (column) => column.notNull())
-      .addColumn("parent_id", "text")
-      .execute();
-
-    await db.schema
-      .createIndex(productCategoryHandleIndexName)
-      .ifNotExists()
-      .unique()
-      .on(productCategoryTableName)
-      .column("handle")
-      .execute();
-
-    await db.schema
-      .createTable(productCategoryProductTableName)
-      .ifNotExists()
-      .addColumn("product_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addColumn("product_category_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productCategoryTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addPrimaryKeyConstraint("product_category_product_pk", [
-        "product_id",
-        "product_category_id",
-      ])
-      .execute();
-
-    await db.schema
-      .createTable(productMediaTableName)
-      .ifNotExists()
-      .addColumn("id", "text", (column) => column.primaryKey())
-      .addColumn("product_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addColumn("url", "text", (column) => column.notNull())
-      .addColumn("type", "text", (column) => column.notNull())
-      .addColumn("alt_text", "text")
-      .addColumn("metadata", "text", (column) => column.notNull())
-      .execute();
-
-    await db.schema
-      .createTable(productTagTableName)
-      .ifNotExists()
-      .addColumn("id", "text", (column) => column.primaryKey())
-      .addColumn("value", "text", (column) => column.notNull())
-      .execute();
-
-    await db.schema
-      .createIndex(productTagValueIndexName)
-      .ifNotExists()
-      .unique()
-      .on(productTagTableName)
-      .column("value")
-      .execute();
-
-    await db.schema
-      .createTable(productTagsTableName)
-      .ifNotExists()
-      .addColumn("product_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addColumn("product_tag_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productTagTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addPrimaryKeyConstraint("product_tags_pk", [
-        "product_id",
-        "product_tag_id",
-      ])
-      .execute();
-
-    await db.schema
-      .createTable(productTypeTableName)
-      .ifNotExists()
-      .addColumn("id", "text", (column) => column.primaryKey())
-      .addColumn("value", "text", (column) => column.notNull())
-      .execute();
-
-    await db.schema
-      .createIndex(productTypeValueIndexName)
-      .ifNotExists()
-      .unique()
-      .on(productTypeTableName)
-      .column("value")
-      .execute();
-
-    await db.schema
-      .createTable(productTypeProductTableName)
-      .ifNotExists()
-      .addColumn("product_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addColumn("product_type_id", "text", (column) =>
-        column
-          .notNull()
-          .references(`${productTypeTableName}.id`)
-          .onDelete("cascade")
-      )
-      .addPrimaryKeyConstraint("product_type_product_pk", [
-        "product_id",
-        "product_type_id",
-      ])
-      .execute();
+    await createProductCatalogTables(db);
   },
 };

@@ -24,6 +24,7 @@ export {
   productCollectionHandleIndexName,
   productCollectionProductTableName,
   productCollectionTableName,
+  productCatalogMigration,
   productHandleIndexName,
   productMediaTableName,
   productMigration,

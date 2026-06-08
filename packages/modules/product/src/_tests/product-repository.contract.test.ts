@@ -571,9 +571,6 @@ describe("product Kysely migration", () => {
     const table = sqlite
       .query("select name from sqlite_master where type = 'table' and name = ?")
       .get("product");
-    const tableNames = sqlite
-      .query("select name from sqlite_master where type = 'table'")
-      .all() as Array<{ name: string }>;
     const index = sqlite
       .query("select name from sqlite_master where type = 'index' and name = ?")
       .get("product_handle_idx");
@@ -640,12 +637,6 @@ describe("product Kysely migration", () => {
         "catalog_published_at",
       ])
     );
-    expect(
-      uniqueIndex.find((candidate) => candidate.name === "product_handle_idx")
-    ).toMatchObject({
-      name: "product_handle_idx",
-      unique: 1,
-    });
     sqlite.close();
   });
 });

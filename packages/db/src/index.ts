@@ -2,7 +2,7 @@ import type { Kysely } from "kysely";
 
 import { authMigration } from "./schema/auth";
 import type { AuthDatabase } from "./schema/auth";
-import { productMigration } from "./schema/product";
+import { productCatalogMigration, productMigration } from "./schema/product";
 import type { ProductDatabase } from "./schema/product";
 import { regionSalesChannelMigration } from "./schema/region-sales-channel";
 import type { RegionSalesChannelDatabase } from "./schema/region-sales-channel";
@@ -43,4 +43,5 @@ export const commerceMigrations = {
   "001_store": storeMigration,
   "002_product": productMigration,
   "003_region_sales_channel": regionSalesChannelMigration,
+  "004_product_catalog": productCatalogMigration,
 } as const;

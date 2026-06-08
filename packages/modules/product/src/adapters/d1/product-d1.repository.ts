@@ -1,4 +1,4 @@
-import type { Insertable, Kysely } from "kysely";
+import type { AnyColumn, Insertable, Kysely } from "kysely";
 
 import type {
   ProductCategoryRow,
@@ -53,7 +53,7 @@ const insertValuesIgnoringConflicts = async <
   db: ProductD1Database,
   table: Table,
   values: readonly Insertable<ProductDatabase[Table]>[],
-  conflictColumn: keyof ProductDatabase[Table]
+  conflictColumn: AnyColumn<ProductDatabase, Table>
 ): Promise<void> => {
   if (values.length === 0) {
     return;

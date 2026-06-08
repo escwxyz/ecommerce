@@ -1,4 +1,5 @@
 export {
+  productCatalogMigration,
   productHandleIndexName,
   productMigration,
   productSchema,
