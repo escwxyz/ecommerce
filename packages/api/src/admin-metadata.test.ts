@@ -71,6 +71,7 @@ describe("admin metadata API", () => {
       "module:product:resource",
       "module:region-sales-channel:regions-navigation",
       "module:region-sales-channel:regions-resource",
+      "module:product:catalog-structure",
       "module:region-sales-channel:sales-channels-navigation",
       "module:region-sales-channel:sales-channels-resource",
     ]);

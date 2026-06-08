@@ -1,5 +1,7 @@
 import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import type { D1Database } from "@cloudflare/workers-types";
 import { columnExists, indexExists, tableExists } from "@ecommerce/db";
@@ -119,6 +121,42 @@ describe("db d1 adapter", () => {
     );
     await expect(indexExists(database.db, "product_handle_idx")).resolves.toBe(
       true
+    );
+
+    sqlite.close();
+  });
+
+  it("ships SQL migrations for normalized product catalog tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(readFileSync(join(migrationsDir, "0001_product.sql"), "utf8"));
+    sqlite.exec(
+      readFileSync(join(migrationsDir, "0002_product_catalog.sql"), "utf8")
+    );
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "product",
+        "product_variant",
+        "product_option",
+        "product_option_value",
+        "product_variant_option",
+        "product_collection",
+        "product_collection_product",
+        "product_category",
+        "product_category_product",
+        "product_media",
+        "product_tag",
+        "product_tags",
+        "product_type",
+        "product_type_product",
+      ])
     );
 
     sqlite.close();

@@ -203,6 +203,8 @@ Most formatting and common issues are automatically fixed by Oxlint + Oxfmt. Run
 ### Repo workflows
 
 - Start the full local stack: `bun run dev`
+- Start only the web app: `bun run dev:web`
+- Start only the server: `bun run dev:server`
 - Build everything: `bun run build`
 - Check types across apps: `bun run check-types`
 - Run local tests: `bun run test`
@@ -210,6 +212,8 @@ Most formatting and common issues are automatically fixed by Oxlint + Oxfmt. Run
 - Deploy or destroy the selected infra stage: `bun run deploy` / `bun run destroy`
 - Generate or push D1 schema changes: `bun run db:generate` / `bun run db:push`
 - Run formatting and lint checks or fixes: `bun run check` / `bun run fix`
+- Add shared UI primitives: `npx shadcn@latest add accordion dialog popover sheet table -c packages/ui`
+- Add app-specific UI blocks by running the shadcn CLI from `apps/web`
 
 ### OpenSpec workflows
 

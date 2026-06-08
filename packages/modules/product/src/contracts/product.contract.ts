@@ -6,6 +6,9 @@ import {
   ProductApiListSchema,
   ProductApiRecordSchema,
   ProductIdentifierSchema,
+  ProductVariantValidationInputSchema,
+  ProductVariantValidationResultSchema,
+  UpdateProductCatalogInputSchema,
 } from "../domain";
 
 export const productContractRouter = {
@@ -31,6 +34,18 @@ export const productContractRouter = {
   })
     .input(ProductIdentifierSchema)
     .output(ProductApiRecordSchema.nullable()),
+  productCatalogUpdate: defineApiContractRoute({
+    description:
+      "Update product-owned catalog structure such as variants, options, collections, categories, media, tags, metadata, and publishable/search attributes.",
+    method: "PUT",
+    operationId: "productCatalogUpdate",
+    path: "/products/{id}/catalog",
+    successDescription: "Product catalog updated.",
+    summary: "Update product catalog",
+    tags: ["Products"],
+  })
+    .input(UpdateProductCatalogInputSchema)
+    .output(ProductApiRecordSchema),
   productList: defineApiContractRoute({
     description: "List draft-capable products for admin product management.",
     method: "GET",
@@ -42,4 +57,16 @@ export const productContractRouter = {
   })
     .input(z.unknown())
     .output(ProductApiListSchema),
+  productVariantValidate: defineApiContractRoute({
+    description:
+      "Validate product and variant catalog identity for downstream cart workflows without exposing product repository internals.",
+    method: "POST",
+    operationId: "productVariantValidate",
+    path: "/products/{productId}/variants/{variantId}/validate",
+    successDescription: "Variant validation returned.",
+    summary: "Validate product variant",
+    tags: ["Products"],
+  })
+    .input(ProductVariantValidationInputSchema)
+    .output(ProductVariantValidationResultSchema),
 } as const;

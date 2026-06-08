@@ -15,7 +15,9 @@ export const productAdminMetadata = {
       key: "navigation",
       label: "Products",
       operations: {
+        create: { key: "productCreate" },
         list: { key: "productList" },
+        update: { key: "productCatalogUpdate" },
       },
       order: 20,
       path: "/dashboard",
@@ -31,6 +33,14 @@ export const productAdminMetadata = {
         create: {
           key: "productCreate",
           permission: productPermissions.write,
+        },
+        update: {
+          key: "productCatalogUpdate",
+          permission: productPermissions.write,
+        },
+        validateVariant: {
+          key: "productVariantValidate",
+          permission: productPermissions.read,
         },
         list: {
           key: "productList",
@@ -53,6 +63,43 @@ export const productAdminMetadata = {
         },
       ],
       title: "Product catalog",
+    },
+    {
+      description:
+        "Manage product-owned variants, options, collections, categories, media, tags, metadata, and publishable/search attributes.",
+      kind: "resource",
+      key: "catalog-structure",
+      label: "Catalog structure",
+      operations: {
+        read: {
+          key: "productGet",
+          permission: productPermissions.read,
+        },
+        update: {
+          key: "productCatalogUpdate",
+          permission: productPermissions.write,
+        },
+        validateVariant: {
+          key: "productVariantValidate",
+          permission: productPermissions.read,
+        },
+      },
+      order: 40,
+      path: "/dashboard",
+      permission: productPermissions.write,
+      primitives: [
+        {
+          kind: "form",
+          key: "product-catalog-structure-form",
+          operation: { key: "productCatalogUpdate" },
+        },
+        {
+          kind: "table",
+          key: "product-variant-table",
+          operation: { key: "productGet" },
+        },
+      ],
+      title: "Catalog structure",
     },
   ],
 } as const satisfies AdminMetadataContribution;
