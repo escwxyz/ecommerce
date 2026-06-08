@@ -181,6 +181,92 @@ describe("product module foundation", () => {
     });
   });
 
+  it("updates existing catalog metadata without re-adding existing rows", async () => {
+    const service = createProductService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["prod_existing_catalog"]),
+      repository: createInMemoryProductRepository(),
+    });
+    const created = await service.createProductDraft({
+      handle: "existing-catalog-shirt",
+      status: "active",
+      title: "Existing Catalog Shirt",
+    });
+
+    await service.addProductOption({
+      option: {
+        id: "opt_size",
+        title: "Size",
+        values: [{ id: "optval_medium", label: "Medium", value: "M" }],
+      },
+      productId: created.id,
+    });
+    await service.addProductVariant({
+      productId: created.id,
+      variant: {
+        id: "variant_medium",
+        optionValueIds: ["optval_medium"],
+        sku: "EX-M",
+        status: "active",
+        title: "Medium",
+      },
+    });
+    await service.addProductCollection({
+      collection: {
+        handle: "summer",
+        id: "pcol_summer",
+        title: "Summer",
+      },
+      productId: created.id,
+    });
+    await service.addProductCategory({
+      category: {
+        handle: "shirts",
+        id: "pcat_shirts",
+        title: "Shirts",
+      },
+      productId: created.id,
+    });
+    await service.addProductMedia({
+      media: {
+        id: "img_front",
+        metadata: {},
+        type: "image",
+        url: "https://example.com/front.jpg",
+      },
+      productId: created.id,
+    });
+    await service.addProductTag({
+      productId: created.id,
+      tag: "featured",
+    });
+
+    const updated = await service.updateProductCatalog({
+      catalog: {
+        metadata: { season: "summer" },
+        searchableText: "Existing Catalog Shirt summer drop",
+      },
+      id: created.id,
+    });
+
+    expect(updated.catalog).toMatchObject({
+      categories: [{ id: "pcat_shirts" }],
+      collections: [{ id: "pcol_summer" }],
+      media: [{ id: "img_front" }],
+      metadata: { season: "summer" },
+      options: [{ id: "opt_size" }],
+      searchableText: "Existing Catalog Shirt summer drop",
+      tags: ["featured"],
+      variants: [{ id: "variant_medium" }],
+    });
+    expect(updated.catalog.options).toHaveLength(1);
+    expect(updated.catalog.variants).toHaveLength(1);
+    expect(updated.catalog.collections).toHaveLength(1);
+    expect(updated.catalog.categories).toHaveLength(1);
+    expect(updated.catalog.media).toHaveLength(1);
+    expect(updated.catalog.tags).toHaveLength(1);
+  });
+
   it("rejects variants that reference unknown option values", async () => {
     const service = createProductService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),

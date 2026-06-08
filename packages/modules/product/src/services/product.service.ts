@@ -314,56 +314,15 @@ export const createProductService = ({
     });
   },
   updateProductCatalog: async (input) => {
-    let product = await requireProduct(repository, createProductId(input.id));
+    const product = await requireProduct(repository, createProductId(input.id));
     const catalog = mergeProductCatalog(product.catalog, input.catalog);
     validateCatalogStructure(catalog);
 
-    product = await repository.setProductCatalogMetadata({
-      metadata: catalog.metadata,
-      productId: product.id,
-      publishedAt: catalog.publishedAt,
-      searchableText: catalog.searchableText,
-    });
-
-    for (const option of catalog.options) {
-      product = await repository.addProductOption(product.id, {
-        ...option,
-        values: [],
-      });
-
-      for (const value of option.values) {
-        product = await repository.addProductOptionValue({
-          optionId: option.id,
-          productId: product.id,
-          value,
-        });
-      }
-    }
-
-    for (const variant of catalog.variants) {
-      product = await repository.addProductVariant(product.id, variant);
-    }
-
-    for (const collection of catalog.collections) {
-      product = await repository.addProductCollection(product.id, collection);
-    }
-
-    for (const category of catalog.categories) {
-      product = await repository.addProductCategory(product.id, category);
-    }
-
-    for (const media of catalog.media) {
-      product = await repository.addProductMedia(product.id, media);
-    }
-
-    for (const tag of catalog.tags) {
-      product = await repository.addProductTag(product.id, tag);
-    }
-
-    return {
+    return repository.updateProduct({
       ...product,
+      catalog,
       updatedAt: clock.now(),
-    };
+    });
   },
   validateProductVariant: async ({ productId, variantId }) => {
     const product = await repository.findProductById(productId);

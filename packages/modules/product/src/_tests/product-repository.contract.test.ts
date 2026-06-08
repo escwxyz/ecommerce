@@ -559,6 +559,108 @@ describe("D1 product repository persistence constraints", () => {
 
     sqlite.close();
   });
+
+  it("updates an existing catalog without re-inserting existing D1 rows", async () => {
+    const sqlite = new Database(":memory:");
+    createSqliteProductTable(sqlite);
+    const db = createKyselyD1ProductDatabase(sqlite);
+    const repository = createD1ProductRepository({ db });
+    const service = createProductService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      repository,
+    });
+    const createdAt = new Date("2026-01-01T00:00:00.000Z");
+    const product = {
+      ...createProductRecord("prod_update_existing_catalog", createdAt),
+      catalog: {
+        ...emptyCatalog,
+        categories: [
+          {
+            handle: "shirts",
+            id: "pcat_shirts",
+            title: "Shirts",
+          },
+        ],
+        collections: [
+          {
+            handle: "summer",
+            id: "pcol_summer",
+            title: "Summer",
+          },
+        ],
+        media: [
+          {
+            id: "img_front",
+            metadata: {},
+            type: "image" as const,
+            url: "https://example.com/front.jpg",
+          },
+        ],
+        options: [
+          {
+            id: "opt_size",
+            metadata: {},
+            title: "Size",
+            values: [
+              {
+                id: "optval_medium",
+                label: "Medium",
+                metadata: {},
+                value: "M",
+              },
+            ],
+          },
+        ],
+        tags: ["featured"],
+        variants: [
+          {
+            id: "variant_medium",
+            metadata: {},
+            optionValueIds: ["optval_medium"],
+            status: "active" as const,
+            title: "Medium",
+          },
+        ],
+      },
+    };
+
+    await repository.saveProduct(product);
+
+    await expect(
+      service.updateProductCatalog({
+        catalog: {
+          metadata: { season: "summer" },
+          searchableText: "Existing catalog updated",
+        },
+        id: product.id,
+      })
+    ).resolves.toMatchObject({
+      catalog: {
+        metadata: { season: "summer" },
+        options: [{ id: "opt_size" }],
+        variants: [{ id: "variant_medium" }],
+      },
+    });
+
+    const countRows = (tableName: string) =>
+      sqlite.query(`select count(*) as count from ${tableName}`).get() as {
+        count: number;
+      };
+
+    expect(countRows("product_option").count).toBe(1);
+    expect(countRows("product_option_value").count).toBe(1);
+    expect(countRows("product_variant").count).toBe(1);
+    expect(countRows("product_variant_option").count).toBe(1);
+    expect(countRows("product_collection").count).toBe(1);
+    expect(countRows("product_collection_product").count).toBe(1);
+    expect(countRows("product_category").count).toBe(1);
+    expect(countRows("product_category_product").count).toBe(1);
+    expect(countRows("product_media").count).toBe(1);
+    expect(countRows("product_tag").count).toBe(1);
+    expect(countRows("product_tags").count).toBe(1);
+
+    sqlite.close();
+  });
 });
 
 describe("product Kysely migration", () => {
