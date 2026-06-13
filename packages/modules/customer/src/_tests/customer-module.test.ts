@@ -90,6 +90,29 @@ describe("customer module foundation", () => {
     ).toBe("store-admin");
   });
 
+  it("rejects creating two customer profiles for the same auth user", async () => {
+    const service = createCustomerService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["cust_1", "cust_2"]),
+      repository: createInMemoryCustomerRepository(),
+    });
+
+    await service.createCustomer({
+      authUserId: "user_duplicate",
+      email: "first@example.com",
+    });
+
+    await expect(
+      service.createCustomer({
+        authUserId: "user_duplicate",
+        email: "second@example.com",
+      })
+    ).rejects.toThrow('Auth user "user_duplicate" is already linked.');
+    await expect(
+      service.resolveCustomerFromAuthUserId("user_duplicate")
+    ).resolves.toMatchObject({ id: "cust_1" });
+  });
+
   it("declares contract-first customer route metadata", () => {
     expect(customerContractRouter.customerCreate["~orpc"].route.method).toBe(
       "POST"

@@ -125,6 +125,18 @@ const requireUniqueEmail = async (
   }
 };
 
+const requireUniqueAuthUser = async (
+  repository: CustomerRepository,
+  authUserId: string,
+  currentCustomerId?: CustomerId
+): Promise<void> => {
+  const existing = await repository.findCustomerByAuthUserId(authUserId);
+
+  if (existing && existing.id !== currentCustomerId) {
+    throw new Error(`Auth user "${authUserId}" is already linked.`);
+  }
+};
+
 const createPrefixedId = (
   idGenerator: IdGeneratorServiceShape,
   prefix: string
@@ -174,6 +186,10 @@ export const createCustomerService = ({
     createCustomer: async (input) => {
       const email = normalizeEmail(input.email);
       await requireUniqueEmail(repository, email);
+      if (input.authUserId) {
+        await requireUniqueAuthUser(repository, input.authUserId);
+      }
+
       const now = clock.now();
       const customer: CustomerProfile = {
         addresses: [],
@@ -226,12 +242,7 @@ export const createCustomerService = ({
         : null;
     },
     linkCustomerAuth: async ({ authUserId, customerId }) => {
-      const existing = await repository.findCustomerByAuthUserId(authUserId);
-
-      if (existing && existing.id !== customerId) {
-        throw new Error(`Auth user "${authUserId}" is already linked.`);
-      }
-
+      await requireUniqueAuthUser(repository, authUserId, customerId);
       await requireCustomer(repository, customerId);
 
       return repository.linkCustomerAuth({ authUserId, customerId });
