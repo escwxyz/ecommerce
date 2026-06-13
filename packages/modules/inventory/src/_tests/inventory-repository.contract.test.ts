@@ -145,6 +145,67 @@ const runInventoryRepositoryContract = (
         event,
       ]);
     });
+
+    it("atomically reserves only available stock", async () => {
+      const repository = await setup();
+      const item = createInventoryItem();
+      const location = createStockLocation();
+      const level = {
+        createdAt,
+        id: createInventoryLevelId("ilvl_atomic"),
+        inventoryItemId: item.id,
+        reservedQuantity: 0,
+        stockLocationId: location.id,
+        stockedQuantity: 1,
+        updatedAt: createdAt,
+      };
+      const firstReservation = {
+        causationId: null,
+        correlationId: "corr_atomic_1",
+        createdAt,
+        id: createInventoryReservationId("ires_atomic_1"),
+        idempotencyKey: "reserve_atomic_1",
+        inventoryItemId: item.id,
+        quantity: 1,
+        releasedAt: null,
+        salesChannelId: "sc_contract",
+        status: "active" as const,
+        stockLocationId: location.id,
+        updatedAt: createdAt,
+        workflowRunId: null,
+      };
+      const secondReservation = {
+        ...firstReservation,
+        correlationId: "corr_atomic_2",
+        id: createInventoryReservationId("ires_atomic_2"),
+        idempotencyKey: "reserve_atomic_2",
+      };
+
+      await repository.saveInventoryItem(item);
+      await repository.saveStockLocation(location);
+      await repository.saveLevel(level);
+
+      await expect(
+        repository.saveReservationIfAvailable(firstReservation)
+      ).resolves.toEqual({
+        reservation: firstReservation,
+        status: "reserved",
+      });
+      await expect(
+        repository.saveReservationIfAvailable(secondReservation)
+      ).resolves.toEqual({
+        status: "insufficient-stock",
+      });
+      await expect(repository.findLevel(item.id, location.id)).resolves.toEqual(
+        {
+          ...level,
+          reservedQuantity: 1,
+        }
+      );
+      await expect(
+        repository.findReservationsForLevel(item.id, location.id)
+      ).resolves.toEqual([firstReservation]);
+    });
   });
 };
 

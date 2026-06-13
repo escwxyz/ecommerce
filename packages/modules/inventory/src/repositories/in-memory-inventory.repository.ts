@@ -5,6 +5,7 @@ import type {
   InventoryLevelRecord,
   InventoryRepository,
   InventoryReservationRecord,
+  InventoryReservationSaveResult,
   StockLocationId,
   StockLocationRecord,
 } from "../domain";
@@ -167,12 +168,60 @@ export class InMemoryInventoryRepository implements ResettableInventoryRepositor
     return Promise.resolve(level);
   }
 
+  saveReservationIfAvailable(
+    reservation: InventoryReservationRecord
+  ): Promise<InventoryReservationSaveResult> {
+    const duplicate = this.#reservationIdempotency.get(
+      reservation.idempotencyKey
+    );
+
+    if (duplicate) {
+      return Promise.resolve({
+        reservation: duplicate,
+        status: "duplicate",
+      });
+    }
+
+    const levelKey = toLevelKey(
+      reservation.inventoryItemId,
+      reservation.stockLocationId
+    );
+    const level = this.#levels.get(levelKey);
+
+    if (!level) {
+      return Promise.resolve({ status: "insufficient-stock" });
+    }
+
+    const availableQuantity = level.stockedQuantity - level.reservedQuantity;
+
+    if (availableQuantity < reservation.quantity) {
+      return Promise.resolve({ status: "insufficient-stock" });
+    }
+
+    this.#levels.set(levelKey, {
+      ...level,
+      reservedQuantity: level.reservedQuantity + reservation.quantity,
+      updatedAt: reservation.updatedAt,
+    });
+    this.#reservations.set(reservation.id, reservation);
+    this.#reservationIdempotency.set(reservation.idempotencyKey, reservation);
+
+    return Promise.resolve({
+      reservation,
+      status: "reserved",
+    });
+  }
+
   saveReservation(
     reservation: InventoryReservationRecord
   ): Promise<InventoryReservationRecord> {
-    this.#reservations.set(reservation.id, reservation);
-    this.#reservationIdempotency.set(reservation.idempotencyKey, reservation);
-    return Promise.resolve(reservation);
+    return this.saveReservationIfAvailable(reservation).then((result) => {
+      if (result.status !== "reserved") {
+        throw new Error("Inventory reservation could not be saved.");
+      }
+
+      return result.reservation;
+    });
   }
 
   saveStockLocation(

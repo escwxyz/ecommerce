@@ -28,6 +28,8 @@
         "@ecommerce/auth": "workspace:*",
         "@ecommerce/db-d1": "workspace:*",
         "@ecommerce/env": "workspace:*",
+        "@ecommerce/inventory": "workspace:*",
+        "@ecommerce/platform-cloudflare": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
         "@ecommerce/promotion": "workspace:*",

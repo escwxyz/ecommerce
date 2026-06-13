@@ -126,6 +126,15 @@ export type ReservationResultApiRecord = z.infer<
   typeof ReservationResultApiSchema
 >;
 
+export type InventoryReservationSaveResult =
+  | {
+      readonly reservation: InventoryReservationRecord;
+      readonly status: "duplicate" | "reserved";
+    }
+  | {
+      readonly status: "insufficient-stock";
+    };
+
 export interface InventoryRepository {
   findAdjustmentEvents(
     inventoryItemId: InventoryItemId
@@ -155,6 +164,9 @@ export interface InventoryRepository {
   ): Promise<InventoryAdjustmentEventRecord>;
   saveInventoryItem(item: InventoryItemRecord): Promise<InventoryItemRecord>;
   saveLevel(level: InventoryLevelRecord): Promise<InventoryLevelRecord>;
+  saveReservationIfAvailable(
+    reservation: InventoryReservationRecord
+  ): Promise<InventoryReservationSaveResult>;
   saveReservation(
     reservation: InventoryReservationRecord
   ): Promise<InventoryReservationRecord>;

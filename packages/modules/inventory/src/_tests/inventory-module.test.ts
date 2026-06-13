@@ -8,8 +8,15 @@ import {
 import { call } from "@orpc/server";
 
 import { inventoryContractRouter } from "../contracts";
+import type {
+  InventoryItemId,
+  InventoryRepository,
+  InventoryReservationRecord,
+  StockLocationId,
+} from "../domain";
 import { inventoryModule } from "../module";
 import { createResettableInMemoryInventoryRepository } from "../repositories";
+import type { ResettableInventoryRepository } from "../repositories";
 import { createInventoryRouteFragment } from "../router";
 import { createInventoryService } from "../services";
 
@@ -28,6 +35,80 @@ const createAllowedContext = () =>
       },
     },
   }) as const;
+
+class RacingAvailabilityInventoryRepository implements InventoryRepository {
+  readonly #base: ResettableInventoryRepository;
+  #releaseAvailabilityReads: (() => void) | null = null;
+  #availabilityReadCount = 0;
+  readonly #availabilityBarrier = new Promise<void>((resolve) => {
+    this.#releaseAvailabilityReads = resolve;
+  });
+
+  constructor(base: ResettableInventoryRepository) {
+    this.#base = base;
+  }
+
+  findAdjustmentEvents: InventoryRepository["findAdjustmentEvents"] = (
+    inventoryItemId
+  ) => this.#base.findAdjustmentEvents(inventoryItemId);
+
+  findInventoryItemById: InventoryRepository["findInventoryItemById"] = (id) =>
+    this.#base.findInventoryItemById(id);
+
+  findLevel: InventoryRepository["findLevel"] = (
+    inventoryItemId,
+    stockLocationId
+  ) => this.#base.findLevel(inventoryItemId, stockLocationId);
+
+  findReservationByIdempotencyKey: InventoryRepository["findReservationByIdempotencyKey"] =
+    (idempotencyKey) =>
+      this.#base.findReservationByIdempotencyKey(idempotencyKey);
+
+  async findReservationsForLevel(
+    inventoryItemId: InventoryItemId,
+    stockLocationId: StockLocationId
+  ): Promise<readonly InventoryReservationRecord[]> {
+    this.#availabilityReadCount += 1;
+
+    if (this.#availabilityReadCount === 2) {
+      this.#releaseAvailabilityReads?.();
+    }
+
+    if (this.#availabilityReadCount <= 2) {
+      await this.#availabilityBarrier;
+    }
+
+    return this.#base.findReservationsForLevel(
+      inventoryItemId,
+      stockLocationId
+    );
+  }
+
+  findStockLocationById: InventoryRepository["findStockLocationById"] = (id) =>
+    this.#base.findStockLocationById(id);
+
+  listStockLocationsForSalesChannel: InventoryRepository["listStockLocationsForSalesChannel"] =
+    (salesChannelId) =>
+      this.#base.listStockLocationsForSalesChannel(salesChannelId);
+
+  saveAdjustmentEvent: InventoryRepository["saveAdjustmentEvent"] = (event) =>
+    this.#base.saveAdjustmentEvent(event);
+
+  saveInventoryItem: InventoryRepository["saveInventoryItem"] = (item) =>
+    this.#base.saveInventoryItem(item);
+
+  saveLevel: InventoryRepository["saveLevel"] = (level) =>
+    this.#base.saveLevel(level);
+
+  saveReservationIfAvailable: InventoryRepository["saveReservationIfAvailable"] =
+    (reservation) => this.#base.saveReservationIfAvailable(reservation);
+
+  saveReservation: InventoryRepository["saveReservation"] = (reservation) =>
+    this.#base.saveReservation(reservation);
+
+  saveStockLocation: InventoryRepository["saveStockLocation"] = (location) =>
+    this.#base.saveStockLocation(location);
+}
 
 describe("inventory module foundation", () => {
   it("declares service, schema, events, permissions, workflow steps, and extension points", () => {
@@ -137,6 +218,70 @@ describe("inventory module foundation", () => {
     expect(eventCollector.events.map((event) => event.name)).toEqual([
       "inventory.reserved",
     ]);
+  });
+
+  it("rejects concurrent reservations with different idempotency keys when stock is exhausted", async () => {
+    const baseRepository = createResettableInMemoryInventoryRepository();
+    const repository = new RacingAvailabilityInventoryRepository(
+      baseRepository
+    );
+    const service = createInventoryService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "iitem_race",
+        "sloc_race",
+        "ilvl_race",
+        "ires_race_1",
+        "evt_race_1",
+        "ires_race_2",
+        "evt_race_2",
+      ]),
+      repository,
+    });
+    const item = await service.createInventoryItem({
+      sku: "race-sku",
+      title: "Race item",
+    });
+    const location = await service.createStockLocation({
+      name: "Race warehouse",
+      salesChannelIds: ["sc_race"],
+    });
+    await service.setInventoryLevel({
+      inventoryItemId: item.id,
+      stockLocationId: location.id,
+      stockedQuantity: 1,
+    });
+
+    const results = await Promise.allSettled([
+      service.reserveInventory({
+        correlationId: "checkout_race_1",
+        idempotencyKey: "reserve_race_1",
+        inventoryItemId: item.id,
+        quantity: 1,
+        salesChannelId: "sc_race",
+        stockLocationId: location.id,
+      }),
+      service.reserveInventory({
+        correlationId: "checkout_race_2",
+        idempotencyKey: "reserve_race_2",
+        inventoryItemId: item.id,
+        quantity: 1,
+        salesChannelId: "sc_race",
+        stockLocationId: location.id,
+      }),
+    ]);
+    const reservations = await baseRepository.findReservationsForLevel(
+      item.id,
+      location.id
+    );
+
+    expect(
+      results.filter((result) => result.status === "fulfilled")
+    ).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === "rejected")
+    ).toHaveLength(1);
+    expect(reservations).toHaveLength(1);
   });
 
   it("records stock adjustments with correlation metadata", async () => {

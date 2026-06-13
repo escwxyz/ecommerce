@@ -86,6 +86,7 @@ export type {
   InventoryReservationApiRecord,
   InventoryReservationId,
   InventoryReservationRecord,
+  InventoryReservationSaveResult,
   InventoryReservationStatus,
   ReserveInventoryInput,
   ReservationResult,

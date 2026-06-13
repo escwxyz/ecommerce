@@ -109,33 +109,17 @@ const createId = (prefix: string, idGenerator: IdGeneratorServiceShape) => {
   return rawId.startsWith(prefix) ? rawId : `${prefix}${rawId}`;
 };
 
-const getReservedQuantity = async (
-  repository: InventoryRepository,
-  level: InventoryLevelRecord
-): Promise<number> => {
-  const reservations = await repository.findReservationsForLevel(
-    level.inventoryItemId,
-    level.stockLocationId
-  );
-  let total = 0;
+const getReservedQuantity = (level: InventoryLevelRecord): number =>
+  level.reservedQuantity;
 
-  for (const reservation of reservations) {
-    total += reservation.quantity;
-  }
-
-  return total;
-};
-
-const createAvailability = async ({
+const createAvailability = ({
   level,
-  repository,
   salesChannelId,
 }: {
   readonly level: InventoryLevelRecord;
-  readonly repository: InventoryRepository;
   readonly salesChannelId?: string;
-}): Promise<InventoryAvailability> => {
-  const reservedQuantity = await getReservedQuantity(repository, level);
+}): InventoryAvailability => {
+  const reservedQuantity = getReservedQuantity(level);
 
   return {
     availableQuantity: Math.max(level.stockedQuantity - reservedQuantity, 0),
@@ -267,9 +251,8 @@ export const createInventoryService = ({
           continue;
         }
 
-        const levelAvailability = await createAvailability({
+        const levelAvailability = createAvailability({
           level,
-          repository,
           salesChannelId: input.salesChannelId,
         });
 
@@ -418,16 +401,6 @@ export const createInventoryService = ({
         throw new Error("Inventory level was not found.");
       }
 
-      const availability = await createAvailability({
-        level,
-        repository,
-        salesChannelId: input.salesChannelId,
-      });
-
-      if (availability.availableQuantity < input.quantity) {
-        throw new Error("Insufficient inventory availability.");
-      }
-
       const now = clock.now();
       const reservation: InventoryReservationRecord = {
         causationId: input.causationId ?? null,
@@ -446,7 +419,14 @@ export const createInventoryService = ({
         updatedAt: now,
         workflowRunId: input.workflowRunId ?? null,
       };
-      const saved = await repository.saveReservation(reservation);
+      const saveResult =
+        await repository.saveReservationIfAvailable(reservation);
+
+      if (saveResult.status === "insufficient-stock") {
+        throw new Error("Insufficient inventory availability.");
+      }
+
+      const saved = saveResult.reservation;
       const remainingAvailability = await service.checkAvailability({
         inventoryItemId,
         salesChannelId: input.salesChannelId,
@@ -476,7 +456,7 @@ export const createInventoryService = ({
 
       return {
         availability: remainingAvailability,
-        duplicate: false,
+        duplicate: saveResult.status === "duplicate",
         reservation: saved,
       };
     },

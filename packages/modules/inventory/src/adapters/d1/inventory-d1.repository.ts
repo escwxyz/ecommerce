@@ -1,4 +1,5 @@
 import type { Kysely } from "kysely";
+import { sql } from "kysely";
 
 import type {
   InventoryAdjustmentEventRecord,
@@ -10,6 +11,7 @@ import type {
   InventoryLevelRow,
   InventoryRepository,
   InventoryReservationRecord,
+  InventoryReservationSaveResult,
   InventoryReservationRow,
   StockLocationRecord,
   StockLocationRow,
@@ -238,7 +240,39 @@ export const createD1InventoryRepository = ({
 
     return level;
   },
-  saveReservation: async (reservation) => {
+  saveReservationIfAvailable: async (reservation) => {
+    const existing = await db
+      .selectFrom("inventory_reservation")
+      .selectAll()
+      .where("idempotency_key", "=", reservation.idempotencyKey)
+      .executeTakeFirst();
+
+    if (existing) {
+      return {
+        reservation: toInventoryReservationRecord(existing),
+        status: "duplicate",
+      } satisfies InventoryReservationSaveResult;
+    }
+
+    const updateResult = await db
+      .updateTable("inventory_level")
+      .set({
+        reserved_quantity: sql<number>`reserved_quantity + ${reservation.quantity}`,
+        updated_at: reservation.updatedAt.getTime(),
+      })
+      .where("inventory_item_id", "=", reservation.inventoryItemId)
+      .where("stock_location_id", "=", reservation.stockLocationId)
+      .where(
+        sql<boolean>`stocked_quantity - reserved_quantity >= ${reservation.quantity}`
+      )
+      .executeTakeFirst();
+
+    if (updateResult.numUpdatedRows === 0n) {
+      return {
+        status: "insufficient-stock",
+      } satisfies InventoryReservationSaveResult;
+    }
+
     const values = {
       causation_id: reservation.causationId,
       correlation_id: reservation.correlationId,
@@ -255,17 +289,37 @@ export const createD1InventoryRepository = ({
       workflow_run_id: reservation.workflowRunId,
     } as const;
 
-    await db
-      .insertInto("inventory_reservation")
-      .values(values)
-      .onConflict((conflict) =>
-        conflict.column("idempotency_key").doUpdateSet({
-          updated_at: values.updated_at,
+    try {
+      await db.insertInto("inventory_reservation").values(values).execute();
+    } catch (error) {
+      await db
+        .updateTable("inventory_level")
+        .set({
+          reserved_quantity: sql<number>`reserved_quantity - ${reservation.quantity}`,
+          updated_at: reservation.updatedAt.getTime(),
         })
-      )
-      .execute();
+        .where("inventory_item_id", "=", reservation.inventoryItemId)
+        .where("stock_location_id", "=", reservation.stockLocationId)
+        .execute();
 
-    return reservation;
+      throw error;
+    }
+
+    return {
+      reservation,
+      status: "reserved",
+    } satisfies InventoryReservationSaveResult;
+  },
+  saveReservation: async (reservation) => {
+    const result = await createD1InventoryRepository({
+      db,
+    }).saveReservationIfAvailable(reservation);
+
+    if (result.status !== "reserved") {
+      throw new Error("Inventory reservation could not be saved.");
+    }
+
+    return result.reservation;
   },
   saveStockLocation: async (location) => {
     const values = {
