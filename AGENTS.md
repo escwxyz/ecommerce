@@ -215,6 +215,15 @@ Most formatting and common issues are automatically fixed by Oxlint + Oxfmt. Run
 - Add shared UI primitives: `npx shadcn@latest add accordion dialog popover sheet table -c packages/ui`
 - Add app-specific UI blocks by running the shadcn CLI from `apps/web`
 
+### Package-local workflows
+
+- In `apps/web`, use `bun run dev:bare` for a plain Vite dev server, `bun run serve` to preview a built app, and `bun run test` for the no-effect-imports check.
+- In `apps/server`, use `bun run build` for the package build, `bun run compile` to emit the standalone server binary, and `bun run test` for the server test suite.
+- In `packages/infra`, use `bun run dev`, `bun run deploy`, `bun run destroy`, `bun run test`, `bun run test:integration`, and `bun run check-types` for the Alchemy stack package.
+- In `packages/db-d1`, use `bun run db:push` to apply local D1 migrations, `bun run db:generate` to validate migration definitions, and `bun run test` for adapter checks.
+- In `packages/auth`, use `bun run auth:gen` after Better Auth config changes to regenerate the D1 migration in `packages/db-d1/src/migrations/sql/0000_auth.sql`.
+- Leaf packages also expose package-local `test` and `check-types` scripts in their own `package.json`; use those directly when working inside that package.
+
 ### OpenSpec workflows
 
 - Discover changes: `openspec list --json`
