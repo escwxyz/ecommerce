@@ -1,6 +1,7 @@
 import { composeAdminMetadata } from "@ecommerce/core/admin";
 import { pricingAdminMetadata } from "@ecommerce/pricing/admin";
 import { productAdminMetadata } from "@ecommerce/product/admin";
+import { promotionAdminMetadata } from "@ecommerce/promotion/admin";
 import { regionSalesChannelAdminMetadata } from "@ecommerce/region-sales-channel/admin";
 import { storeAdminMetadata } from "@ecommerce/store/admin";
 
@@ -28,6 +29,7 @@ export const createAdminMetadataModel = (context: Context) =>
       productAdminMetadata,
       regionSalesChannelAdminMetadata,
       pricingAdminMetadata,
+      promotionAdminMetadata,
     ],
     permissionValidator: validateBuiltinCommercePermission,
     permissions: getContextPermissionKeys(context),

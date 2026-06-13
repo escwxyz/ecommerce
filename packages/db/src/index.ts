@@ -6,6 +6,8 @@ import { pricingMigration } from "./schema/pricing";
 import type { PricingDatabase } from "./schema/pricing";
 import { productMigration } from "./schema/product";
 import type { ProductDatabase } from "./schema/product";
+import { promotionMigration } from "./schema/promotion";
+import type { PromotionDatabase } from "./schema/promotion";
 import { regionSalesChannelMigration } from "./schema/region-sales-channel";
 import type { RegionSalesChannelDatabase } from "./schema/region-sales-channel";
 import { storeMigration } from "./schema/store";
@@ -23,6 +25,8 @@ export * as pricingSchema from "./schema/pricing";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as regionSalesChannelSchema from "./schema/region-sales-channel";
 // oxlint-disable-next-line oxc/no-barrel-file
+export * as promotionSchema from "./schema/promotion";
+// oxlint-disable-next-line oxc/no-barrel-file
 export * as storeSchema from "./schema/store";
 
 /**
@@ -37,6 +41,7 @@ export interface CommerceDatabase
     StoreDatabase,
     ProductDatabase,
     PricingDatabase,
+    PromotionDatabase,
     RegionSalesChannelDatabase {}
 
 export type CommerceKyselyDatabase = Kysely<CommerceDatabase>;
@@ -49,4 +54,5 @@ export const commerceMigrations = {
   "002_product": productMigration,
   "003_region_sales_channel": regionSalesChannelMigration,
   "004_pricing": pricingMigration,
+  "005_promotion": promotionMigration,
 } as const;

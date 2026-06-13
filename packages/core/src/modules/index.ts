@@ -62,6 +62,10 @@ export interface CommerceModuleContributions {
   readonly pluginContributions?: CommercePluginContributionSet;
 }
 
+export interface CommerceModuleSchemaContribution {
+  readonly tables?: readonly string[];
+}
+
 export interface CommerceModuleDefinition<
   Key extends CommerceModuleKey = CommerceModuleKey,
   Dependencies extends readonly CommerceModuleKey[] =
@@ -72,6 +76,7 @@ export interface CommerceModuleDefinition<
   readonly providedServices?: readonly CommerceModuleProvidedService[];
   readonly lifecycle?: CommerceModuleLifecycle;
   readonly contributions?: CommerceModuleContributions;
+  readonly schema?: CommerceModuleSchemaContribution;
 }
 
 export type ModuleKeyUnion<

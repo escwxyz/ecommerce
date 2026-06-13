@@ -3,6 +3,8 @@ import type { CreatePricingRouteFragmentOptions } from "@ecommerce/pricing/route
 import { createPricingRouteFragment } from "@ecommerce/pricing/router";
 import type { CreateProductRouteFragmentOptions } from "@ecommerce/product/router";
 import { createProductRouteFragment } from "@ecommerce/product/router";
+import type { CreatePromotionRouteFragmentOptions } from "@ecommerce/promotion/router";
+import { createPromotionRouteFragment } from "@ecommerce/promotion/router";
 import type { CreateRegionSalesChannelRouteFragmentOptions } from "@ecommerce/region-sales-channel/router";
 import { createRegionSalesChannelRouteFragment } from "@ecommerce/region-sales-channel/router";
 import type { CreateStoreRouteFragmentOptions } from "@ecommerce/store/router";
@@ -122,12 +124,14 @@ export interface CreateBuiltinRouteFragmentsOptions {
   readonly product?: CreateProductRouteFragmentOptions;
   readonly pricing?: CreatePricingRouteFragmentOptions;
   readonly regionSalesChannel?: CreateRegionSalesChannelRouteFragmentOptions;
+  readonly promotion?: CreatePromotionRouteFragmentOptions;
   readonly store?: CreateStoreRouteFragmentOptions;
 }
 
 export const createBuiltinRouteFragments = ({
   product,
   pricing,
+  promotion,
   regionSalesChannel,
   store,
 }: CreateBuiltinRouteFragmentsOptions = {}) =>
@@ -147,6 +151,10 @@ export const createBuiltinRouteFragments = ({
     }),
     createApiRouteFragment({
       ...createPricingRouteFragment(pricing),
+      owner: "module",
+    }),
+    createApiRouteFragment({
+      ...createPromotionRouteFragment(promotion),
       owner: "module",
     }),
   ] as const satisfies readonly ApiRouteFragment[];

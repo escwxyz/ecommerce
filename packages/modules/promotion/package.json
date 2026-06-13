@@ -1,0 +1,56 @@
+{
+  "name": "@ecommerce/promotion",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./admin": {
+      "default": "./src/admin/index.ts"
+    },
+    "./contracts": {
+      "default": "./src/contracts/index.ts"
+    },
+    "./domain": {
+      "default": "./src/domain/index.ts"
+    },
+    "./module": {
+      "default": "./src/module/index.ts"
+    },
+    "./repository": {
+      "default": "./src/repositories/index.ts"
+    },
+    "./router": {
+      "default": "./src/router/index.ts"
+    },
+    "./schema": {
+      "default": "./src/domain/index.ts"
+    },
+    "./service": {
+      "default": "./src/services/index.ts"
+    },
+    "./testing": {
+      "default": "./src/testing/index.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "bun test ./src/_tests"
+  },
+  "dependencies": {
+    "@ecommerce/core": "workspace:*",
+    "@ecommerce/module-contracts": "workspace:*",
+    "@orpc/server": "catalog:",
+    "effect": "catalog:",
+    "kysely": "catalog:",
+    "nanoid": "^5.1.6",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@ecommerce/config": "workspace:*",
+    "bun-types": "catalog:",
+    "typescript": "catalog:"
+  }
+}
