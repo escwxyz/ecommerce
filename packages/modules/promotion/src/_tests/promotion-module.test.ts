@@ -278,6 +278,39 @@ describe("promotion module foundation", () => {
     });
   });
 
+  it("rejects customer-scoped usage limits until customer enforcement exists", async () => {
+    const repository = createResettableInMemoryPromotionRepository();
+    const service = createPromotionService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["pcamp_scope", "promo_scope"]),
+      repository,
+    });
+
+    const campaign = await service.createCampaign({
+      name: "Scope campaign",
+    });
+    const promotion = await service.createPromotion({
+      applicationMethod: {
+        allocation: "cart",
+        target: "subtotal",
+        type: "fixed",
+        value: 100,
+      },
+      campaignId: campaign.id,
+      code: "SCOPE100",
+      status: "active",
+      title: "Scope discount",
+    });
+
+    await expect(
+      service.createUsageLimit({
+        limit: 2,
+        promotionId: promotion.id,
+        scope: "customer",
+      })
+    ).rejects.toThrow("Customer-scoped usage limits are not supported yet.");
+  });
+
   it("declares contract-first route metadata", () => {
     expect(
       promotionContractRouter.promotionAdjustmentsCalculate["~orpc"].route.tags

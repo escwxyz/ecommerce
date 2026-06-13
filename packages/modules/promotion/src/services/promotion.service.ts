@@ -112,6 +112,16 @@ const normalizeCurrencyCode = (currencyCode: string): string =>
 
 const normalizeText = (value: string): string => value.trim();
 
+const ensureUsageLimitScopeIsSupported = (
+  scope: CreatePromotionUsageLimitInput["scope"]
+): void => {
+  if (scope === "customer") {
+    throw new Error(
+      "Customer-scoped usage limits are not supported yet."
+    );
+  }
+};
+
 const createId = (prefix: string, idGenerator: IdGeneratorServiceShape) => {
   const rawId = idGenerator.nextId();
   return rawId.startsWith(prefix) ? rawId : `${prefix}${rawId}`;
@@ -421,6 +431,8 @@ export const createPromotionService = ({
     if (!promotion) {
       throw new Error(`Promotion "${input.promotionId}" was not found.`);
     }
+
+    ensureUsageLimitScopeIsSupported(input.scope);
 
     const now = clock.now();
     const usageLimit: PromotionUsageLimitRecord = {
