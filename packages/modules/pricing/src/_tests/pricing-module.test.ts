@@ -63,13 +63,18 @@ describe("pricing module foundation", () => {
       status: "active",
       title: "VIP",
     });
+    await service.createPriceRule({
+      attribute: "customerGroupId",
+      priceListId: priceList.id,
+      value: "vip",
+    });
 
-    await service.createMoneyAmount({
+    const baseAmount = await service.createMoneyAmount({
       amount: 3000,
       currencyCode: "usd",
       priceSetId: priceSet.id,
     });
-    await service.createMoneyAmount({
+    const vipAmount = await service.createMoneyAmount({
       amount: 2500,
       currencyCode: "usd",
       priceListId: priceList.id,
@@ -96,14 +101,35 @@ describe("pricing module foundation", () => {
       quantity: 2,
       subtotal: 5000,
       trace: {
-        moneyAmountId: "amt_vip",
+        moneyAmountId: vipAmount.id,
         priceListId: "plist_vip",
         ruleMatches: ["customerGroupId:vip"],
         source: "price-list",
       },
     });
+
+    const fallbackPrice = await service.calculatePrice({
+      context: {
+        customerGroupId: "guest",
+        regionId: "reg_us",
+      },
+      currencyCode: "USD",
+      priceSetId: priceSet.id,
+      quantity: 1,
+    });
+
+    expect(fallbackPrice).toMatchObject({
+      amount: 3000,
+      currencyCode: "USD",
+      trace: {
+        moneyAmountId: baseAmount.id,
+        priceListId: null,
+        source: "base",
+      },
+    });
     expect(eventCollector.events.map((event) => event.name)).toEqual([
       "pricing.price-set-created",
+      "pricing.price-calculated",
       "pricing.price-calculated",
     ]);
   });

@@ -148,10 +148,12 @@ const getMatchedRuleKeys = (
 const createCalculatedPrice = ({
   amount,
   input,
+  ruleMatches,
   source,
 }: {
   readonly amount: MoneyAmountRecord;
   readonly input: CalculatePriceInput;
+  readonly ruleMatches: readonly string[];
   readonly source: "base" | "price-list";
 }): CalculatedPrice => {
   const quantity = input.quantity ?? 1;
@@ -165,11 +167,16 @@ const createCalculatedPrice = ({
     trace: {
       moneyAmountId: amount.id,
       priceListId: amount.priceListId,
-      ruleMatches: getMatchedRuleKeys(amount.rules),
+      ruleMatches: [...ruleMatches],
       source,
     },
   };
 };
+
+interface MatchedAmountSelection {
+  readonly amount: MoneyAmountRecord;
+  readonly ruleMatches: readonly string[];
+}
 
 const findBestAmount = async ({
   input,
@@ -179,39 +186,58 @@ const findBestAmount = async ({
   readonly input: CalculatePriceInput;
   readonly now: Date;
   readonly repository: PricingRepository;
-}): Promise<MoneyAmountRecord | null> => {
+}): Promise<MatchedAmountSelection | null> => {
   const context = input.context ?? {};
   const priceSetId = createPriceSetId(input.priceSetId);
   const amounts = await repository.findMoneyAmountsForPriceSet(priceSetId);
-  let baseAmount: MoneyAmountRecord | null = null;
-  let bestRuleAmount: MoneyAmountRecord | null = null;
+  let baseAmount: MatchedAmountSelection | null = null;
+  let bestRuleAmount: MatchedAmountSelection | null = null;
+  let bestRuleAmountRuleCount = 0;
 
   for (const amount of amounts) {
     if (amount.currencyCode !== normalizeCurrencyCode(input.currencyCode)) {
       continue;
     }
 
-    if (!getRulesMatch({ context, rules: amount.rules })) {
-      continue;
-    }
-
     if (!amount.priceListId) {
-      baseAmount ??= amount;
+      if (!getRulesMatch({ context, rules: amount.rules })) {
+        continue;
+      }
+
+      baseAmount ??= {
+        amount,
+        ruleMatches: getMatchedRuleKeys(amount.rules),
+      };
       continue;
     }
 
     const priceList = await repository.findPriceListById(amount.priceListId);
+    const priceListRules = await repository.findPriceRulesByPriceListId(
+      amount.priceListId
+    );
 
     if (!priceList || !getPriceListIsActive(priceList, now)) {
       continue;
     }
 
-    if (
-      !bestRuleAmount ||
-      Object.keys(amount.rules).length >
-        Object.keys(bestRuleAmount.rules).length
-    ) {
-      bestRuleAmount = amount;
+    const combinedRules = { ...amount.rules };
+
+    for (const rule of priceListRules) {
+      combinedRules[rule.attribute] = rule.value;
+    }
+
+    if (!getRulesMatch({ context, rules: combinedRules })) {
+      continue;
+    }
+
+    const ruleCount = Object.keys(combinedRules).length;
+
+    if (!bestRuleAmount || ruleCount > bestRuleAmountRuleCount) {
+      bestRuleAmount = {
+        amount,
+        ruleMatches: getMatchedRuleKeys(combinedRules),
+      };
+      bestRuleAmountRuleCount = ruleCount;
     }
   }
 
@@ -233,19 +259,20 @@ export const createPricingService = ({
       throw new Error(`Price set "${input.priceSetId}" was not found.`);
     }
 
-    const amount = await findBestAmount({ input, now, repository });
+    const selection = await findBestAmount({ input, now, repository });
 
-    if (!amount) {
+    if (!selection) {
       throw new Error("No matching price was found.");
     }
 
     const calculatedPrice = createCalculatedPrice({
-      amount,
+      amount: selection.amount,
       input: {
         ...input,
         currencyCode: normalizeCurrencyCode(input.currencyCode),
       },
-      source: amount.priceListId ? "price-list" : "base",
+      ruleMatches: selection.ruleMatches,
+      source: selection.amount.priceListId ? "price-list" : "base",
     });
 
     await eventPublisher.publish(
