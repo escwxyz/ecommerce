@@ -370,7 +370,7 @@ export const createInventoryService = ({
         };
       }
 
-      await coordinator.coordinate(
+      const coordination = await coordinator.coordinate(
         defineStatefulCoordinationRequest({
           causationId: input.causationId,
           coordinatorKey: "inventory.reservation",
@@ -385,6 +385,29 @@ export const createInventoryService = ({
           workflowRunId: input.workflowRunId,
         })
       );
+
+      if (coordination.duplicate) {
+        const coordinatedReservation =
+          await repository.findReservationByIdempotencyKey(
+            input.idempotencyKey
+          );
+
+        if (coordinatedReservation) {
+          const coordinatedAvailability = await service.checkAvailability({
+            inventoryItemId,
+            salesChannelId: input.salesChannelId,
+            stockLocationId,
+          });
+
+          return {
+            availability: coordinatedAvailability,
+            duplicate: true,
+            reservation: coordinatedReservation,
+          };
+        }
+
+        throw new Error("Duplicate reservation is still being coordinated.");
+      }
 
       const level = await repository.findLevel(
         inventoryItemId,
