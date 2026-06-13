@@ -59,6 +59,8 @@ describe("admin metadata API", () => {
             "region:write",
             "sales-channel:read",
             "sales-channel:write",
+            "pricing:read",
+            "pricing:write",
           ],
         })
       )
@@ -73,6 +75,8 @@ describe("admin metadata API", () => {
       "module:region-sales-channel:regions-resource",
       "module:region-sales-channel:sales-channels-navigation",
       "module:region-sales-channel:sales-channels-resource",
+      "module:pricing:navigation",
+      "module:pricing:resource",
     ]);
   });
 
@@ -116,6 +120,20 @@ describe("admin metadata API", () => {
         },
         createContext(
           createCustomerAuthSession({ permissions: ["region:read"] })
+        )
+      )
+    ).rejects.toBeInstanceOf(ORPCError);
+  });
+
+  it("rejects pricing operations when the required permission is missing", async () => {
+    await expect(
+      call(
+        apiAssembly.router.pricingPriceSetCreate,
+        {
+          title: "Denied prices",
+        },
+        createContext(
+          createCustomerAuthSession({ permissions: ["pricing:read"] })
         )
       )
     ).rejects.toBeInstanceOf(ORPCError);

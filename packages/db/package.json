@@ -23,6 +23,7 @@
     "test": "bun test ./src"
   },
   "dependencies": {
+    "@ecommerce/pricing": "workspace:*",
     "@ecommerce/product": "workspace:*",
     "@ecommerce/region-sales-channel": "workspace:*",
     "@ecommerce/store": "workspace:*",

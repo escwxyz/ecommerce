@@ -1,4 +1,6 @@
 import type { AdminMetadataModel } from "@ecommerce/core/admin";
+import type { CreatePricingRouteFragmentOptions } from "@ecommerce/pricing/router";
+import { createPricingRouteFragment } from "@ecommerce/pricing/router";
 import type { CreateProductRouteFragmentOptions } from "@ecommerce/product/router";
 import { createProductRouteFragment } from "@ecommerce/product/router";
 import type { CreateRegionSalesChannelRouteFragmentOptions } from "@ecommerce/region-sales-channel/router";
@@ -118,12 +120,14 @@ export const coreRouteFragment = createApiRouteFragment({
 
 export interface CreateBuiltinRouteFragmentsOptions {
   readonly product?: CreateProductRouteFragmentOptions;
+  readonly pricing?: CreatePricingRouteFragmentOptions;
   readonly regionSalesChannel?: CreateRegionSalesChannelRouteFragmentOptions;
   readonly store?: CreateStoreRouteFragmentOptions;
 }
 
 export const createBuiltinRouteFragments = ({
   product,
+  pricing,
   regionSalesChannel,
   store,
 }: CreateBuiltinRouteFragmentsOptions = {}) =>
@@ -139,6 +143,10 @@ export const createBuiltinRouteFragments = ({
     }),
     createApiRouteFragment({
       ...createRegionSalesChannelRouteFragment(regionSalesChannel),
+      owner: "module",
+    }),
+    createApiRouteFragment({
+      ...createPricingRouteFragment(pricing),
       owner: "module",
     }),
   ] as const satisfies readonly ApiRouteFragment[];
