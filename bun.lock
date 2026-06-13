@@ -102,6 +102,7 @@
       "dependencies": {
         "@ecommerce/auth": "workspace:*",
         "@ecommerce/core": "workspace:*",
+        "@ecommerce/customer": "workspace:*",
         "@ecommerce/db": "workspace:*",
         "@ecommerce/env": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
@@ -154,6 +155,7 @@
     "packages/db": {
       "name": "@ecommerce/db",
       "dependencies": {
+        "@ecommerce/customer": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
         "@ecommerce/promotion": "workspace:*",
@@ -218,6 +220,26 @@
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "alchemy": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/modules/customer": {
+      "name": "@ecommerce/customer",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ecommerce/auth": "workspace:*",
+        "@ecommerce/core": "workspace:*",
+        "@ecommerce/module-contracts": "workspace:*",
+        "@orpc/server": "catalog:",
+        "effect": "catalog:",
+        "kysely": "catalog:",
+        "nanoid": "^5.1.6",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -626,6 +648,8 @@
     "@ecommerce/config": ["@ecommerce/config@workspace:packages/config"],
 
     "@ecommerce/core": ["@ecommerce/core@workspace:packages/core"],
+
+    "@ecommerce/customer": ["@ecommerce/customer@workspace:packages/modules/customer"],
 
     "@ecommerce/db": ["@ecommerce/db@workspace:packages/db"],
 

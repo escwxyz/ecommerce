@@ -1,6 +1,6 @@
 import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { D1Database } from "@cloudflare/workers-types";
@@ -123,6 +123,22 @@ describe("db d1 adapter", () => {
     await expect(indexExists(database.db, "product_handle_idx")).resolves.toBe(
       true
     );
+    await expect(tableExists(database.db, "customer")).resolves.toBe(true);
+    await expect(tableExists(database.db, "customer_address")).resolves.toBe(
+      true
+    );
+    await expect(tableExists(database.db, "customer_group")).resolves.toBe(
+      true
+    );
+    await expect(
+      tableExists(database.db, "customer_group_customer")
+    ).resolves.toBe(true);
+    await expect(indexExists(database.db, "customer_email_idx")).resolves.toBe(
+      true
+    );
+    await expect(
+      indexExists(database.db, "customer_auth_user_id_idx")
+    ).resolves.toBe(true);
     await expect(tableExists(database.db, "region")).resolves.toBe(true);
     await expect(tableExists(database.db, "sales_channel")).resolves.toBe(true);
     await expect(tableExists(database.db, "pricing_currency")).resolves.toBe(
@@ -290,6 +306,72 @@ describe("db d1 adapter", () => {
       expect.arrayContaining([
         "region_country_region_idx",
         "sales_channel_product_channel_idx",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("ships SQL migrations for customer tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(readFileSync(join(migrationsDir, "0007_customer.sql"), "utf8"));
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "customer",
+        "customer_address",
+        "customer_group",
+        "customer_group_customer",
+      ])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'index'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "customer_email_idx",
+        "customer_auth_user_id_idx",
+        "customer_address_customer_id_idx",
+        "customer_group_handle_idx",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("applies the SQL migration directory used by db:push through customer", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    for (const migrationFile of readdirSync(migrationsDir).sort()) {
+      if (migrationFile.endsWith(".sql")) {
+        sqlite.exec(readFileSync(join(migrationsDir, migrationFile), "utf8"));
+      }
+    }
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "customer",
+        "customer_address",
+        "customer_group",
+        "customer_group_customer",
+        "product",
+        "store",
+        "region",
       ])
     );
 

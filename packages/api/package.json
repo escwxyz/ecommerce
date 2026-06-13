@@ -16,6 +16,7 @@
   "dependencies": {
     "@ecommerce/auth": "workspace:*",
     "@ecommerce/core": "workspace:*",
+    "@ecommerce/customer": "workspace:*",
     "@ecommerce/db": "workspace:*",
     "@ecommerce/env": "workspace:*",
     "@ecommerce/pricing": "workspace:*",
