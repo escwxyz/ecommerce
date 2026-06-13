@@ -54,6 +54,8 @@ describe("api assembly", () => {
     expect(assembly.fragments).toEqual(builtinRouteFragments);
     expect(assembly.router).toHaveProperty("storeSettingsGet");
     expect(assembly.router).toHaveProperty("productList");
+    expect(assembly.router).toHaveProperty("productCatalogUpdate");
+    expect(assembly.router).toHaveProperty("productVariantValidate");
     expect(assembly.router).toHaveProperty("regionList");
     expect(assembly.router).toHaveProperty("salesChannelList");
     expect(assembly.router).toHaveProperty("pricingCalculate");
@@ -226,6 +228,8 @@ describe("api assembly", () => {
     expect(apiAssembly.router).toHaveProperty("privateData");
     expect(apiAssembly.router).toHaveProperty("storeSettingsUpdate");
     expect(apiAssembly.router).toHaveProperty("productCreate");
+    expect(apiAssembly.router).toHaveProperty("productCatalogUpdate");
+    expect(apiAssembly.router).toHaveProperty("productVariantValidate");
     expect(apiAssembly.router).toHaveProperty("regionCreate");
     expect(apiAssembly.router).toHaveProperty("salesChannelCreate");
     expect(apiAssembly.router).toHaveProperty("pricingPriceSetCreate");

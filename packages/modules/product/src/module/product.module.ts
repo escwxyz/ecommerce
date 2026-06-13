@@ -9,6 +9,11 @@ export const productModule = defineCommerceModule({
   contributions: {
     adminSurfaces: productAdminSurfaces,
     apiFragments: [productApiFragment],
+    eventTypes: [
+      "product.created",
+      "product.catalog.updated",
+      "product.variant.validated",
+    ],
     permissions: productPermissionList,
   },
   key: "product",

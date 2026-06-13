@@ -1,5 +1,6 @@
 export {
   ProductService,
+  createEmptyProductCatalog,
   createProductService,
   createProductServiceLayer,
   defaultProductService,
