@@ -28,7 +28,11 @@
         "@ecommerce/auth": "workspace:*",
         "@ecommerce/db-d1": "workspace:*",
         "@ecommerce/env": "workspace:*",
+        "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
+        "@ecommerce/promotion": "workspace:*",
+        "@ecommerce/region-sales-channel": "workspace:*",
+        "@ecommerce/store": "workspace:*",
         "@orpc/openapi": "catalog:",
         "@orpc/server": "catalog:",
         "@orpc/zod": "catalog:",
@@ -102,6 +106,7 @@
         "@ecommerce/env": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
+        "@ecommerce/promotion": "workspace:*",
         "@ecommerce/region-sales-channel": "workspace:*",
         "@ecommerce/store": "workspace:*",
         "@orpc/client": "catalog:",
@@ -151,6 +156,7 @@
       "dependencies": {
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
+        "@ecommerce/promotion": "workspace:*",
         "@ecommerce/region-sales-channel": "workspace:*",
         "@ecommerce/store": "workspace:*",
         "kysely": "catalog:",
@@ -241,6 +247,7 @@
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -251,6 +258,25 @@
         "@ecommerce/core": "workspace:*",
         "@ecommerce/module-contracts": "workspace:*",
         "@ecommerce/utils": "workspace:*",
+        "@orpc/server": "catalog:",
+        "effect": "catalog:",
+        "kysely": "catalog:",
+        "nanoid": "^5.1.6",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/modules/promotion": {
+      "name": "@ecommerce/promotion",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ecommerce/core": "workspace:*",
+        "@ecommerce/module-contracts": "workspace:*",
         "@orpc/server": "catalog:",
         "effect": "catalog:",
         "kysely": "catalog:",
@@ -279,6 +305,7 @@
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -297,6 +324,7 @@
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -618,6 +646,8 @@
     "@ecommerce/pricing": ["@ecommerce/pricing@workspace:packages/modules/pricing"],
 
     "@ecommerce/product": ["@ecommerce/product@workspace:packages/modules/product"],
+
+    "@ecommerce/promotion": ["@ecommerce/promotion@workspace:packages/modules/promotion"],
 
     "@ecommerce/region-sales-channel": ["@ecommerce/region-sales-channel@workspace:packages/modules/region-sales-channel"],
 

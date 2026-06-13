@@ -1,3 +1,8 @@
+export {
+  createD1PricingRepository,
+  type CreateD1PricingRepositoryOptions,
+  type PricingD1Database,
+} from "./adapters";
 export { pricingAdminSurfaces } from "./admin";
 export { defineApiContractRoute, pricingContractRouter } from "./contracts";
 export {

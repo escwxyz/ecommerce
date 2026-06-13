@@ -119,7 +119,16 @@ describe("db d1 adapter", () => {
     await expect(indexExists(database.db, "session_userId_idx")).resolves.toBe(
       true
     );
+    await expect(tableExists(database.db, "store")).resolves.toBe(true);
     await expect(indexExists(database.db, "product_handle_idx")).resolves.toBe(
+      true
+    );
+    await expect(tableExists(database.db, "region")).resolves.toBe(true);
+    await expect(tableExists(database.db, "sales_channel")).resolves.toBe(true);
+    await expect(tableExists(database.db, "pricing_currency")).resolves.toBe(
+      true
+    );
+    await expect(tableExists(database.db, "promotion_promotion")).resolves.toBe(
       true
     );
 
@@ -156,6 +165,131 @@ describe("db d1 adapter", () => {
         "product_tags",
         "product_type",
         "product_type_product",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("ships SQL migrations for promotion tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(readFileSync(join(migrationsDir, "0001_product.sql"), "utf8"));
+    sqlite.exec(
+      readFileSync(join(migrationsDir, "0002_product_catalog.sql"), "utf8")
+    );
+    sqlite.exec(
+      readFileSync(join(migrationsDir, "0003_promotion.sql"), "utf8")
+    );
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "promotion_campaign",
+        "promotion_promotion",
+        "promotion_rule",
+        "promotion_usage_limit",
+        "promotion_redemption",
+      ])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'index'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "promotion_code_idx",
+        "promotion_rule_promotion_idx",
+        "promotion_usage_limit_promotion_idx",
+        "promotion_redemption_promotion_idx",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("ships SQL migrations for pricing tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(readFileSync(join(migrationsDir, "0001_product.sql"), "utf8"));
+    sqlite.exec(
+      readFileSync(join(migrationsDir, "0002_product_catalog.sql"), "utf8")
+    );
+    sqlite.exec(
+      readFileSync(join(migrationsDir, "0003_promotion.sql"), "utf8")
+    );
+    sqlite.exec(readFileSync(join(migrationsDir, "0004_pricing.sql"), "utf8"));
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "pricing_currency",
+        "pricing_price_set",
+        "pricing_price_list",
+        "pricing_money_amount",
+        "pricing_price_rule",
+        "pricing_price_preference",
+      ])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'index'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "pricing_money_amount_price_set_idx",
+        "pricing_price_rule_price_list_idx",
+        "pricing_price_preference_scope_idx",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("ships SQL migrations for store and region sales-channel tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(readFileSync(join(migrationsDir, "0005_store.sql"), "utf8"));
+    sqlite.exec(
+      readFileSync(join(migrationsDir, "0006_region_sales_channel.sql"), "utf8")
+    );
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "store",
+        "region",
+        "region_country",
+        "sales_channel",
+        "sales_channel_product",
+      ])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'index'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "region_country_region_idx",
+        "sales_channel_product_channel_idx",
       ])
     );
 
