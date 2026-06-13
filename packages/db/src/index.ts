@@ -2,7 +2,9 @@ import type { Kysely } from "kysely";
 
 import { authMigration } from "./schema/auth";
 import type { AuthDatabase } from "./schema/auth";
-import { productCatalogMigration, productMigration } from "./schema/product";
+import { pricingMigration } from "./schema/pricing";
+import type { PricingDatabase } from "./schema/pricing";
+import { productMigration } from "./schema/product";
 import type { ProductDatabase } from "./schema/product";
 import { regionSalesChannelMigration } from "./schema/region-sales-channel";
 import type { RegionSalesChannelDatabase } from "./schema/region-sales-channel";
@@ -16,6 +18,8 @@ export * from "./migrations";
 export * as authSchema from "./schema/auth";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as productSchema from "./schema/product";
+// oxlint-disable-next-line oxc/no-barrel-file
+export * as pricingSchema from "./schema/pricing";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as regionSalesChannelSchema from "./schema/region-sales-channel";
 // oxlint-disable-next-line oxc/no-barrel-file
@@ -32,6 +36,7 @@ export interface CommerceDatabase
     AuthDatabase,
     StoreDatabase,
     ProductDatabase,
+    PricingDatabase,
     RegionSalesChannelDatabase {}
 
 export type CommerceKyselyDatabase = Kysely<CommerceDatabase>;
@@ -43,5 +48,5 @@ export const commerceMigrations = {
   "001_store": storeMigration,
   "002_product": productMigration,
   "003_region_sales_channel": regionSalesChannelMigration,
-  "004_product_catalog": productCatalogMigration,
+  "004_pricing": pricingMigration,
 } as const;

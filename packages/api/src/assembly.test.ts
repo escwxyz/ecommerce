@@ -6,6 +6,7 @@ import {
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
+import { createInMemoryPricingRepository } from "@ecommerce/pricing";
 import { createInMemoryProductRepository } from "@ecommerce/product";
 import { resetProductState } from "@ecommerce/product/testing";
 import { createResettableInMemoryRegionSalesChannelRepository } from "@ecommerce/region-sales-channel";
@@ -57,6 +58,7 @@ describe("api assembly", () => {
     expect(assembly.router).toHaveProperty("productVariantValidate");
     expect(assembly.router).toHaveProperty("regionList");
     expect(assembly.router).toHaveProperty("salesChannelList");
+    expect(assembly.router).toHaveProperty("pricingCalculate");
 
     const healthCheck = assembly.router.healthCheck.callable({
       context: createTestContext(),
@@ -78,6 +80,8 @@ describe("api assembly", () => {
             "region:write",
             "sales-channel:read",
             "sales-channel:write",
+            "pricing:read",
+            "pricing:write",
           ],
         }),
       },
@@ -228,10 +232,13 @@ describe("api assembly", () => {
     expect(apiAssembly.router).toHaveProperty("productVariantValidate");
     expect(apiAssembly.router).toHaveProperty("regionCreate");
     expect(apiAssembly.router).toHaveProperty("salesChannelCreate");
+    expect(apiAssembly.router).toHaveProperty("pricingPriceSetCreate");
+    expect(apiAssembly.router).toHaveProperty("pricingCalculate");
   });
 
   it("creates root assemblies with injected module dependencies", async () => {
     const productRepository = createInMemoryProductRepository();
+    const pricingRepository = createInMemoryPricingRepository();
     const regionSalesChannelRepository =
       createResettableInMemoryRegionSalesChannelRepository();
     const storeRepository = createInMemoryStoreRepository();
@@ -241,6 +248,16 @@ describe("api assembly", () => {
           clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
           idGenerator: createSequenceIdGenerator(["prod_api_injected"]),
           repository: productRepository,
+        },
+        pricing: {
+          clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+          idGenerator: createSequenceIdGenerator([
+            "pset_api_injected",
+            "evt_price_set",
+            "amt_api_injected",
+            "evt_calculated",
+          ]),
+          repository: pricingRepository,
         },
         regionSalesChannel: {
           region: {
@@ -281,6 +298,8 @@ describe("api assembly", () => {
             "region:write",
             "sales-channel:read",
             "sales-channel:write",
+            "pricing:read",
+            "pricing:write",
           ],
         }),
       },
@@ -338,6 +357,39 @@ describe("api assembly", () => {
     ).resolves.toMatchObject({
       id: "sc_api_injected",
     });
+    const priceSet = await call(
+      assembly.router.pricingPriceSetCreate,
+      {
+        title: "API injected prices",
+      },
+      productContext
+    );
+
+    await call(
+      assembly.router.pricingMoneyAmountCreate,
+      {
+        amount: 4200,
+        currencyCode: "USD",
+        priceSetId: priceSet.id,
+      },
+      productContext
+    );
+
+    await expect(
+      call(
+        assembly.router.pricingCalculate,
+        {
+          currencyCode: "USD",
+          priceSetId: priceSet.id,
+        },
+        productContext
+      )
+    ).resolves.toMatchObject({
+      amount: 4200,
+      trace: {
+        source: "base",
+      },
+    });
     await expect(productRepository.listProducts()).resolves.toHaveLength(1);
   });
 
@@ -394,6 +446,10 @@ describe("api assembly", () => {
     expect(spec.paths?.["/regions"]?.post?.responses).toHaveProperty("200");
     expect(spec.paths?.["/sales-channels"]?.post?.requestBody).toBeDefined();
     expect(spec.paths?.["/sales-channels"]?.post?.responses).toHaveProperty(
+      "200"
+    );
+    expect(spec.paths?.["/pricing/calculate"]?.post?.requestBody).toBeDefined();
+    expect(spec.paths?.["/pricing/price-sets"]?.post?.responses).toHaveProperty(
       "200"
     );
   });

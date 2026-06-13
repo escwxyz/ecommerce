@@ -11,6 +11,9 @@
     "./schema/product": {
       "default": "./src/schema/product.ts"
     },
+    "./schema/pricing": {
+      "default": "./src/schema/pricing.ts"
+    },
     "./schema/region-sales-channel": {
       "default": "./src/schema/region-sales-channel.ts"
     },
@@ -23,6 +26,7 @@
     "test": "bun test ./src"
   },
   "dependencies": {
+    "@ecommerce/pricing": "workspace:*",
     "@ecommerce/product": "workspace:*",
     "@ecommerce/region-sales-channel": "workspace:*",
     "@ecommerce/store": "workspace:*",

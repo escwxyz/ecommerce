@@ -100,6 +100,7 @@
         "@ecommerce/core": "workspace:*",
         "@ecommerce/db": "workspace:*",
         "@ecommerce/env": "workspace:*",
+        "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
         "@ecommerce/region-sales-channel": "workspace:*",
         "@ecommerce/store": "workspace:*",
@@ -148,6 +149,7 @@
     "packages/db": {
       "name": "@ecommerce/db",
       "dependencies": {
+        "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
         "@ecommerce/region-sales-channel": "workspace:*",
         "@ecommerce/store": "workspace:*",
@@ -221,6 +223,24 @@
       },
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/modules/pricing": {
+      "name": "@ecommerce/pricing",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ecommerce/core": "workspace:*",
+        "@ecommerce/module-contracts": "workspace:*",
+        "@orpc/server": "catalog:",
+        "effect": "catalog:",
+        "kysely": "catalog:",
+        "nanoid": "^5.1.6",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -594,6 +614,8 @@
     "@ecommerce/payment-provider": ["@ecommerce/payment-provider@workspace:packages/payment-provider"],
 
     "@ecommerce/platform-cloudflare": ["@ecommerce/platform-cloudflare@workspace:packages/platform-cloudflare"],
+
+    "@ecommerce/pricing": ["@ecommerce/pricing@workspace:packages/modules/pricing"],
 
     "@ecommerce/product": ["@ecommerce/product@workspace:packages/modules/product"],
 
