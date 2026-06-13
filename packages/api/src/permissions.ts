@@ -5,6 +5,7 @@ import {
   createCommercePermissionValidator,
 } from "@ecommerce/core";
 import type { CommercePermissionInput } from "@ecommerce/core/permissions";
+import { customerModule } from "@ecommerce/customer/module";
 import { pricingModule } from "@ecommerce/pricing/module";
 import { productModule } from "@ecommerce/product/module";
 import { promotionModule } from "@ecommerce/promotion/module";
@@ -13,6 +14,7 @@ import { storeModule } from "@ecommerce/store/module";
 
 export const builtinPermissionModules = [
   storeModule,
+  customerModule,
   productModule,
   regionSalesChannelModule,
   pricingModule,
