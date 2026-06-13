@@ -11,6 +11,9 @@
     "./schema/product": {
       "default": "./src/schema/product.ts"
     },
+    "./schema/pricing": {
+      "default": "./src/schema/pricing.ts"
+    },
     "./schema/region-sales-channel": {
       "default": "./src/schema/region-sales-channel.ts"
     },
