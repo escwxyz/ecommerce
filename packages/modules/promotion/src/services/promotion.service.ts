@@ -163,12 +163,16 @@ const calculateDiscountAmount = ({
   readonly subtotal: number;
 }): number => {
   const { applicationMethod } = promotion;
+  const cappedValue =
+    applicationMethod.type === "percentage"
+      ? Math.min(applicationMethod.value, 100)
+      : applicationMethod.value;
 
   if (applicationMethod.type === "percentage") {
-    return -Math.floor((subtotal * applicationMethod.value) / 100);
+    return -Math.floor((subtotal * cappedValue) / 100);
   }
 
-  return -Math.min(applicationMethod.value, subtotal);
+  return -Math.min(cappedValue, subtotal);
 };
 
 const getIsUsageLimitAvailable = async ({

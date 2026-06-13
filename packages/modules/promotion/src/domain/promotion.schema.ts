@@ -9,7 +9,7 @@ export const PromotionApplicationMethodSchema = z.object({
   allocation: z.enum(["cart", "line-item"]),
   target: z.enum(["subtotal", "line-item"]),
   type: z.enum(["fixed", "percentage"]),
-  value: z.number().int().positive(),
+  value: z.number().int().min(1).max(100),
 });
 
 export const CampaignRecordSchema = z.object({

@@ -188,6 +188,52 @@ describe("promotion module foundation", () => {
     ]);
   });
 
+  it("caps percentage promotions at one hundred percent", async () => {
+    const repository = createResettableInMemoryPromotionRepository();
+    const service = createPromotionService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["pcamp_cap", "promo_cap"]),
+      repository,
+    });
+
+    const campaign = await service.createCampaign({
+      name: "Cap campaign",
+    });
+    await service.createPromotion({
+      applicationMethod: {
+        allocation: "cart",
+        target: "subtotal",
+        type: "percentage",
+        value: 150,
+      },
+      campaignId: campaign.id,
+      code: "CAP150",
+      status: "active",
+      title: "Cap 150",
+    });
+
+    await expect(
+      service.calculateAdjustments({
+        cart: {
+          currencyCode: "USD",
+          id: "cart_cap",
+          subtotal: 10000,
+        },
+        promotionCodes: ["CAP150"],
+      })
+    ).resolves.toMatchObject({
+      adjustments: [
+        {
+          amount: -10000,
+          trace: {
+            promotionCode: "CAP150",
+          },
+        },
+      ],
+      totalDiscount: -10000,
+    });
+  });
+
   it("declares contract-first route metadata", () => {
     expect(
       promotionContractRouter.promotionAdjustmentsCalculate["~orpc"].route.tags
@@ -223,10 +269,10 @@ describe("promotion module foundation", () => {
           allocation: "cart",
           target: "subtotal",
           type: "fixed",
-          value: 250,
+          value: 100,
         },
         campaignId: campaign.id,
-        code: "ROUTE250",
+        code: "ROUTE100",
         status: "active",
         title: "Route discount",
       },
@@ -242,18 +288,18 @@ describe("promotion module foundation", () => {
             id: "cart_route",
             subtotal: 1000,
           },
-          promotionCodes: ["ROUTE250"],
+          promotionCodes: ["ROUTE100"],
         },
         context
       )
     ).resolves.toMatchObject({
       adjustments: [
         {
-          amount: -250,
+          amount: -100,
           promotionId: promotion.id,
         },
       ],
-      totalDiscount: -250,
+      totalDiscount: -100,
     });
   });
 });
