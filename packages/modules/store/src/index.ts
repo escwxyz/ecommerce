@@ -1,3 +1,8 @@
+export {
+  createD1StoreRepository,
+  type CreateD1StoreRepositoryOptions,
+  type StoreD1Database,
+} from "./adapters";
 export { storeAdminMetadata, storeAdminSurfaces } from "./admin";
 export { defineApiContractRoute, storeContractRouter } from "./contracts";
 export {

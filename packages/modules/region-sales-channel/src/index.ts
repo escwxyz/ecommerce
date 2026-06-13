@@ -1,4 +1,9 @@
 export {
+  createD1RegionSalesChannelRepository,
+  type CreateD1RegionSalesChannelRepositoryOptions,
+  type RegionSalesChannelD1Database,
+} from "./adapters";
+export {
   regionSalesChannelAdminMetadata,
   regionSalesChannelAdminSurfaces,
 } from "./admin";

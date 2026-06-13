@@ -116,9 +116,7 @@ const ensureUsageLimitScopeIsSupported = (
   scope: CreatePromotionUsageLimitInput["scope"]
 ): void => {
   if (scope === "customer") {
-    throw new Error(
-      "Customer-scoped usage limits are not supported yet."
-    );
+    throw new Error("Customer-scoped usage limits are not supported yet.");
   }
 };
 

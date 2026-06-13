@@ -1,5 +1,5 @@
-import { createResettableInMemoryPromotionRepository } from '../repositories';
-import type { ResettablePromotionRepository } from '../repositories';
+import { createResettableInMemoryPromotionRepository } from "../repositories";
+import type { ResettablePromotionRepository } from "../repositories";
 import { createPromotionService } from "../services";
 import type {
   CreatePromotionServiceOptions,

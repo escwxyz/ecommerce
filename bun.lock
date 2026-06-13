@@ -28,7 +28,11 @@
         "@ecommerce/auth": "workspace:*",
         "@ecommerce/db-d1": "workspace:*",
         "@ecommerce/env": "workspace:*",
+        "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
+        "@ecommerce/promotion": "workspace:*",
+        "@ecommerce/region-sales-channel": "workspace:*",
+        "@ecommerce/store": "workspace:*",
         "@orpc/openapi": "catalog:",
         "@orpc/server": "catalog:",
         "@orpc/zod": "catalog:",
@@ -243,6 +247,7 @@
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -281,6 +286,7 @@
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -299,6 +305,7 @@
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -317,6 +324,7 @@
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },

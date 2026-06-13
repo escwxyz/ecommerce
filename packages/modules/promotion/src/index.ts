@@ -1,6 +1,8 @@
 // oxlint-disable-next-line oxc/no-barrel-file
 export * from "./admin";
 // oxlint-disable-next-line oxc/no-barrel-file
+export * from "./adapters";
+// oxlint-disable-next-line oxc/no-barrel-file
 export * from "./contracts";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * from "./domain";
