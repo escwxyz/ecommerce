@@ -211,9 +211,18 @@ const getCandidatePromotions = async ({
   const promotions: PromotionRecord[] = [
     ...(await repository.listAutomaticPromotions()),
   ];
+  const uniquePromotionCodes = new Set<string>();
 
   for (const code of promotionCodes) {
-    const promotion = await repository.findPromotionByCode(normalizeCode(code));
+    const normalizedCode = normalizeCode(code);
+
+    if (uniquePromotionCodes.has(normalizedCode)) {
+      continue;
+    }
+
+    uniquePromotionCodes.add(normalizedCode);
+
+    const promotion = await repository.findPromotionByCode(normalizedCode);
 
     if (promotion) {
       promotions.push(promotion);

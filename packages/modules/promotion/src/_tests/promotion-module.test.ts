@@ -234,6 +234,50 @@ describe("promotion module foundation", () => {
     });
   });
 
+  it("deduplicates promotion codes before discounting", async () => {
+    const repository = createResettableInMemoryPromotionRepository();
+    const service = createPromotionService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["pcamp_dup", "promo_dup"]),
+      repository,
+    });
+
+    const campaign = await service.createCampaign({
+      name: "Duplicate code campaign",
+    });
+    await service.createPromotion({
+      applicationMethod: {
+        allocation: "cart",
+        target: "subtotal",
+        type: "fixed",
+        value: 100,
+      },
+      campaignId: campaign.id,
+      code: "SAVE10",
+      status: "active",
+      title: "Save 10",
+    });
+
+    await expect(
+      service.calculateAdjustments({
+        cart: {
+          currencyCode: "USD",
+          id: "cart_dup",
+          subtotal: 1000,
+        },
+        promotionCodes: ["SAVE10", "save10"],
+      })
+    ).resolves.toMatchObject({
+      adjustments: [
+        {
+          amount: -100,
+          promotionId: "promo_dup",
+        },
+      ],
+      totalDiscount: -100,
+    });
+  });
+
   it("declares contract-first route metadata", () => {
     expect(
       promotionContractRouter.promotionAdjustmentsCalculate["~orpc"].route.tags
