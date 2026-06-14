@@ -8,7 +8,9 @@ import {
 import { call } from "@orpc/server";
 
 import { taxContractRouter } from "../contracts";
+import { createTaxLineId, createTaxRateId, createTaxRegionId } from "../domain";
 import { taxExtensionPoints, taxModule } from "../module";
+import { manualTaxProvider } from "../providers";
 import { createResettableInMemoryTaxRepository } from "../repositories";
 import { createTaxRouteFragment } from "../router";
 import { createTaxService } from "../services";
@@ -211,6 +213,111 @@ describe("tax module foundation", () => {
       providerKey: "custom",
       totalTax: 123,
     });
+  });
+
+  it("extracts tax from inclusive prices instead of adding exclusive tax", async () => {
+    const result = await manualTaxProvider.calculateTax(
+      {
+        address: {
+          countryCode: "US",
+        },
+        currencyCode: "USD",
+        items: [
+          {
+            id: "line_inclusive",
+            quantity: 1,
+            subtotal: 1000,
+          },
+        ],
+        policy: {
+          pricesIncludeTax: true,
+          roundAt: "line",
+        },
+        regionId: createTaxRegionId("txreg_inclusive"),
+      },
+      {
+        createLineId: () => createTaxLineId("txline_inclusive"),
+        currencyCode: "USD",
+        rates: [
+          {
+            categoryId: null,
+            createdAt: new Date("2026-01-01T00:00:00.000Z"),
+            id: createTaxRateId("txrate_inclusive"),
+            metadata: {},
+            name: "Inclusive",
+            percentage: 10,
+            regionId: createTaxRegionId("txreg_inclusive"),
+            updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+          },
+        ],
+      }
+    );
+
+    expect(result.lines).toEqual([
+      {
+        amount: 91,
+        currencyCode: "USD",
+        id: createTaxLineId("txline_inclusive"),
+        itemId: "line_inclusive",
+        rate: 10,
+        rateId: createTaxRateId("txrate_inclusive"),
+        taxableAmount: 1000,
+      },
+    ]);
+    expect(result.totalTax).toBe(91);
+  });
+
+  it("rounds tax at the total level when requested", async () => {
+    let lineCounter = 0;
+    const result = await manualTaxProvider.calculateTax(
+      {
+        address: {
+          countryCode: "US",
+        },
+        currencyCode: "USD",
+        items: [
+          {
+            id: "line_one",
+            quantity: 1,
+            subtotal: 33,
+          },
+          {
+            id: "line_two",
+            quantity: 1,
+            subtotal: 33,
+          },
+        ],
+        policy: {
+          pricesIncludeTax: false,
+          roundAt: "total",
+        },
+        regionId: createTaxRegionId("txreg_total"),
+      },
+      {
+        createLineId: () => {
+          lineCounter += 1;
+          return createTaxLineId(
+            lineCounter === 1 ? "txline_total_1" : "txline_total_2"
+          );
+        },
+        currencyCode: "USD",
+        rates: [
+          {
+            categoryId: null,
+            createdAt: new Date("2026-01-01T00:00:00.000Z"),
+            id: createTaxRateId("txrate_total"),
+            metadata: {},
+            name: "Total rounding",
+            percentage: 10,
+            regionId: createTaxRegionId("txreg_total"),
+            updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+          },
+        ],
+      }
+    );
+
+    expect(result.lines.map((line) => line.amount)).toEqual([4, 3]);
+    expect(result.totalTax).toBe(7);
   });
 
   it("exposes validated route contracts and admin-facing router handlers", async () => {
