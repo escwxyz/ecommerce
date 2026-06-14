@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
 import {
   defineQueueMessage,
@@ -27,6 +27,7 @@ import {
   createInMemorySandboxStorage,
   createNotificationEventQueuePublisher,
   createNotificationEventRealtimePublisher,
+  processNotificationEventQueueBatch,
   createSandboxBridge,
   createSandboxPluginUpgradePlan,
   createSandboxPluginCacheId,
@@ -319,6 +320,77 @@ describe("cloudflare workflow runtime adapter", () => {
       {
         id: "ndsp_cf_notify_1",
         status: "delivered",
+      },
+    ]);
+  });
+
+  it("retries queue messages when provider delivery returns failed status", async () => {
+    const fakeQueue = createFakeQueue();
+    const repository = createInMemoryNotificationEventRepository();
+    const clock = createStaticClock(new Date("2026-06-07T12:00:00.000Z"));
+    const service = createNotificationEventService({
+      clock,
+      idGenerator: createSequenceIdGenerator(["ndsp_cf_notify_failed"]),
+      notificationProviders: [
+        createCloudflareQueuedNotificationProvider({
+          clock,
+          providerKey: "email",
+          queue: fakeQueue.queue as Queue<NotificationEventQueueMessage>,
+        }),
+      ],
+      repository,
+    });
+
+    await service.upsertNotificationTemplate({
+      channel: "email",
+      id: "ntpl_cf_notify_failed",
+      name: "Order placed",
+      providerKey: "email",
+      templateKey: "order.placed",
+    });
+    await service.dispatchNotification({
+      channel: "email",
+      correlationId: "corr_notify_failed",
+      idempotencyKey: "notify_order_failed",
+      payload: { orderId: "order_1" },
+      recipient: { address: "ada@example.com", type: "email" },
+      templateKey: "order.placed",
+    });
+
+    const message = fakeQueue.messages[0] as NotificationEventQueueMessage;
+    const queueMessage = {
+      ack: () => {
+        throw new Error("failed provider results must not ack");
+      },
+      body: message,
+      retry: () => undefined,
+    };
+    const retrySpy = spyOn(queueMessage, "retry");
+    const failedProvider = {
+      key: "email",
+      deliver: async () => ({
+        error: "temporary provider failure",
+        messageId: "provider:failed",
+        status: "failed" as const,
+      }),
+    };
+
+    await processNotificationEventQueueBatch(
+      { messages: [queueMessage] },
+      {
+        clock,
+        notificationProviders: [failedProvider],
+        repository,
+        retryPolicy: { maxAttempts: 3 },
+      }
+    );
+
+    expect(retrySpy).toHaveBeenCalledTimes(1);
+    await expect(repository.listDispatches()).resolves.toMatchObject([
+      {
+        id: "ndsp_cf_notify_failed",
+        lastError: "temporary provider failure",
+        status: "dead-lettered",
       },
     ]);
   });

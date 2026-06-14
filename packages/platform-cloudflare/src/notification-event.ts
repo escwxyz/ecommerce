@@ -444,6 +444,37 @@ export const processNotificationEventQueueMessage = async (
       dispatch,
       template: message.payload.template,
     });
+
+    if (result.status === "failed") {
+      const failed = await recordNotificationFailure(
+        options.repository,
+        dispatch,
+        result.error ?? "Notification provider returned failed status.",
+        options.retryPolicy,
+        options.clock.now()
+      );
+
+      await safePublishRealtime(options.realtime, options.streamScope, {
+        id: message.id,
+        occurredAt: options.clock.now().toISOString(),
+        payload: {
+          dispatchId: failed.id,
+          providerKey: failed.providerKey,
+          status: failed.status,
+        },
+        type:
+          failed.status === "dead-lettered"
+            ? "notification-dead-lettered"
+            : "notification-failed",
+      });
+
+      if (failed.status !== "dead-lettered") {
+        throw new Error(failed.lastError);
+      }
+
+      return;
+    }
+
     const saved = await options.repository.saveDispatch(
       applyProviderResult(dispatch, result, options.clock.now())
     );
