@@ -6,6 +6,8 @@ import { customerMigration } from "./schema/customer";
 import type { CustomerDatabase } from "./schema/customer";
 import { inventoryMigration } from "./schema/inventory";
 import type { InventoryDatabase } from "./schema/inventory";
+import { paymentMigration } from "./schema/payment";
+import type { PaymentDatabase } from "./schema/payment";
 import { pricingMigration } from "./schema/pricing";
 import type { PricingDatabase } from "./schema/pricing";
 import { productMigration } from "./schema/product";
@@ -28,6 +30,8 @@ export * as authSchema from "./schema/auth";
 export * as customerSchema from "./schema/customer";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as inventorySchema from "./schema/inventory";
+// oxlint-disable-next-line oxc/no-barrel-file
+export * as paymentSchema from "./schema/payment";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as productSchema from "./schema/product";
 // oxlint-disable-next-line oxc/no-barrel-file
@@ -52,6 +56,7 @@ export interface CommerceDatabase
     AuthDatabase,
     CustomerDatabase,
     InventoryDatabase,
+    PaymentDatabase,
     StoreDatabase,
     ProductDatabase,
     PricingDatabase,
@@ -73,4 +78,5 @@ export const commerceMigrations = {
   "006_customer": customerMigration,
   "007_inventory": inventoryMigration,
   "008_tax": taxMigration,
+  "009_payment": paymentMigration,
 } as const;

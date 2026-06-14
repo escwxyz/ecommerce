@@ -149,6 +149,15 @@ describe("db d1 adapter", () => {
     );
     await expect(tableExists(database.db, "tax_region")).resolves.toBe(true);
     await expect(tableExists(database.db, "tax_rate")).resolves.toBe(true);
+    await expect(tableExists(database.db, "payment_collection")).resolves.toBe(
+      true
+    );
+    await expect(tableExists(database.db, "payment_session")).resolves.toBe(
+      true
+    );
+    await expect(
+      indexExists(database.db, "payment_provider_intent_idx")
+    ).resolves.toBe(true);
 
     sqlite.close();
   });
@@ -427,7 +436,51 @@ describe("db d1 adapter", () => {
     sqlite.close();
   });
 
-  it("applies the SQL migration directory used by db:push through tax", () => {
+  it("ships SQL migrations for payment tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(readFileSync(join(migrationsDir, "0010_payment.sql"), "utf8"));
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "payment_provider",
+        "payment_account_holder",
+        "payment_method",
+        "payment_collection",
+        "payment_session",
+        "payment",
+        "payment_capture",
+        "payment_refund",
+      ])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'index'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "payment_provider_key_idx",
+        "payment_account_holder_provider_idx",
+        "payment_method_account_holder_idx",
+        "payment_collection_status_idx",
+        "payment_session_collection_idx",
+        "payment_provider_intent_idx",
+        "payment_capture_idempotency_idx",
+        "payment_refund_idempotency_idx",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("applies the SQL migration directory used by db:push through payment", () => {
     const sqlite = new Database(":memory:");
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
@@ -459,6 +512,14 @@ describe("db d1 adapter", () => {
         "tax_region",
         "tax_rate",
         "tax_calculation_policy",
+        "payment_provider",
+        "payment_account_holder",
+        "payment_method",
+        "payment_collection",
+        "payment_session",
+        "payment",
+        "payment_capture",
+        "payment_refund",
       ])
     );
 

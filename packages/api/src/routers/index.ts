@@ -3,6 +3,8 @@ import type { CreateCustomerRouteFragmentOptions } from "@ecommerce/customer/rou
 import { createCustomerRouteFragment } from "@ecommerce/customer/router";
 import type { CreateInventoryRouteFragmentOptions } from "@ecommerce/inventory/router";
 import { createInventoryRouteFragment } from "@ecommerce/inventory/router";
+import type { CreatePaymentRouteFragmentOptions } from "@ecommerce/payment/router";
+import { createPaymentRouteFragment } from "@ecommerce/payment/router";
 import type { CreatePricingRouteFragmentOptions } from "@ecommerce/pricing/router";
 import { createPricingRouteFragment } from "@ecommerce/pricing/router";
 import type { CreateProductRouteFragmentOptions } from "@ecommerce/product/router";
@@ -129,6 +131,7 @@ export const coreRouteFragment = createApiRouteFragment({
 export interface CreateBuiltinRouteFragmentsOptions {
   readonly customer?: CreateCustomerRouteFragmentOptions;
   readonly inventory?: CreateInventoryRouteFragmentOptions;
+  readonly payment?: CreatePaymentRouteFragmentOptions;
   readonly product?: CreateProductRouteFragmentOptions;
   readonly pricing?: CreatePricingRouteFragmentOptions;
   readonly regionSalesChannel?: CreateRegionSalesChannelRouteFragmentOptions;
@@ -140,6 +143,7 @@ export interface CreateBuiltinRouteFragmentsOptions {
 export const createBuiltinRouteFragments = ({
   customer,
   inventory,
+  payment,
   product,
   pricing,
   promotion,
@@ -179,6 +183,10 @@ export const createBuiltinRouteFragments = ({
     }),
     createApiRouteFragment({
       ...createTaxRouteFragment(tax),
+      owner: "module",
+    }),
+    createApiRouteFragment({
+      ...createPaymentRouteFragment(payment),
       owner: "module",
     }),
   ] as const satisfies readonly ApiRouteFragment[];

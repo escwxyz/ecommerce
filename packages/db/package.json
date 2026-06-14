@@ -14,6 +14,9 @@
     "./schema/inventory": {
       "default": "./src/schema/inventory.ts"
     },
+    "./schema/payment": {
+      "default": "./src/schema/payment.ts"
+    },
     "./schema/product": {
       "default": "./src/schema/product.ts"
     },
@@ -40,6 +43,7 @@
   "dependencies": {
     "@ecommerce/customer": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
+    "@ecommerce/payment": "workspace:*",
     "@ecommerce/pricing": "workspace:*",
     "@ecommerce/product": "workspace:*",
     "@ecommerce/promotion": "workspace:*",

@@ -79,7 +79,7 @@ const getRoundedLineAmounts = (
       fraction: rawAmount - Math.floor(rawAmount),
       index,
     }))
-    .sort((left, right) => {
+    .toSorted((left, right) => {
       if (right.fraction !== left.fraction) {
         return right.fraction - left.fraction;
       }
