@@ -609,6 +609,13 @@ export const createPaymentService = ({
 
       const provider = requireProvider(providerRegistry, payment.providerKey);
       const amount = input.amount ?? payment.amount;
+
+      if (amount > payment.amount) {
+        throw new Error(
+          `Refund amount ${amount} exceeds payment amount ${payment.amount}.`
+        );
+      }
+
       const providerRefund = await provider.refundPayment({
         amount: {
           amount,

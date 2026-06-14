@@ -141,6 +141,49 @@ describe("payment module", () => {
     });
   });
 
+  it("rejects refund amounts above the payment amount", async () => {
+    const { repository, service } = createPaymentTestKit();
+    await service.registerProvider("fake");
+
+    const collection = await service.createCollection({
+      amount: 1200,
+      cartId: "cart_overrefund",
+      currencyCode: "usd",
+    });
+    const session = await service.createSession({
+      collectionId: collection.id,
+      idempotencyKey: "session_overrefund",
+      providerKey: "fake",
+    });
+    const payment = await service.authorizePaymentSession({
+      idempotencyKey: "authorize_overrefund",
+      sessionId: session.id,
+    });
+
+    await expect(
+      service.refundPayment({
+        amount: 1300,
+        idempotencyKey: "refund_overrefund",
+        paymentId: payment.id,
+        reason: "customer-request",
+      })
+    ).rejects.toThrow("Refund amount 1300 exceeds payment amount 1200.");
+
+    await expect(
+      repository.findRefundByIdempotencyKey("refund_overrefund")
+    ).resolves.toBeNull();
+    await expect(repository.findPaymentById(payment.id)).resolves.toMatchObject(
+      {
+        status: "authorized",
+      }
+    );
+    await expect(
+      repository.findCollectionById(collection.id)
+    ).resolves.toMatchObject({
+      status: "authorized",
+    });
+  });
+
   it("maps provider webhook events into normalized payment actions", async () => {
     const { provider, service } = createPaymentTestKit();
     const occurredAt = new Date("2026-01-01T00:00:00.000Z");
