@@ -24,6 +24,7 @@ import type {
   ReservationResult,
   ReserveInventoryInput,
   SetInventoryLevelInput,
+  StockLocationId,
   StockLocationRecord,
 } from "../domain";
 import {
@@ -188,6 +189,19 @@ const createAvailability = ({
   };
 };
 
+const createAggregateScopedBy = ({
+  explicitStockLocationId,
+  salesChannelId,
+}: {
+  readonly explicitStockLocationId: StockLocationId | null;
+  readonly salesChannelId?: string;
+}) => ({
+  ...(salesChannelId ? { salesChannelId } : {}),
+  ...(explicitStockLocationId
+    ? { stockLocationId: explicitStockLocationId }
+    : {}),
+});
+
 export const createInventoryService = ({
   clock = createDefaultClock(),
   coordinator = createInMemoryInventoryCoordinator(),
@@ -304,6 +318,10 @@ export const createInventoryService = ({
       const explicitStockLocationId = input.stockLocationId
         ? createStockLocationId(input.stockLocationId)
         : null;
+      const aggregateScopedBy = createAggregateScopedBy({
+        explicitStockLocationId,
+        salesChannelId: input.salesChannelId,
+      });
       let candidateLocations: readonly StockLocationRecord["id"][] = [];
 
       if (explicitStockLocationId) {
@@ -321,14 +339,7 @@ export const createInventoryService = ({
           availableQuantity: 0,
           inventoryItemId,
           reservedQuantity: 0,
-          scopedBy: {
-            ...(input.salesChannelId
-              ? { salesChannelId: input.salesChannelId }
-              : {}),
-            ...(explicitStockLocationId
-              ? { stockLocationId: explicitStockLocationId }
-              : {}),
-          },
+          scopedBy: aggregateScopedBy,
           stockedQuantity: 0,
         };
       }
@@ -359,7 +370,7 @@ export const createInventoryService = ({
               reservedQuantity:
                 availability.reservedQuantity +
                 levelAvailability.reservedQuantity,
-              scopedBy: availability.scopedBy,
+              scopedBy: aggregateScopedBy,
               stockedQuantity:
                 availability.stockedQuantity +
                 levelAvailability.stockedQuantity,
@@ -372,14 +383,7 @@ export const createInventoryService = ({
           availableQuantity: 0,
           inventoryItemId,
           reservedQuantity: 0,
-          scopedBy: {
-            ...(input.salesChannelId
-              ? { salesChannelId: input.salesChannelId }
-              : {}),
-            ...(explicitStockLocationId
-              ? { stockLocationId: explicitStockLocationId }
-              : {}),
-          },
+          scopedBy: aggregateScopedBy,
           stockedQuantity: 0,
         }
       );

@@ -423,6 +423,58 @@ describe("inventory module foundation", () => {
     ]);
   });
 
+  it("omits stock location from sales-channel totals aggregated across multiple warehouses", async () => {
+    const repository = createResettableInMemoryInventoryRepository();
+    const service = createInventoryService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "iitem_channel_total",
+        "sloc_berlin_total",
+        "sloc_paris_total",
+        "ilvl_berlin_total",
+        "ilvl_paris_total",
+      ]),
+      repository,
+    });
+    const item = await service.createInventoryItem({
+      sku: "channel-total-sku",
+      title: "Channel total item",
+    });
+    const berlin = await service.createStockLocation({
+      name: "Berlin warehouse",
+      salesChannelIds: ["sc_multi"],
+    });
+    const paris = await service.createStockLocation({
+      name: "Paris warehouse",
+      salesChannelIds: ["sc_multi"],
+    });
+    await service.setInventoryLevel({
+      inventoryItemId: item.id,
+      stockLocationId: berlin.id,
+      stockedQuantity: 2,
+    });
+    await service.setInventoryLevel({
+      inventoryItemId: item.id,
+      stockLocationId: paris.id,
+      stockedQuantity: 3,
+    });
+
+    await expect(
+      service.checkAvailability({
+        inventoryItemId: item.id,
+        salesChannelId: "sc_multi",
+      })
+    ).resolves.toEqual({
+      availableQuantity: 5,
+      inventoryItemId: item.id,
+      reservedQuantity: 0,
+      scopedBy: {
+        salesChannelId: "sc_multi",
+      },
+      stockedQuantity: 5,
+    });
+  });
+
   it("rejects concurrent reservations with different idempotency keys when stock is exhausted", async () => {
     const baseRepository = createResettableInMemoryInventoryRepository();
     const repository = new RacingAvailabilityInventoryRepository(
