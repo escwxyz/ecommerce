@@ -135,6 +135,61 @@ describe("fulfillment module", () => {
     expect(canceled.status).toBe("canceled");
   });
 
+  it("rejects shipping options whose profile or zone belongs to another fulfillment set", async () => {
+    const { service } = createFulfillmentTestKit();
+    await service.registerProvider("fake");
+    const firstSet = await service.createFulfillmentSet({
+      name: "First fulfillment set",
+    });
+    const secondSet = await service.createFulfillmentSet({
+      name: "Second fulfillment set",
+    });
+    const firstProfile = await service.createShippingProfile({
+      fulfillmentSetId: firstSet.id,
+      name: "First profile",
+    });
+    const secondProfile = await service.createShippingProfile({
+      fulfillmentSetId: secondSet.id,
+      name: "Second profile",
+    });
+    const firstZone = await service.createServiceZone({
+      countryCodes: ["US"],
+      fulfillmentSetId: firstSet.id,
+      name: "First zone",
+    });
+    const secondZone = await service.createServiceZone({
+      countryCodes: ["DE"],
+      fulfillmentSetId: secondSet.id,
+      name: "Second zone",
+    });
+
+    await expect(
+      service.createShippingOption({
+        fulfillmentSetId: firstSet.id,
+        name: "Mismatched profile",
+        profileId: secondProfile.id,
+        providerKey: "fake",
+        providerServiceId: "ground",
+        serviceZoneId: firstZone.id,
+      })
+    ).rejects.toThrow(
+      `Shipping profile "${secondProfile.id}" does not belong to fulfillment set "${firstSet.id}".`
+    );
+    await expect(
+      service.createShippingOption({
+        fulfillmentSetId: firstSet.id,
+        name: "Mismatched zone",
+        profileId: firstProfile.id,
+        providerKey: "fake",
+        providerServiceId: "ground",
+        serviceZoneId: secondZone.id,
+      })
+    ).rejects.toThrow(
+      `Service zone "${secondZone.id}" does not belong to fulfillment set "${firstSet.id}".`
+    );
+    await expect(service.listShippingOptions()).resolves.toEqual([]);
+  });
+
   it("exposes protected fulfillment API route fragments", async () => {
     const { provider, repository } = createFulfillmentTestKit();
     const fragment = createFulfillmentRouteFragment({

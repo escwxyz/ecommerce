@@ -348,12 +348,29 @@ export const createFulfillmentService = ({
         throw new Error(`Fulfillment set "${fulfillmentSetId}" was not found.`);
       }
 
-      if (!(await repository.findShippingProfileById(profileId))) {
+      const shippingProfile =
+        await repository.findShippingProfileById(profileId);
+
+      if (!shippingProfile) {
         throw new Error(`Shipping profile "${profileId}" was not found.`);
       }
 
-      if (!(await repository.findServiceZoneById(serviceZoneId))) {
+      if (shippingProfile.fulfillmentSetId !== fulfillmentSetId) {
+        throw new Error(
+          `Shipping profile "${profileId}" does not belong to fulfillment set "${fulfillmentSetId}".`
+        );
+      }
+
+      const serviceZone = await repository.findServiceZoneById(serviceZoneId);
+
+      if (!serviceZone) {
         throw new Error(`Service zone "${serviceZoneId}" was not found.`);
+      }
+
+      if (serviceZone.fulfillmentSetId !== fulfillmentSetId) {
+        throw new Error(
+          `Service zone "${serviceZoneId}" does not belong to fulfillment set "${fulfillmentSetId}".`
+        );
       }
 
       requireProvider(providerRegistry, input.providerKey);
