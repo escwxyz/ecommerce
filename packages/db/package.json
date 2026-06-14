@@ -11,6 +11,9 @@
     "./schema/customer": {
       "default": "./src/schema/customer.ts"
     },
+    "./schema/fulfillment": {
+      "default": "./src/schema/fulfillment.ts"
+    },
     "./schema/inventory": {
       "default": "./src/schema/inventory.ts"
     },
@@ -42,6 +45,7 @@
   },
   "dependencies": {
     "@ecommerce/customer": "workspace:*",
+    "@ecommerce/fulfillment": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
     "@ecommerce/payment": "workspace:*",
     "@ecommerce/pricing": "workspace:*",

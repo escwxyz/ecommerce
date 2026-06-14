@@ -4,6 +4,8 @@ import { authMigration } from "./schema/auth";
 import type { AuthDatabase } from "./schema/auth";
 import { customerMigration } from "./schema/customer";
 import type { CustomerDatabase } from "./schema/customer";
+import { fulfillmentMigration } from "./schema/fulfillment";
+import type { FulfillmentDatabase } from "./schema/fulfillment";
 import { inventoryMigration } from "./schema/inventory";
 import type { InventoryDatabase } from "./schema/inventory";
 import { paymentMigration } from "./schema/payment";
@@ -28,6 +30,8 @@ export * from "./migrations";
 export * as authSchema from "./schema/auth";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as customerSchema from "./schema/customer";
+// oxlint-disable-next-line oxc/no-barrel-file
+export * as fulfillmentSchema from "./schema/fulfillment";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as inventorySchema from "./schema/inventory";
 // oxlint-disable-next-line oxc/no-barrel-file
@@ -55,6 +59,7 @@ export interface CommerceDatabase
   extends
     AuthDatabase,
     CustomerDatabase,
+    FulfillmentDatabase,
     InventoryDatabase,
     PaymentDatabase,
     StoreDatabase,
@@ -79,4 +84,5 @@ export const commerceMigrations = {
   "007_inventory": inventoryMigration,
   "008_tax": taxMigration,
   "009_payment": paymentMigration,
+  "010_fulfillment": fulfillmentMigration,
 } as const;

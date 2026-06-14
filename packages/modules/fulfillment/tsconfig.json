@@ -1,0 +1,14 @@
+{
+  "extends": "@ecommerce/config/tsconfig.base.json",
+  "include": ["src/**/*.ts"],
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "strictNullChecks": true,
+    "types": ["bun-types", "node"]
+  },
+  "exclude": ["node_modules"]
+}
