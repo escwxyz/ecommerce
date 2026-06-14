@@ -7,6 +7,7 @@ import {
 import type { CommercePermissionInput } from "@ecommerce/core/permissions";
 import { customerModule } from "@ecommerce/customer/module";
 import { inventoryModule } from "@ecommerce/inventory/module";
+import { paymentModule } from "@ecommerce/payment/module";
 import { pricingModule } from "@ecommerce/pricing/module";
 import { productModule } from "@ecommerce/product/module";
 import { promotionModule } from "@ecommerce/promotion/module";
@@ -23,6 +24,7 @@ export const builtinPermissionModules = [
   pricingModule,
   promotionModule,
   taxModule,
+  paymentModule,
 ] as const;
 
 export const builtinPermissionComposition = composeCommerceModulePermissions(

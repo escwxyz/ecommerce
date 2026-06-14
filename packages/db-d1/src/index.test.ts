@@ -149,6 +149,15 @@ describe("db d1 adapter", () => {
     );
     await expect(tableExists(database.db, "tax_region")).resolves.toBe(true);
     await expect(tableExists(database.db, "tax_rate")).resolves.toBe(true);
+    await expect(tableExists(database.db, "payment_collection")).resolves.toBe(
+      true
+    );
+    await expect(tableExists(database.db, "payment_session")).resolves.toBe(
+      true
+    );
+    await expect(
+      indexExists(database.db, "payment_provider_intent_idx")
+    ).resolves.toBe(true);
 
     sqlite.close();
   });
