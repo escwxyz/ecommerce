@@ -13,6 +13,8 @@ import type { CreateRegionSalesChannelRouteFragmentOptions } from "@ecommerce/re
 import { createRegionSalesChannelRouteFragment } from "@ecommerce/region-sales-channel/router";
 import type { CreateStoreRouteFragmentOptions } from "@ecommerce/store/router";
 import { createStoreRouteFragment } from "@ecommerce/store/router";
+import type { CreateTaxRouteFragmentOptions } from "@ecommerce/tax/router";
+import { createTaxRouteFragment } from "@ecommerce/tax/router";
 import { z } from "zod";
 
 import { createAdminMetadataModel } from "../admin-metadata";
@@ -132,6 +134,7 @@ export interface CreateBuiltinRouteFragmentsOptions {
   readonly regionSalesChannel?: CreateRegionSalesChannelRouteFragmentOptions;
   readonly promotion?: CreatePromotionRouteFragmentOptions;
   readonly store?: CreateStoreRouteFragmentOptions;
+  readonly tax?: CreateTaxRouteFragmentOptions;
 }
 
 export const createBuiltinRouteFragments = ({
@@ -142,6 +145,7 @@ export const createBuiltinRouteFragments = ({
   promotion,
   regionSalesChannel,
   store,
+  tax,
 }: CreateBuiltinRouteFragmentsOptions = {}) =>
   [
     coreRouteFragment,
@@ -171,6 +175,10 @@ export const createBuiltinRouteFragments = ({
     }),
     createApiRouteFragment({
       ...createPromotionRouteFragment(promotion),
+      owner: "module",
+    }),
+    createApiRouteFragment({
+      ...createTaxRouteFragment(tax),
       owner: "module",
     }),
   ] as const satisfies readonly ApiRouteFragment[];

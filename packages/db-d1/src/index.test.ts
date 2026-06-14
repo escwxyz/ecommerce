@@ -147,6 +147,8 @@ describe("db d1 adapter", () => {
     await expect(tableExists(database.db, "promotion_promotion")).resolves.toBe(
       true
     );
+    await expect(tableExists(database.db, "tax_region")).resolves.toBe(true);
+    await expect(tableExists(database.db, "tax_rate")).resolves.toBe(true);
 
     sqlite.close();
   });
@@ -387,7 +389,45 @@ describe("db d1 adapter", () => {
     sqlite.close();
   });
 
-  it("applies the SQL migration directory used by db:push through inventory", () => {
+  it("ships SQL migrations for tax tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(readFileSync(join(migrationsDir, "0009_tax.sql"), "utf8"));
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "tax_category",
+        "tax_provider_config",
+        "tax_region",
+        "tax_rate",
+        "tax_calculation_policy",
+      ])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'index'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "tax_category_code_idx",
+        "tax_provider_config_key_idx",
+        "tax_region_code_idx",
+        "tax_rate_region_idx",
+        "tax_rate_category_idx",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("applies the SQL migration directory used by db:push through tax", () => {
     const sqlite = new Database(":memory:");
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
@@ -414,6 +454,11 @@ describe("db d1 adapter", () => {
         "inventory_item",
         "inventory_level",
         "inventory_reservation",
+        "tax_category",
+        "tax_provider_config",
+        "tax_region",
+        "tax_rate",
+        "tax_calculation_policy",
       ])
     );
 

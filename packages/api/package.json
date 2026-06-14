@@ -25,6 +25,7 @@
     "@ecommerce/promotion": "workspace:*",
     "@ecommerce/region-sales-channel": "workspace:*",
     "@ecommerce/store": "workspace:*",
+    "@ecommerce/tax": "workspace:*",
     "@orpc/client": "catalog:",
     "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",

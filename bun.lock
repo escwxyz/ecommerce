@@ -113,6 +113,7 @@
         "@ecommerce/promotion": "workspace:*",
         "@ecommerce/region-sales-channel": "workspace:*",
         "@ecommerce/store": "workspace:*",
+        "@ecommerce/tax": "workspace:*",
         "@orpc/client": "catalog:",
         "@orpc/openapi": "catalog:",
         "@orpc/server": "catalog:",
@@ -165,6 +166,7 @@
         "@ecommerce/promotion": "workspace:*",
         "@ecommerce/region-sales-channel": "workspace:*",
         "@ecommerce/store": "workspace:*",
+        "@ecommerce/tax": "workspace:*",
         "kysely": "catalog:",
         "zod": "catalog:",
       },
@@ -356,6 +358,25 @@
     },
     "packages/modules/store": {
       "name": "@ecommerce/store",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ecommerce/core": "workspace:*",
+        "@ecommerce/module-contracts": "workspace:*",
+        "@orpc/server": "catalog:",
+        "effect": "catalog:",
+        "kysely": "catalog:",
+        "nanoid": "^5.1.6",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/modules/tax": {
+      "name": "@ecommerce/tax",
       "version": "0.0.0",
       "dependencies": {
         "@ecommerce/core": "workspace:*",
@@ -701,6 +722,8 @@
     "@ecommerce/region-sales-channel": ["@ecommerce/region-sales-channel@workspace:packages/modules/region-sales-channel"],
 
     "@ecommerce/store": ["@ecommerce/store@workspace:packages/modules/store"],
+
+    "@ecommerce/tax": ["@ecommerce/tax@workspace:packages/modules/tax"],
 
     "@ecommerce/ui": ["@ecommerce/ui@workspace:packages/ui"],
 

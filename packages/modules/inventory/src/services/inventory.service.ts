@@ -133,6 +133,7 @@ const waitForDuplicateReservationReplay = async (
     }
 
     if (attempt < DUPLICATE_RESERVATION_REPLAY_ATTEMPTS - 1) {
+      // oxlint-disable-next-line promise/avoid-new
       await new Promise((resolve) => {
         setTimeout(resolve, DUPLICATE_RESERVATION_REPLAY_DELAY_MS);
       });
@@ -159,6 +160,7 @@ const waitForDuplicateAdjustmentReplay = async (
     }
 
     if (attempt < DUPLICATE_RESERVATION_REPLAY_ATTEMPTS - 1) {
+      // oxlint-disable-next-line promise/avoid-new
       await new Promise((resolve) => {
         setTimeout(resolve, DUPLICATE_RESERVATION_REPLAY_DELAY_MS);
       });

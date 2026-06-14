@@ -640,7 +640,9 @@ describe("inventory module foundation", () => {
       id: "iadj_adjust_retry",
       updatedStockedQuantity: 5,
     });
-    await expect(repository.findLevel(item.id, location.id)).resolves.toMatchObject({
+    await expect(
+      repository.findLevel(item.id, location.id)
+    ).resolves.toMatchObject({
       stockedQuantity: 5,
     });
     expect(eventCollector.events.map((event) => event.name)).toEqual([
