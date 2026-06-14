@@ -283,7 +283,8 @@ export const createNotificationEventService = ({
 
       return nextOutbox;
     },
-    registerNotificationProvider: (providerKey) => {
+    registerNotificationProvider: async (providerKey) => {
+      requireProvider(providers, providerKey);
       const now = clock.now();
       return repository.saveProviderRecord({
         createdAt: now,

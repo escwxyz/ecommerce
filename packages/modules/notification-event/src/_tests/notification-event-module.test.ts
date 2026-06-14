@@ -117,6 +117,19 @@ describe("notification event module foundation", () => {
     ).resolves.toMatchObject({ id: "ndsp_1" });
   });
 
+  it("rejects registration for provider keys that are not configured", async () => {
+    const service = createNotificationEventService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["nprov_1"]),
+      notificationProviders: [createFakeNotificationProvider("email")],
+      repository: createInMemoryNotificationEventRepository(),
+    });
+
+    await expect(
+      service.registerNotificationProvider("sms")
+    ).rejects.toThrow('Notification provider "sms" is not registered.');
+  });
+
   it("declares separable module contributions and route metadata", async () => {
     expect(notificationEventModule.key).toBe("notification-event");
     expect(notificationEventModule.contributions?.eventTypes).toContain(
