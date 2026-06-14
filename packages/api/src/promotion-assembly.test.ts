@@ -14,6 +14,7 @@ describe("promotion API and admin assembly", () => {
       "module:customer",
       "module:product",
       "module:region-sales-channel",
+      "module:inventory",
       "module:pricing",
       "module:promotion",
     ]);

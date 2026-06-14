@@ -4,6 +4,9 @@
   "exports": {
     ".": {
       "default": "./src/index.ts"
+    },
+    "./stateful-do": {
+      "default": "./src/stateful-do.ts"
     }
   },
   "scripts": {

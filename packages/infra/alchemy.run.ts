@@ -40,6 +40,10 @@ export const database = Cloudflare.D1Database("Database", {
   migrationsTable: "d1_migrations",
 });
 
+export const statefulCoordinator = Cloudflare.DurableObjectNamespace(
+  "StatefulCoordinatorDurableObject"
+);
+
 export const server = Cloudflare.Worker("Server", {
   main: fromPackageRoot("../../apps/server/src/index.ts"),
   compatibility,
@@ -50,6 +54,7 @@ export const server = Cloudflare.Worker("Server", {
   env: {
     ...requiredServerConfig,
     DB: database,
+    STATEFUL_COORDINATOR: statefulCoordinator,
   },
   url: true,
 });

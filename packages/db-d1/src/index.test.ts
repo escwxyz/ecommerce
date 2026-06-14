@@ -348,7 +348,46 @@ describe("db d1 adapter", () => {
     sqlite.close();
   });
 
-  it("applies the SQL migration directory used by db:push through customer", () => {
+  it("ships SQL migrations for inventory tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(
+      readFileSync(join(migrationsDir, "0008_inventory.sql"), "utf8")
+    );
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "inventory_item",
+        "inventory_stock_location",
+        "inventory_level",
+        "inventory_reservation",
+        "inventory_adjustment_event",
+      ])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'index'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "inventory_item_sku_idx",
+        "inventory_level_scope_idx",
+        "inventory_reservation_idempotency_idx",
+        "inventory_reservation_level_idx",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("applies the SQL migration directory used by db:push through inventory", () => {
     const sqlite = new Database(":memory:");
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
@@ -372,6 +411,9 @@ describe("db d1 adapter", () => {
         "product",
         "store",
         "region",
+        "inventory_item",
+        "inventory_level",
+        "inventory_reservation",
       ])
     );
 

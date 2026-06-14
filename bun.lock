@@ -28,6 +28,8 @@
         "@ecommerce/auth": "workspace:*",
         "@ecommerce/db-d1": "workspace:*",
         "@ecommerce/env": "workspace:*",
+        "@ecommerce/inventory": "workspace:*",
+        "@ecommerce/platform-cloudflare": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
         "@ecommerce/promotion": "workspace:*",
@@ -105,6 +107,7 @@
         "@ecommerce/customer": "workspace:*",
         "@ecommerce/db": "workspace:*",
         "@ecommerce/env": "workspace:*",
+        "@ecommerce/inventory": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
         "@ecommerce/promotion": "workspace:*",
@@ -156,6 +159,7 @@
       "name": "@ecommerce/db",
       "dependencies": {
         "@ecommerce/customer": "workspace:*",
+        "@ecommerce/inventory": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
         "@ecommerce/promotion": "workspace:*",
@@ -228,6 +232,25 @@
       "version": "0.0.0",
       "dependencies": {
         "@ecommerce/auth": "workspace:*",
+        "@ecommerce/core": "workspace:*",
+        "@ecommerce/module-contracts": "workspace:*",
+        "@orpc/server": "catalog:",
+        "effect": "catalog:",
+        "kysely": "catalog:",
+        "nanoid": "^5.1.6",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/modules/inventory": {
+      "name": "@ecommerce/inventory",
+      "version": "0.0.0",
+      "dependencies": {
         "@ecommerce/core": "workspace:*",
         "@ecommerce/module-contracts": "workspace:*",
         "@orpc/server": "catalog:",
@@ -660,6 +683,8 @@
     "@ecommerce/env": ["@ecommerce/env@workspace:packages/env"],
 
     "@ecommerce/infra": ["@ecommerce/infra@workspace:packages/infra"],
+
+    "@ecommerce/inventory": ["@ecommerce/inventory@workspace:packages/modules/inventory"],
 
     "@ecommerce/module-contracts": ["@ecommerce/module-contracts@workspace:packages/modules/module-contracts"],
 

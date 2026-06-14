@@ -1,5 +1,6 @@
 import { composeAdminMetadata } from "@ecommerce/core/admin";
 import { customerAdminMetadata } from "@ecommerce/customer/admin";
+import { inventoryAdminMetadata } from "@ecommerce/inventory/admin";
 import { pricingAdminMetadata } from "@ecommerce/pricing/admin";
 import { productAdminMetadata } from "@ecommerce/product/admin";
 import { promotionAdminMetadata } from "@ecommerce/promotion/admin";
@@ -30,6 +31,7 @@ export const createAdminMetadataModel = (context: Context) =>
       customerAdminMetadata,
       productAdminMetadata,
       regionSalesChannelAdminMetadata,
+      inventoryAdminMetadata,
       pricingAdminMetadata,
       promotionAdminMetadata,
     ],
