@@ -79,6 +79,19 @@ const createKyselyD1NotificationEventDatabase = (sqlite: Database) =>
     }),
   });
 
+const createMigratedD1NotificationEventRepository = async (): Promise<{
+  readonly repository: ReturnType<typeof createD1NotificationEventRepository>;
+  readonly sqlite: Database;
+}> => {
+  const sqlite = new Database(":memory:");
+  const db = createKyselyD1NotificationEventDatabase(sqlite);
+  await notificationEventMigration.up(db);
+  return {
+    repository: createD1NotificationEventRepository({ db }),
+    sqlite,
+  };
+};
+
 const createOutboxRecord = (): EventOutboxRecord => {
   const now = new Date("2026-06-07T12:00:00.000Z");
 
@@ -210,14 +223,34 @@ describe("D1 notification-event repository", () => {
   runNotificationEventRepositoryContract(
     "repository contract",
     async () => {
-      sqlite = new Database(":memory:");
-      const db = createKyselyD1NotificationEventDatabase(sqlite);
-      await notificationEventMigration.up(db);
-      return createD1NotificationEventRepository({ db });
+      const context = await createMigratedD1NotificationEventRepository();
+      sqlite = context.sqlite;
+      return context.repository;
     },
     () => {
       sqlite?.close();
       sqlite = undefined;
     }
   );
+
+  it("returns the existing dispatch when idempotency key insert races lose", async () => {
+    const context = await createMigratedD1NotificationEventRepository();
+    const firstDispatch = createDispatchRecord();
+    const duplicateDispatch = {
+      ...firstDispatch,
+      id: "ndsp_repo_2",
+      payload: { orderId: "order_2" },
+    } satisfies NotificationDispatchRecord;
+
+    await context.repository.saveDispatch(firstDispatch);
+
+    await expect(
+      context.repository.saveDispatch(duplicateDispatch)
+    ).resolves.toEqual(firstDispatch);
+    await expect(context.repository.listDispatches()).resolves.toEqual([
+      firstDispatch,
+    ]);
+
+    context.sqlite.close();
+  });
 });

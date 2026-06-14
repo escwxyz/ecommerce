@@ -32,6 +32,11 @@ const toJsonColumn = (value: unknown): string => JSON.stringify(value);
 const toDate = (timestamp: number): Date => new Date(timestamp);
 const toTimestamp = (date: Date): number => date.getTime();
 
+const isIdempotencyKeyConflict = (error: unknown): boolean =>
+  error instanceof Error &&
+  error.message.includes("UNIQUE constraint failed") &&
+  error.message.includes("notification_dispatch.idempotency_key");
+
 const toOutboxRecord = (row: EventOutboxRow): EventOutboxRecord => ({
   attempts: row.attempts,
   availableAt: toDate(row.available_at),
@@ -242,20 +247,38 @@ export const createD1NotificationEventRepository = ({
   saveDispatch: async (record) => {
     const values = toDispatchInsert(record);
 
-    await db
-      .insertInto("notification_dispatch")
-      .values(values)
-      .onConflict((conflict) =>
-        conflict.column("id").doUpdateSet({
-          attempts: values.attempts,
-          delivered_at: values.delivered_at,
-          last_error: values.last_error,
-          provider_message_id: values.provider_message_id,
-          status: values.status,
-          updated_at: values.updated_at,
-        })
-      )
-      .execute();
+    try {
+      await db
+        .insertInto("notification_dispatch")
+        .values(values)
+        .onConflict((conflict) =>
+          conflict.column("id").doUpdateSet({
+            attempts: values.attempts,
+            delivered_at: values.delivered_at,
+            last_error: values.last_error,
+            provider_message_id: values.provider_message_id,
+            status: values.status,
+            updated_at: values.updated_at,
+          })
+        )
+        .execute();
+    } catch (error) {
+      if (!isIdempotencyKeyConflict(error)) {
+        throw error;
+      }
+
+      const existing = await db
+        .selectFrom("notification_dispatch")
+        .selectAll()
+        .where("idempotency_key", "=", record.idempotencyKey)
+        .executeTakeFirst();
+
+      if (existing) {
+        return toDispatchRecord(existing);
+      }
+
+      throw error;
+    }
 
     return record;
   },
