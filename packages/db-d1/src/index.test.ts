@@ -158,6 +158,16 @@ describe("db d1 adapter", () => {
     await expect(
       indexExists(database.db, "payment_provider_intent_idx")
     ).resolves.toBe(true);
+    await expect(tableExists(database.db, "fulfillment_set")).resolves.toBe(
+      true
+    );
+    await expect(tableExists(database.db, "shipping_option")).resolves.toBe(
+      true
+    );
+    await expect(tableExists(database.db, "shipment")).resolves.toBe(true);
+    await expect(
+      indexExists(database.db, "fulfillment_idempotency_idx")
+    ).resolves.toBe(true);
 
     sqlite.close();
   });
@@ -480,7 +490,54 @@ describe("db d1 adapter", () => {
     sqlite.close();
   });
 
-  it("applies the SQL migration directory used by db:push through payment", () => {
+  it("ships SQL migrations for fulfillment tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(
+      readFileSync(join(migrationsDir, "0011_fulfillment.sql"), "utf8")
+    );
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "fulfillment_provider",
+        "fulfillment_set",
+        "shipping_profile",
+        "service_zone",
+        "shipping_option",
+        "fulfillment",
+        "shipment",
+        "return_shipment_link",
+      ])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'index'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "fulfillment_provider_key_idx",
+        "shipping_profile_set_idx",
+        "service_zone_set_idx",
+        "shipping_option_set_idx",
+        "shipping_option_provider_idx",
+        "fulfillment_idempotency_idx",
+        "fulfillment_order_idx",
+        "shipment_fulfillment_idx",
+        "return_shipment_fulfillment_idx",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("applies the SQL migration directory used by db:push through fulfillment", () => {
     const sqlite = new Database(":memory:");
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
@@ -520,6 +577,14 @@ describe("db d1 adapter", () => {
         "payment",
         "payment_capture",
         "payment_refund",
+        "fulfillment_provider",
+        "fulfillment_set",
+        "shipping_profile",
+        "service_zone",
+        "shipping_option",
+        "fulfillment",
+        "shipment",
+        "return_shipment_link",
       ])
     );
 

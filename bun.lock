@@ -269,6 +269,7 @@
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },

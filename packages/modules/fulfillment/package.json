@@ -10,6 +10,9 @@
     "./admin": {
       "default": "./src/admin/index.ts"
     },
+    "./adapters/d1": {
+      "default": "./src/adapters/d1/index.ts"
+    },
     "./contracts": {
       "default": "./src/contracts/index.ts"
     },
@@ -55,6 +58,7 @@
   "devDependencies": {
     "@ecommerce/config": "workspace:*",
     "bun-types": "catalog:",
+    "kysely-d1": "catalog:",
     "typescript": "catalog:"
   }
 }
