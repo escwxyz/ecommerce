@@ -390,7 +390,79 @@ describe("cloudflare workflow runtime adapter", () => {
       {
         id: "ndsp_cf_notify_failed",
         lastError: "temporary provider failure",
-        status: "dead-lettered",
+        status: "failed",
+      },
+    ]);
+  });
+
+  it("does not redeliver when thrown provider delivery errors trigger queue retry", async () => {
+    const fakeQueue = createFakeQueue();
+    const repository = createInMemoryNotificationEventRepository();
+    const clock = createStaticClock(new Date("2026-06-07T12:00:00.000Z"));
+    const service = createNotificationEventService({
+      clock,
+      idGenerator: createSequenceIdGenerator(["ndsp_cf_notify_thrown"]),
+      notificationProviders: [
+        createCloudflareQueuedNotificationProvider({
+          clock,
+          providerKey: "email",
+          queue: fakeQueue.queue as Queue<NotificationEventQueueMessage>,
+        }),
+      ],
+      repository,
+    });
+
+    await service.upsertNotificationTemplate({
+      channel: "email",
+      id: "ntpl_cf_notify_thrown",
+      name: "Order placed",
+      providerKey: "email",
+      templateKey: "order.placed",
+    });
+    await service.dispatchNotification({
+      channel: "email",
+      correlationId: "corr_notify_thrown",
+      idempotencyKey: "notify_order_thrown",
+      payload: { orderId: "order_1" },
+      recipient: { address: "ada@example.com", type: "email" },
+      templateKey: "order.placed",
+    });
+
+    const message = fakeQueue.messages[0] as NotificationEventQueueMessage;
+    const queueMessage = {
+      ack: () => {
+        throw new Error("thrown provider errors must not ack");
+      },
+      body: message,
+      retry: () => undefined,
+    };
+    const retrySpy = spyOn(queueMessage, "retry");
+    let deliveries = 0;
+    const throwingProvider = {
+      key: "email",
+      deliver: async () => {
+        deliveries += 1;
+        throw new Error("provider timeout");
+      },
+    };
+
+    await processNotificationEventQueueBatch(
+      { messages: [queueMessage] },
+      {
+        clock,
+        notificationProviders: [throwingProvider],
+        repository,
+        retryPolicy: { maxAttempts: 3 },
+      }
+    );
+
+    expect(deliveries).toBe(1);
+    expect(retrySpy).toHaveBeenCalledTimes(1);
+    await expect(repository.listDispatches()).resolves.toMatchObject([
+      {
+        id: "ndsp_cf_notify_thrown",
+        lastError: "provider timeout",
+        status: "failed",
       },
     ]);
   });
