@@ -431,6 +431,13 @@ export const createPaymentService = ({
 
       const provider = requireProvider(providerRegistry, payment.providerKey);
       const amount = input.amount ?? payment.amount;
+
+      if (amount > payment.amount) {
+        throw new Error(
+          `Capture amount ${amount} exceeds authorized payment amount ${payment.amount}.`
+        );
+      }
+
       const providerIntent = await provider.capturePaymentIntent({
         amount: {
           amount,
