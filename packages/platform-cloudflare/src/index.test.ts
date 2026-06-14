@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
 import {
   defineQueueMessage,
@@ -9,24 +9,35 @@ import {
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core";
+import {
+  createFakeNotificationProvider,
+  createNotificationEventService,
+} from "@ecommerce/notification-event";
+import { createInMemoryNotificationEventRepository } from "@ecommerce/notification-event/repository";
 
 import {
   activateSandboxPlugin,
   createCloudflareQueuePublisher,
+  createCloudflareQueuedNotificationProvider,
   composeSandboxPluginDispatch,
   createCloudflareSandboxPluginRunner,
   createCloudflareStatefulCoordinator,
   createCloudflareWorkflowRuntime,
   createInMemorySandboxPluginMetadataStore,
   createInMemorySandboxStorage,
+  createNotificationEventQueuePublisher,
+  createNotificationEventRealtimePublisher,
+  processNotificationEventQueueBatch,
   createSandboxBridge,
   createSandboxPluginUpgradePlan,
   createSandboxPluginCacheId,
   filterActiveSandboxPlugins,
+  processNotificationEventQueueMessage,
 } from "./index";
 import type {
   CloudflareWorkerCode,
   CloudflareWorkerLoaderBinding,
+  NotificationEventQueueMessage,
 } from "./index";
 
 const createFakeWorkflowBinding = () => {
@@ -196,6 +207,297 @@ describe("cloudflare workflow runtime adapter", () => {
     expect(run.historyReference).toBe("cloudflare:run_cf_1");
     expect(sentMessages).toHaveLength(1);
     expect(metadata.records.get(run.runId)?.workflowKey).toBe("plugin.sync");
+  });
+
+  it("queues notification-event outbox work after module state is persisted", async () => {
+    const fakeQueue = createFakeQueue();
+    const repository = createInMemoryNotificationEventRepository();
+    const service = createNotificationEventService({
+      clock: createStaticClock(new Date("2026-06-07T12:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["evt_cf_notify_1"]),
+      repository,
+      runtime: createNotificationEventQueuePublisher({
+        clock: createStaticClock(new Date("2026-06-07T12:00:00.000Z")),
+        queue: fakeQueue.queue as Queue<NotificationEventQueueMessage>,
+      }),
+    });
+
+    const published = await service.publishEvent({
+      correlationId: "corr_notify_1",
+      name: "order.placed",
+      payload: { orderId: "order_1" },
+      sourceModule: "order",
+      workflowRunId: "wf_notify_1",
+    });
+
+    await expect(
+      repository.findOutboxById(published.outbox.id)
+    ).resolves.toMatchObject({
+      id: "evt_cf_notify_1",
+      status: "pending",
+    });
+    expect(fakeQueue.messages).toMatchObject([
+      {
+        kind: "event-outbox",
+        metadata: {
+          correlationId: "corr_notify_1",
+          idempotencyKey: "evt_cf_notify_1",
+          workflowRunId: "wf_notify_1",
+        },
+        payload: {
+          eventId: "evt_cf_notify_1",
+          eventName: "order.placed",
+          outboxId: "evt_cf_notify_1",
+          sourceModule: "order",
+        },
+      },
+    ]);
+  });
+
+  it("queues notification dispatches and lets consumers deliver idempotently", async () => {
+    const fakeQueue = createFakeQueue();
+    const repository = createInMemoryNotificationEventRepository();
+    const clock = createStaticClock(new Date("2026-06-07T12:00:00.000Z"));
+    const service = createNotificationEventService({
+      clock,
+      idGenerator: createSequenceIdGenerator(["ndsp_cf_notify_1"]),
+      notificationProviders: [
+        createCloudflareQueuedNotificationProvider({
+          clock,
+          providerKey: "email",
+          queue: fakeQueue.queue as Queue<NotificationEventQueueMessage>,
+        }),
+      ],
+      repository,
+    });
+
+    await service.upsertNotificationTemplate({
+      channel: "email",
+      id: "ntpl_cf_notify_1",
+      name: "Order placed",
+      providerKey: "email",
+      templateKey: "order.placed",
+    });
+
+    const dispatch = await service.dispatchNotification({
+      channel: "email",
+      correlationId: "corr_notify_2",
+      idempotencyKey: "notify_order_1",
+      payload: { orderId: "order_1" },
+      recipient: { address: "ada@example.com", type: "email" },
+      templateKey: "order.placed",
+    });
+    const provider = createFakeNotificationProvider("email");
+    const message = fakeQueue.messages[0] as NotificationEventQueueMessage;
+
+    expect(dispatch.status).toBe("queued");
+    expect(message).toMatchObject({
+      kind: "notification-dispatch",
+      metadata: {
+        correlationId: "corr_notify_2",
+        idempotencyKey: "notify_order_1",
+      },
+      payload: {
+        providerKey: "email",
+      },
+    });
+
+    await processNotificationEventQueueMessage(message, {
+      clock,
+      notificationProviders: [provider],
+      repository,
+      retryPolicy: { maxAttempts: 3 },
+    });
+    await processNotificationEventQueueMessage(message, {
+      clock,
+      notificationProviders: [provider],
+      repository,
+      retryPolicy: { maxAttempts: 3 },
+    });
+
+    expect(provider.deliveries).toHaveLength(1);
+    await expect(repository.listDispatches()).resolves.toMatchObject([
+      {
+        id: "ndsp_cf_notify_1",
+        status: "delivered",
+      },
+    ]);
+  });
+
+  it("retries queue messages when provider delivery returns failed status", async () => {
+    const fakeQueue = createFakeQueue();
+    const repository = createInMemoryNotificationEventRepository();
+    const clock = createStaticClock(new Date("2026-06-07T12:00:00.000Z"));
+    const service = createNotificationEventService({
+      clock,
+      idGenerator: createSequenceIdGenerator(["ndsp_cf_notify_failed"]),
+      notificationProviders: [
+        createCloudflareQueuedNotificationProvider({
+          clock,
+          providerKey: "email",
+          queue: fakeQueue.queue as Queue<NotificationEventQueueMessage>,
+        }),
+      ],
+      repository,
+    });
+
+    await service.upsertNotificationTemplate({
+      channel: "email",
+      id: "ntpl_cf_notify_failed",
+      name: "Order placed",
+      providerKey: "email",
+      templateKey: "order.placed",
+    });
+    await service.dispatchNotification({
+      channel: "email",
+      correlationId: "corr_notify_failed",
+      idempotencyKey: "notify_order_failed",
+      payload: { orderId: "order_1" },
+      recipient: { address: "ada@example.com", type: "email" },
+      templateKey: "order.placed",
+    });
+
+    const message = fakeQueue.messages[0] as NotificationEventQueueMessage;
+    const queueMessage = {
+      ack: () => {
+        throw new Error("failed provider results must not ack");
+      },
+      body: message,
+      retry: () => undefined,
+    };
+    const retrySpy = spyOn(queueMessage, "retry");
+    const failedProvider = {
+      key: "email",
+      deliver: async () => ({
+        error: "temporary provider failure",
+        messageId: "provider:failed",
+        status: "failed" as const,
+      }),
+    };
+
+    await processNotificationEventQueueBatch(
+      { messages: [queueMessage] },
+      {
+        clock,
+        notificationProviders: [failedProvider],
+        repository,
+        retryPolicy: { maxAttempts: 3 },
+      }
+    );
+
+    expect(retrySpy).toHaveBeenCalledTimes(1);
+    await expect(repository.listDispatches()).resolves.toMatchObject([
+      {
+        id: "ndsp_cf_notify_failed",
+        lastError: "temporary provider failure",
+        status: "failed",
+      },
+    ]);
+  });
+
+  it("does not redeliver when thrown provider delivery errors trigger queue retry", async () => {
+    const fakeQueue = createFakeQueue();
+    const repository = createInMemoryNotificationEventRepository();
+    const clock = createStaticClock(new Date("2026-06-07T12:00:00.000Z"));
+    const service = createNotificationEventService({
+      clock,
+      idGenerator: createSequenceIdGenerator(["ndsp_cf_notify_thrown"]),
+      notificationProviders: [
+        createCloudflareQueuedNotificationProvider({
+          clock,
+          providerKey: "email",
+          queue: fakeQueue.queue as Queue<NotificationEventQueueMessage>,
+        }),
+      ],
+      repository,
+    });
+
+    await service.upsertNotificationTemplate({
+      channel: "email",
+      id: "ntpl_cf_notify_thrown",
+      name: "Order placed",
+      providerKey: "email",
+      templateKey: "order.placed",
+    });
+    await service.dispatchNotification({
+      channel: "email",
+      correlationId: "corr_notify_thrown",
+      idempotencyKey: "notify_order_thrown",
+      payload: { orderId: "order_1" },
+      recipient: { address: "ada@example.com", type: "email" },
+      templateKey: "order.placed",
+    });
+
+    const message = fakeQueue.messages[0] as NotificationEventQueueMessage;
+    const queueMessage = {
+      ack: () => {
+        throw new Error("thrown provider errors must not ack");
+      },
+      body: message,
+      retry: () => undefined,
+    };
+    const retrySpy = spyOn(queueMessage, "retry");
+    let deliveries = 0;
+    const throwingProvider = {
+      key: "email",
+      deliver: async () => {
+        deliveries += 1;
+        throw new Error("provider timeout");
+      },
+    };
+
+    await processNotificationEventQueueBatch(
+      { messages: [queueMessage] },
+      {
+        clock,
+        notificationProviders: [throwingProvider],
+        repository,
+        retryPolicy: { maxAttempts: 3 },
+      }
+    );
+
+    expect(deliveries).toBe(1);
+    expect(retrySpy).toHaveBeenCalledTimes(1);
+    await expect(repository.listDispatches()).resolves.toMatchObject([
+      {
+        id: "ndsp_cf_notify_thrown",
+        lastError: "provider timeout",
+        status: "failed",
+      },
+    ]);
+  });
+
+  it("routes realtime updates to deterministic Durable Object scopes", async () => {
+    const broadcasts: unknown[] = [];
+    const scopes: string[] = [];
+    const realtime = createNotificationEventRealtimePublisher({
+      namespace: {
+        getByName: (scope) => {
+          scopes.push(scope);
+          return {
+            broadcast: async (update) => {
+              broadcasts.push(update);
+            },
+            fetch: async () => new Response("ok"),
+          };
+        },
+      },
+    });
+
+    await realtime.publish("tenant:store_1", {
+      id: "evt_realtime_1",
+      occurredAt: "2026-06-07T12:00:00.000Z",
+      payload: { outboxId: "evt_1" },
+      type: "event-dispatched",
+    });
+
+    expect(scopes).toEqual(["tenant:store_1"]);
+    expect(broadcasts).toMatchObject([
+      {
+        id: "evt_realtime_1",
+        type: "event-dispatched",
+      },
+    ]);
   });
 
   it("preserves queue and stateful coordination metadata through platform adapters", async () => {

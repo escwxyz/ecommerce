@@ -3,6 +3,28 @@ export {
   type CloudflareQueuePublisherOptions,
 } from "./queue";
 export {
+  createCloudflareQueuedNotificationProvider,
+  createNotificationEventQueuePublisher,
+  createNotificationEventRealtimePublisher,
+  notificationEventDeadLetterQueueName,
+  notificationEventQueueName,
+  notificationEventRealtimeDefaultScope,
+  processNotificationEventQueueBatch,
+  processNotificationEventQueueMessage,
+  type NotificationDispatchQueueMessage,
+  type NotificationEventDeadLetterQueueMessage,
+  type NotificationEventOutboxQueueMessage,
+  type NotificationEventQueueBatch,
+  type NotificationEventQueueConsumerOptions,
+  type NotificationEventQueueMessage,
+  type NotificationEventQueueMetadata,
+  type NotificationEventQueuePublisherOptions,
+  type NotificationEventRealtimeDurableObjectStub,
+  type NotificationEventRealtimePublisher,
+  type NotificationEventRealtimeUpdate,
+  type QueuedNotificationProviderOptions,
+} from "./notification-event";
+export {
   activateSandboxPlugin,
   composeSandboxPluginDispatch,
   createCloudflareSandboxPluginRunner,

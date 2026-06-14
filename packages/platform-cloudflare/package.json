@@ -5,6 +5,9 @@
     ".": {
       "default": "./src/index.ts"
     },
+    "./notification-event-realtime-do": {
+      "default": "./src/notification-event-realtime-do.ts"
+    },
     "./stateful-do": {
       "default": "./src/stateful-do.ts"
     }
@@ -14,7 +17,8 @@
     "test": "bun test ./src"
   },
   "dependencies": {
-    "@ecommerce/core": "workspace:*"
+    "@ecommerce/core": "workspace:*",
+    "@ecommerce/notification-event": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",

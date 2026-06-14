@@ -168,6 +168,16 @@ describe("db d1 adapter", () => {
     await expect(
       indexExists(database.db, "fulfillment_idempotency_idx")
     ).resolves.toBe(true);
+    await expect(tableExists(database.db, "event_outbox")).resolves.toBe(true);
+    await expect(tableExists(database.db, "event_dead_letter")).resolves.toBe(
+      true
+    );
+    await expect(
+      tableExists(database.db, "notification_dispatch")
+    ).resolves.toBe(true);
+    await expect(
+      indexExists(database.db, "notification_dispatch_idempotency_idx")
+    ).resolves.toBe(true);
 
     sqlite.close();
   });
@@ -537,7 +547,47 @@ describe("db d1 adapter", () => {
     sqlite.close();
   });
 
-  it("applies the SQL migration directory used by db:push through fulfillment", () => {
+  it("ships SQL migrations for notification-event tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(
+      readFileSync(join(migrationsDir, "0012_notification_event.sql"), "utf8")
+    );
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "event_outbox",
+        "event_dead_letter",
+        "notification_template",
+        "notification_dispatch",
+        "notification_provider",
+      ])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'index'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "event_outbox_status_idx",
+        "event_dead_letter_event_idx",
+        "notification_template_key_idx",
+        "notification_provider_key_idx",
+        "notification_dispatch_idempotency_idx",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("applies the SQL migration directory used by db:push through notification-event", () => {
     const sqlite = new Database(":memory:");
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
@@ -585,6 +635,11 @@ describe("db d1 adapter", () => {
         "fulfillment",
         "shipment",
         "return_shipment_link",
+        "event_outbox",
+        "event_dead_letter",
+        "notification_template",
+        "notification_dispatch",
+        "notification_provider",
       ])
     );
 

@@ -2,6 +2,7 @@ import { composeAdminMetadata } from "@ecommerce/core/admin";
 import { customerAdminMetadata } from "@ecommerce/customer/admin";
 import { fulfillmentAdminMetadata } from "@ecommerce/fulfillment/admin";
 import { inventoryAdminMetadata } from "@ecommerce/inventory/admin";
+import { notificationEventAdminMetadata } from "@ecommerce/notification-event/admin";
 import { paymentAdminMetadata } from "@ecommerce/payment/admin";
 import { pricingAdminMetadata } from "@ecommerce/pricing/admin";
 import { productAdminMetadata } from "@ecommerce/product/admin";
@@ -35,6 +36,7 @@ export const createAdminMetadataModel = (context: Context) =>
       productAdminMetadata,
       regionSalesChannelAdminMetadata,
       inventoryAdminMetadata,
+      notificationEventAdminMetadata,
       pricingAdminMetadata,
       promotionAdminMetadata,
       taxAdminMetadata,

@@ -29,6 +29,7 @@
         "@ecommerce/db-d1": "workspace:*",
         "@ecommerce/env": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
+        "@ecommerce/notification-event": "workspace:*",
         "@ecommerce/platform-cloudflare": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
@@ -109,6 +110,7 @@
         "@ecommerce/env": "workspace:*",
         "@ecommerce/fulfillment": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
+        "@ecommerce/notification-event": "workspace:*",
         "@ecommerce/payment": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
@@ -164,6 +166,7 @@
         "@ecommerce/customer": "workspace:*",
         "@ecommerce/fulfillment": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
+        "@ecommerce/notification-event": "workspace:*",
         "@ecommerce/payment": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
@@ -300,6 +303,25 @@
       },
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/modules/notification-event": {
+      "name": "@ecommerce/notification-event",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ecommerce/core": "workspace:*",
+        "@ecommerce/module-contracts": "workspace:*",
+        "@orpc/server": "catalog:",
+        "effect": "catalog:",
+        "kysely": "catalog:",
+        "nanoid": "^5.1.6",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -451,6 +473,7 @@
       "name": "@ecommerce/platform-cloudflare",
       "dependencies": {
         "@ecommerce/core": "workspace:*",
+        "@ecommerce/notification-event": "workspace:*",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:",
@@ -755,6 +778,8 @@
     "@ecommerce/inventory": ["@ecommerce/inventory@workspace:packages/modules/inventory"],
 
     "@ecommerce/module-contracts": ["@ecommerce/module-contracts@workspace:packages/modules/module-contracts"],
+
+    "@ecommerce/notification-event": ["@ecommerce/notification-event@workspace:packages/modules/notification-event"],
 
     "@ecommerce/payment": ["@ecommerce/payment@workspace:packages/modules/payment"],
 

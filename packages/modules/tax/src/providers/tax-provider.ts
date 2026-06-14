@@ -74,18 +74,32 @@ const getRoundedLineAmounts = (
   );
   let remainder =
     roundedTotal - floors.reduce((total, floor) => total + floor, 0);
-  const allocationOrder = rawAmounts
-    .map((rawAmount, index) => ({
+  const allocationOrder: { fraction: number; index: number }[] = [];
+
+  for (const [index, rawAmount] of rawAmounts.entries()) {
+    const next = {
       fraction: rawAmount - Math.floor(rawAmount),
       index,
-    }))
-    .toSorted((left, right) => {
-      if (right.fraction !== left.fraction) {
-        return right.fraction - left.fraction;
+    };
+    let insertAt = 0;
+
+    while (insertAt < allocationOrder.length) {
+      const current = allocationOrder[insertAt];
+
+      if (
+        !current ||
+        next.fraction > current.fraction ||
+        (next.fraction === current.fraction && next.index < current.index)
+      ) {
+        break;
       }
 
-      return left.index - right.index;
-    });
+      insertAt += 1;
+    }
+
+    allocationOrder.splice(insertAt, 0, next);
+  }
+
   const amounts = [...floors];
 
   for (const { index } of allocationOrder) {
