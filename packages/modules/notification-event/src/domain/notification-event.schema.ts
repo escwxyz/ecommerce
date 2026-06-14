@@ -101,6 +101,7 @@ export const UpsertNotificationTemplateInputSchema = NotificationTemplateSchema;
 
 export const NotificationDispatchStatusSchema = z.enum([
   "pending",
+  "queued",
   "delivered",
   "failed",
   "dead-lettered",

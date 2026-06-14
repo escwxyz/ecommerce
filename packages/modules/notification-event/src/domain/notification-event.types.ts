@@ -110,7 +110,7 @@ export interface NotificationProviderDeliveryInput {
 export interface NotificationProviderDeliveryResult {
   readonly deliveredAt?: Date;
   readonly messageId: string;
-  readonly status: "delivered" | "failed";
+  readonly status: "delivered" | "failed" | "queued";
   readonly error?: string;
 }
 

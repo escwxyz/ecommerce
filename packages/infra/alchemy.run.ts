@@ -44,8 +44,27 @@ export const statefulCoordinator = Cloudflare.DurableObjectNamespace(
   "StatefulCoordinatorDurableObject"
 );
 
+export const notificationEventQueue = Cloudflare.Queue(
+  "NotificationEventQueue",
+  {
+    name: "notification-event-work",
+  }
+);
+
+export const notificationEventDeadLetterQueue = Cloudflare.Queue(
+  "NotificationEventDeadLetterQueue",
+  {
+    name: "notification-event-dead-letter",
+  }
+);
+
+export const notificationEventRealtime = Cloudflare.DurableObjectNamespace(
+  "NotificationEventRealtimeDurableObject"
+);
+
 export const server = Cloudflare.Worker("Server", {
   main: fromPackageRoot("../../apps/server/src/index.ts"),
+  name: "ecommerce-server",
   compatibility,
   dev: {
     port: 3000,
@@ -54,10 +73,29 @@ export const server = Cloudflare.Worker("Server", {
   env: {
     ...requiredServerConfig,
     DB: database,
+    NOTIFICATION_EVENT_DEAD_LETTER_QUEUE: notificationEventDeadLetterQueue,
+    NOTIFICATION_EVENT_QUEUE: notificationEventQueue,
+    NOTIFICATION_EVENT_REALTIME: notificationEventRealtime,
     STATEFUL_COORDINATOR: statefulCoordinator,
   },
   url: true,
 });
+
+export const notificationEventQueueConsumer = notificationEventQueue.pipe(
+  Effect.flatMap((queue) =>
+    Cloudflare.QueueConsumer("NotificationEventQueueConsumer", {
+      deadLetterQueue: "notification-event-dead-letter",
+      queueId: queue.queueId,
+      scriptName: "ecommerce-server",
+      settings: {
+        batchSize: 10,
+        maxRetries: 3,
+        maxWaitTimeMs: 5000,
+        retryDelay: 30,
+      },
+    })
+  )
+);
 
 export const web = Cloudflare.Vite("Web", {
   rootDir: fromPackageRoot("../../apps/web"),
@@ -89,6 +127,10 @@ export default Alchemy.Stack(
       apiUrl: api.url,
       databaseId: db.databaseId,
       databaseName: db.databaseName,
+      notificationEventQueueConsumerId:
+        yield* notificationEventQueueConsumer.pipe(
+          Effect.map((consumer) => consumer.consumerId)
+        ),
     };
   })
 );

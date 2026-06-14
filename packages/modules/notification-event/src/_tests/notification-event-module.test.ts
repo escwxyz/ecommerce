@@ -125,9 +125,9 @@ describe("notification event module foundation", () => {
       repository: createInMemoryNotificationEventRepository(),
     });
 
-    await expect(
-      service.registerNotificationProvider("sms")
-    ).rejects.toThrow('Notification provider "sms" is not registered.');
+    await expect(service.registerNotificationProvider("sms")).rejects.toThrow(
+      'Notification provider "sms" is not registered.'
+    );
   });
 
   it("declares separable module contributions and route metadata", async () => {

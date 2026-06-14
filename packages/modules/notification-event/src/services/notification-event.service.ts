@@ -63,6 +63,11 @@ export interface CreateNotificationEventServiceOptions {
   readonly idGenerator?: IdGeneratorServiceShape;
   readonly notificationProviders?: readonly NotificationProvider[];
   readonly repository?: NotificationEventRepository;
+  readonly runtime?: NotificationEventRuntimeHooks;
+}
+
+export interface NotificationEventRuntimeHooks {
+  eventPublished?(result: EventPublishResult): Promise<void>;
 }
 
 export interface FakeNotificationProvider extends NotificationProvider {
@@ -155,6 +160,7 @@ export const createNotificationEventService = ({
   idGenerator = createDefaultIdGenerator(),
   notificationProviders = [],
   repository = defaultNotificationEventRepository,
+  runtime,
 }: CreateNotificationEventServiceOptions = {}): NotificationEventServiceShape => {
   const providers = createProviderMap(notificationProviders);
 
@@ -238,10 +244,14 @@ export const createNotificationEventService = ({
         updatedAt: emittedAt,
       };
 
-      return {
+      const result = {
         envelope,
         outbox: await repository.saveOutbox(outbox),
       };
+
+      await runtime?.eventPublished?.(result);
+
+      return result;
     },
     recordEventDeliveryFailure: async ({ outboxId, reason, retryPolicy }) => {
       const outbox = await repository.findOutboxById(outboxId);
@@ -284,6 +294,7 @@ export const createNotificationEventService = ({
       return nextOutbox;
     },
     registerNotificationProvider: async (providerKey) => {
+      await Promise.resolve();
       requireProvider(providers, providerKey);
       const now = clock.now();
       return repository.saveProviderRecord({
