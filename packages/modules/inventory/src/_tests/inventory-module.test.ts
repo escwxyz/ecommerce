@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
+import type {
+  StatefulCoordinationRequest,
+  StatefulCoordinationResult,
+  StatefulCoordinator,
+} from "@ecommerce/core/stateful";
 import {
   createEventCollector,
   createSequenceIdGenerator,
@@ -13,6 +18,12 @@ import type {
   InventoryRepository,
   InventoryReservationRecord,
   StockLocationId,
+} from "../domain";
+import {
+  createInventoryItemId,
+  createInventoryLevelId,
+  createInventoryReservationId,
+  createStockLocationId,
 } from "../domain";
 import { inventoryModule } from "../module";
 import { createResettableInMemoryInventoryRepository } from "../repositories";
@@ -102,6 +113,186 @@ class RacingAvailabilityInventoryRepository implements InventoryRepository {
 
   saveReservationIfAvailable: InventoryRepository["saveReservationIfAvailable"] =
     (reservation) => this.#base.saveReservationIfAvailable(reservation);
+
+  saveReservation: InventoryRepository["saveReservation"] = (reservation) =>
+    this.#base.saveReservation(reservation);
+
+  saveStockLocation: InventoryRepository["saveStockLocation"] = (location) =>
+    this.#base.saveStockLocation(location);
+}
+
+class DuplicateOnSaveInventoryRepository implements InventoryRepository {
+  readonly #base: ResettableInventoryRepository;
+  readonly #reservation: InventoryReservationRecord;
+
+  constructor(
+    base: ResettableInventoryRepository,
+    reservation: InventoryReservationRecord
+  ) {
+    this.#base = base;
+    this.#reservation = reservation;
+  }
+
+  findAdjustmentEvents: InventoryRepository["findAdjustmentEvents"] = (
+    inventoryItemId
+  ) => this.#base.findAdjustmentEvents(inventoryItemId);
+
+  findInventoryItemById: InventoryRepository["findInventoryItemById"] = (id) =>
+    this.#base.findInventoryItemById(id);
+
+  findLevel: InventoryRepository["findLevel"] = (
+    inventoryItemId,
+    stockLocationId
+  ) => this.#base.findLevel(inventoryItemId, stockLocationId);
+
+  findReservationByIdempotencyKey: InventoryRepository["findReservationByIdempotencyKey"] =
+    () => Promise.resolve(null);
+
+  findReservationsForLevel: InventoryRepository["findReservationsForLevel"] = (
+    inventoryItemId,
+    stockLocationId
+  ) => this.#base.findReservationsForLevel(inventoryItemId, stockLocationId);
+
+  findStockLocationById: InventoryRepository["findStockLocationById"] = (id) =>
+    this.#base.findStockLocationById(id);
+
+  listStockLocationsForSalesChannel: InventoryRepository["listStockLocationsForSalesChannel"] =
+    (salesChannelId) =>
+      this.#base.listStockLocationsForSalesChannel(salesChannelId);
+
+  saveAdjustmentEvent: InventoryRepository["saveAdjustmentEvent"] = (event) =>
+    this.#base.saveAdjustmentEvent(event);
+
+  saveInventoryItem: InventoryRepository["saveInventoryItem"] = (item) =>
+    this.#base.saveInventoryItem(item);
+
+  saveLevel: InventoryRepository["saveLevel"] = (level) =>
+    this.#base.saveLevel(level);
+
+  saveReservationIfAvailable: InventoryRepository["saveReservationIfAvailable"] =
+    () =>
+      Promise.resolve({
+        reservation: this.#reservation,
+        status: "duplicate" as const,
+      });
+
+  saveReservation: InventoryRepository["saveReservation"] = (reservation) =>
+    this.#base.saveReservation(reservation);
+
+  saveStockLocation: InventoryRepository["saveStockLocation"] = (location) =>
+    this.#base.saveStockLocation(location);
+}
+
+class InFlightDuplicateCoordinator implements StatefulCoordinator {
+  readonly #seen = new Set<string>();
+  readonly #onDuplicate: () => void;
+
+  constructor(onDuplicate: () => void) {
+    this.#onDuplicate = onDuplicate;
+  }
+
+  coordinate<Input = unknown, Output = unknown>(
+    request: StatefulCoordinationRequest<Input>
+  ): Promise<StatefulCoordinationResult<Output>> {
+    const duplicate = this.#seen.has(request.idempotencyKey);
+
+    if (duplicate) {
+      this.#onDuplicate();
+    } else {
+      this.#seen.add(request.idempotencyKey);
+    }
+
+    return Promise.resolve({
+      causationId: request.causationId,
+      coordinatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      coordinatorKey: request.coordinatorKey,
+      correlationId: request.correlationId,
+      duplicate,
+      idempotencyKey: request.idempotencyKey,
+      operationName: request.operationName,
+      output: undefined as Output,
+      subject: request.subject,
+      workflowRunId: request.workflowRunId,
+    });
+  }
+}
+
+class InFlightDuplicateInventoryRepository implements InventoryRepository {
+  readonly #base: ResettableInventoryRepository;
+  #duplicateLookupShouldReleaseSave = false;
+  #releaseSave: (() => void) | null = null;
+  #saveStarted: (() => void) | null = null;
+  readonly #saveBarrier = new Promise<void>((resolve) => {
+    this.#releaseSave = resolve;
+  });
+  readonly #saveStartedBarrier = new Promise<void>((resolve) => {
+    this.#saveStarted = resolve;
+  });
+
+  constructor(base: ResettableInventoryRepository) {
+    this.#base = base;
+  }
+
+  releaseSaveAfterNextDuplicateLookup(): void {
+    this.#duplicateLookupShouldReleaseSave = true;
+  }
+
+  waitForSaveAttempt(): Promise<void> {
+    return this.#saveStartedBarrier;
+  }
+
+  findAdjustmentEvents: InventoryRepository["findAdjustmentEvents"] = (
+    inventoryItemId
+  ) => this.#base.findAdjustmentEvents(inventoryItemId);
+
+  findInventoryItemById: InventoryRepository["findInventoryItemById"] = (id) =>
+    this.#base.findInventoryItemById(id);
+
+  findLevel: InventoryRepository["findLevel"] = (
+    inventoryItemId,
+    stockLocationId
+  ) => this.#base.findLevel(inventoryItemId, stockLocationId);
+
+  findReservationByIdempotencyKey: InventoryRepository["findReservationByIdempotencyKey"] =
+    async (idempotencyKey) => {
+      const reservation =
+        await this.#base.findReservationByIdempotencyKey(idempotencyKey);
+
+      if (!reservation && this.#duplicateLookupShouldReleaseSave) {
+        this.#duplicateLookupShouldReleaseSave = false;
+        this.#releaseSave?.();
+      }
+
+      return reservation;
+    };
+
+  findReservationsForLevel: InventoryRepository["findReservationsForLevel"] = (
+    inventoryItemId,
+    stockLocationId
+  ) => this.#base.findReservationsForLevel(inventoryItemId, stockLocationId);
+
+  findStockLocationById: InventoryRepository["findStockLocationById"] = (id) =>
+    this.#base.findStockLocationById(id);
+
+  listStockLocationsForSalesChannel: InventoryRepository["listStockLocationsForSalesChannel"] =
+    (salesChannelId) =>
+      this.#base.listStockLocationsForSalesChannel(salesChannelId);
+
+  saveAdjustmentEvent: InventoryRepository["saveAdjustmentEvent"] = (event) =>
+    this.#base.saveAdjustmentEvent(event);
+
+  saveInventoryItem: InventoryRepository["saveInventoryItem"] = (item) =>
+    this.#base.saveInventoryItem(item);
+
+  saveLevel: InventoryRepository["saveLevel"] = (level) =>
+    this.#base.saveLevel(level);
+
+  saveReservationIfAvailable: InventoryRepository["saveReservationIfAvailable"] =
+    async (reservation) => {
+      this.#saveStarted?.();
+      await this.#saveBarrier;
+      return this.#base.saveReservationIfAvailable(reservation);
+    };
 
   saveReservation: InventoryRepository["saveReservation"] = (reservation) =>
     this.#base.saveReservation(reservation);
@@ -326,6 +517,160 @@ describe("inventory module foundation", () => {
       reason: "restock",
       updatedStockedQuantity: 5,
     });
+  });
+
+  it("does not emit duplicate events when reservation save resolves as duplicate", async () => {
+    const createdAt = new Date("2026-01-01T00:00:00.000Z");
+    const baseRepository = createResettableInMemoryInventoryRepository();
+    const existingReservation = {
+      causationId: null,
+      correlationId: "checkout_duplicate_existing",
+      createdAt,
+      id: createInventoryReservationId("ires_duplicate_existing"),
+      idempotencyKey: "reserve_duplicate_existing",
+      inventoryItemId: createInventoryItemId("iitem_duplicate"),
+      quantity: 1,
+      releasedAt: null,
+      salesChannelId: "sc_duplicate",
+      status: "active" as const,
+      stockLocationId: createStockLocationId("sloc_duplicate"),
+      updatedAt: createdAt,
+      workflowRunId: null,
+    };
+    await baseRepository.saveInventoryItem({
+      createdAt,
+      id: existingReservation.inventoryItemId,
+      metadata: {},
+      sku: "duplicate-sku",
+      title: "Duplicate item",
+      updatedAt: createdAt,
+    });
+    await baseRepository.saveStockLocation({
+      createdAt,
+      id: existingReservation.stockLocationId,
+      metadata: {},
+      name: "Duplicate warehouse",
+      salesChannelIds: ["sc_duplicate"],
+      updatedAt: createdAt,
+    });
+    await baseRepository.saveLevel({
+      createdAt,
+      id: createInventoryLevelId("ilvl_duplicate"),
+      inventoryItemId: existingReservation.inventoryItemId,
+      reservedQuantity: 0,
+      stockLocationId: existingReservation.stockLocationId,
+      stockedQuantity: 2,
+      updatedAt: createdAt,
+    });
+    await baseRepository.saveReservation(existingReservation);
+
+    const eventCollector = createEventCollector();
+    const service = createInventoryService({
+      clock: createStaticClock(createdAt),
+      eventPublisher: eventCollector.publisher,
+      repository: new DuplicateOnSaveInventoryRepository(
+        baseRepository,
+        existingReservation
+      ),
+    });
+
+    await expect(
+      service.reserveInventory({
+        correlationId: "checkout_duplicate_retry",
+        idempotencyKey: "reserve_duplicate_existing",
+        inventoryItemId: existingReservation.inventoryItemId,
+        quantity: 1,
+        salesChannelId: "sc_duplicate",
+        stockLocationId: existingReservation.stockLocationId,
+      })
+    ).resolves.toMatchObject({
+      availability: {
+        availableQuantity: 1,
+        reservedQuantity: 1,
+      },
+      duplicate: true,
+      reservation: {
+        id: existingReservation.id,
+      },
+    });
+    expect(eventCollector.events).toHaveLength(0);
+  });
+
+  it("resolves in-flight duplicate reservations after the first request persists", async () => {
+    const baseRepository = createResettableInMemoryInventoryRepository();
+    const repository = new InFlightDuplicateInventoryRepository(baseRepository);
+    const eventCollector = createEventCollector();
+    const service = createInventoryService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      coordinator: new InFlightDuplicateCoordinator(() => {
+        repository.releaseSaveAfterNextDuplicateLookup();
+      }),
+      eventPublisher: eventCollector.publisher,
+      idGenerator: createSequenceIdGenerator([
+        "iitem_inflight",
+        "sloc_inflight",
+        "ilvl_inflight",
+        "ires_inflight",
+        "evt_inflight",
+      ]),
+      repository,
+    });
+
+    const item = await service.createInventoryItem({
+      sku: "inflight-sku",
+      title: "In-flight item",
+    });
+    const location = await service.createStockLocation({
+      name: "In-flight warehouse",
+      salesChannelIds: ["sc_inflight"],
+    });
+    await service.setInventoryLevel({
+      inventoryItemId: item.id,
+      stockLocationId: location.id,
+      stockedQuantity: 2,
+    });
+
+    const firstReservation = service.reserveInventory({
+      correlationId: "checkout_inflight",
+      idempotencyKey: "reserve_inflight",
+      inventoryItemId: item.id,
+      quantity: 1,
+      salesChannelId: "sc_inflight",
+      stockLocationId: location.id,
+    });
+
+    await repository.waitForSaveAttempt();
+
+    const duplicateReservation = service.reserveInventory({
+      correlationId: "checkout_inflight",
+      idempotencyKey: "reserve_inflight",
+      inventoryItemId: item.id,
+      quantity: 1,
+      salesChannelId: "sc_inflight",
+      stockLocationId: location.id,
+    });
+
+    await expect(
+      Promise.all([firstReservation, duplicateReservation])
+    ).resolves.toEqual([
+      expect.objectContaining({
+        duplicate: false,
+        reservation: expect.objectContaining({
+          id: "ires_inflight",
+          idempotencyKey: "reserve_inflight",
+        }),
+      }),
+      expect.objectContaining({
+        duplicate: true,
+        reservation: expect.objectContaining({
+          id: "ires_inflight",
+          idempotencyKey: "reserve_inflight",
+        }),
+      }),
+    ]);
+    expect(eventCollector.events.map((event) => event.name)).toEqual([
+      "inventory.reserved",
+    ]);
   });
 
   it("declares contract-first route metadata", () => {

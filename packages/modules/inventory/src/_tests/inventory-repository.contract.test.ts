@@ -206,6 +206,71 @@ const runInventoryRepositoryContract = (
         repository.findReservationsForLevel(item.id, location.id)
       ).resolves.toEqual([firstReservation]);
     });
+
+    it("treats concurrent identical idempotency keys as duplicates instead of failures", async () => {
+      const repository = await setup();
+      const item = createInventoryItem();
+      const location = createStockLocation();
+      const level = {
+        createdAt,
+        id: createInventoryLevelId("ilvl_duplicate"),
+        inventoryItemId: item.id,
+        reservedQuantity: 0,
+        stockLocationId: location.id,
+        stockedQuantity: 2,
+        updatedAt: createdAt,
+      };
+      const reservation = {
+        causationId: null,
+        correlationId: "corr_duplicate",
+        createdAt,
+        id: createInventoryReservationId("ires_duplicate"),
+        idempotencyKey: "reserve_duplicate",
+        inventoryItemId: item.id,
+        quantity: 1,
+        releasedAt: null,
+        salesChannelId: "sc_contract",
+        status: "active" as const,
+        stockLocationId: location.id,
+        updatedAt: createdAt,
+        workflowRunId: null,
+      };
+
+      await repository.saveInventoryItem(item);
+      await repository.saveStockLocation(location);
+      await repository.saveLevel(level);
+
+      const results = await Promise.allSettled([
+        repository.saveReservationIfAvailable(reservation),
+        repository.saveReservationIfAvailable(reservation),
+      ]);
+
+      expect(results).toHaveLength(2);
+      expect(results.every((result) => result.status === "fulfilled")).toBe(
+        true
+      );
+      expect(
+        results.filter(
+          (result) =>
+            result.status === "fulfilled" && result.value.status === "reserved"
+        )
+      ).toHaveLength(1);
+      expect(
+        results.filter(
+          (result) =>
+            result.status === "fulfilled" && result.value.status === "duplicate"
+        )
+      ).toHaveLength(1);
+      await expect(repository.findLevel(item.id, location.id)).resolves.toEqual(
+        {
+          ...level,
+          reservedQuantity: 1,
+        }
+      );
+      await expect(
+        repository.findReservationsForLevel(item.id, location.id)
+      ).resolves.toEqual([reservation]);
+    });
   });
 };
 

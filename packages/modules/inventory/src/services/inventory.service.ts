@@ -112,6 +112,35 @@ const createId = (prefix: string, idGenerator: IdGeneratorServiceShape) => {
 const getReservedQuantity = (level: InventoryLevelRecord): number =>
   level.reservedQuantity;
 
+const DUPLICATE_RESERVATION_REPLAY_ATTEMPTS = 20;
+const DUPLICATE_RESERVATION_REPLAY_DELAY_MS = 5;
+
+const waitForDuplicateReservationReplay = async (
+  repository: InventoryRepository,
+  idempotencyKey: string
+): Promise<InventoryReservationRecord | null> => {
+  for (
+    let attempt = 0;
+    attempt < DUPLICATE_RESERVATION_REPLAY_ATTEMPTS;
+    attempt += 1
+  ) {
+    const reservation =
+      await repository.findReservationByIdempotencyKey(idempotencyKey);
+
+    if (reservation) {
+      return reservation;
+    }
+
+    if (attempt < DUPLICATE_RESERVATION_REPLAY_ATTEMPTS - 1) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, DUPLICATE_RESERVATION_REPLAY_DELAY_MS);
+      });
+    }
+  }
+
+  return null;
+};
+
 const createAvailability = ({
   level,
   salesChannelId,
@@ -370,10 +399,10 @@ export const createInventoryService = ({
       );
 
       if (coordination.duplicate) {
-        const coordinatedReservation =
-          await repository.findReservationByIdempotencyKey(
-            input.idempotencyKey
-          );
+        const coordinatedReservation = await waitForDuplicateReservationReplay(
+          repository,
+          input.idempotencyKey
+        );
 
         if (coordinatedReservation) {
           const coordinatedAvailability = await service.checkAvailability({
@@ -389,7 +418,9 @@ export const createInventoryService = ({
           };
         }
 
-        throw new Error("Duplicate reservation is still being coordinated.");
+        throw new Error(
+          "Duplicate reservation was not persisted before replay timeout."
+        );
       }
 
       const level = await repository.findLevel(
@@ -433,6 +464,14 @@ export const createInventoryService = ({
         stockLocationId,
       });
 
+      if (saveResult.status === "duplicate") {
+        return {
+          availability: remainingAvailability,
+          duplicate: true,
+          reservation: saved,
+        };
+      }
+
       await eventPublisher.publish(
         createEventEnvelope({
           causationId: input.causationId,
@@ -456,7 +495,7 @@ export const createInventoryService = ({
 
       return {
         availability: remainingAvailability,
-        duplicate: saveResult.status === "duplicate",
+        duplicate: false,
         reservation: saved,
       };
     },

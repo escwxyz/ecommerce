@@ -32,6 +32,11 @@ export interface CreateD1InventoryRepositoryOptions {
 
 const parseJsonColumn = <Value>(value: string): Value => JSON.parse(value);
 const toJsonColumn = (value: unknown): string => JSON.stringify(value);
+const isUniqueConstraintError = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  error.code === "SQLITE_CONSTRAINT_UNIQUE";
 
 const toInventoryItemRecord = (row: InventoryItemRow): InventoryItemRecord => ({
   createdAt: new Date(row.created_at),
@@ -301,6 +306,21 @@ export const createD1InventoryRepository = ({
         .where("inventory_item_id", "=", reservation.inventoryItemId)
         .where("stock_location_id", "=", reservation.stockLocationId)
         .execute();
+
+      if (isUniqueConstraintError(error)) {
+        const duplicate = await db
+          .selectFrom("inventory_reservation")
+          .selectAll()
+          .where("idempotency_key", "=", reservation.idempotencyKey)
+          .executeTakeFirst();
+
+        if (duplicate) {
+          return {
+            reservation: toInventoryReservationRecord(duplicate),
+            status: "duplicate",
+          } satisfies InventoryReservationSaveResult;
+        }
+      }
 
       throw error;
     }
