@@ -94,6 +94,7 @@ const toInventoryAdjustmentEventRecord = (
   correlationId: row.correlation_id,
   createdAt: new Date(row.created_at),
   id: createInventoryAdjustmentEventId(row.id),
+  idempotencyKey: row.idempotency_key,
   inventoryItemId: createInventoryItemId(row.inventory_item_id),
   reason: row.reason as InventoryAdjustmentEventRecord["reason"],
   stockLocationId: createStockLocationId(row.stock_location_id),
@@ -113,6 +114,15 @@ export const createD1InventoryRepository = ({
       .execute();
 
     return rows.map(toInventoryAdjustmentEventRecord);
+  },
+  findAdjustmentEventByIdempotencyKey: async (idempotencyKey) => {
+    const row = await db
+      .selectFrom("inventory_adjustment_event")
+      .selectAll()
+      .where("idempotency_key", "=", idempotencyKey)
+      .executeTakeFirst();
+
+    return row ? toInventoryAdjustmentEventRecord(row) : null;
   },
   findInventoryItemById: async (id) => {
     const row = await db
@@ -183,6 +193,7 @@ export const createD1InventoryRepository = ({
         correlation_id: event.correlationId,
         created_at: event.createdAt.getTime(),
         id: event.id,
+        idempotency_key: event.idempotencyKey,
         inventory_item_id: event.inventoryItemId,
         reason: event.reason,
         stock_location_id: event.stockLocationId,

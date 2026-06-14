@@ -108,6 +108,7 @@ export const InventoryAdjustmentEventRecordSchema = z.object({
   correlationId: z.string().min(1),
   createdAt: z.date(),
   id: z.string().min(1).startsWith("iadj_"),
+  idempotencyKey: z.string().min(1),
   inventoryItemId: z.string().min(1).startsWith("iitem_"),
   reason: InventoryAdjustmentReasonSchema,
   stockLocationId: z.string().min(1).startsWith("sloc_"),

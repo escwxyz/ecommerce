@@ -116,6 +116,7 @@ const runInventoryRepositoryContract = (
         correlationId: "corr_contract",
         createdAt,
         id: createInventoryAdjustmentEventId("iadj_contract"),
+        idempotencyKey: "adjust_contract",
         inventoryItemId: item.id,
         reason: "restock" as const,
         stockLocationId: location.id,
@@ -141,6 +142,9 @@ const runInventoryRepositoryContract = (
       await expect(repository.saveAdjustmentEvent(event)).resolves.toEqual(
         event
       );
+      await expect(
+        repository.findAdjustmentEventByIdempotencyKey("adjust_contract")
+      ).resolves.toEqual(event);
       await expect(repository.findAdjustmentEvents(item.id)).resolves.toEqual([
         event,
       ]);

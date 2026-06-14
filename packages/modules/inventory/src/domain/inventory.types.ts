@@ -139,6 +139,9 @@ export interface InventoryRepository {
   findAdjustmentEvents(
     inventoryItemId: InventoryItemId
   ): Promise<readonly InventoryAdjustmentEventRecord[]>;
+  findAdjustmentEventByIdempotencyKey(
+    idempotencyKey: string
+  ): Promise<InventoryAdjustmentEventRecord | null>;
   findInventoryItemById(
     id: InventoryItemId
   ): Promise<InventoryItemRecord | null>;

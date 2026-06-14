@@ -63,6 +63,10 @@ class RacingAvailabilityInventoryRepository implements InventoryRepository {
     inventoryItemId
   ) => this.#base.findAdjustmentEvents(inventoryItemId);
 
+  findAdjustmentEventByIdempotencyKey: InventoryRepository["findAdjustmentEventByIdempotencyKey"] =
+    (idempotencyKey) =>
+      this.#base.findAdjustmentEventByIdempotencyKey(idempotencyKey);
+
   findInventoryItemById: InventoryRepository["findInventoryItemById"] = (id) =>
     this.#base.findInventoryItemById(id);
 
@@ -136,6 +140,10 @@ class DuplicateOnSaveInventoryRepository implements InventoryRepository {
   findAdjustmentEvents: InventoryRepository["findAdjustmentEvents"] = (
     inventoryItemId
   ) => this.#base.findAdjustmentEvents(inventoryItemId);
+
+  findAdjustmentEventByIdempotencyKey: InventoryRepository["findAdjustmentEventByIdempotencyKey"] =
+    (idempotencyKey) =>
+      this.#base.findAdjustmentEventByIdempotencyKey(idempotencyKey);
 
   findInventoryItemById: InventoryRepository["findInventoryItemById"] = (id) =>
     this.#base.findInventoryItemById(id);
@@ -244,6 +252,10 @@ class InFlightDuplicateInventoryRepository implements InventoryRepository {
   findAdjustmentEvents: InventoryRepository["findAdjustmentEvents"] = (
     inventoryItemId
   ) => this.#base.findAdjustmentEvents(inventoryItemId);
+
+  findAdjustmentEventByIdempotencyKey: InventoryRepository["findAdjustmentEventByIdempotencyKey"] =
+    (idempotencyKey) =>
+      this.#base.findAdjustmentEventByIdempotencyKey(idempotencyKey);
 
   findInventoryItemById: InventoryRepository["findInventoryItemById"] = (id) =>
     this.#base.findInventoryItemById(id);
@@ -517,6 +529,71 @@ describe("inventory module foundation", () => {
       reason: "restock",
       updatedStockedQuantity: 5,
     });
+  });
+
+  it("replays duplicate adjustment idempotency keys without mutating stock twice", async () => {
+    const repository = createResettableInMemoryInventoryRepository();
+    const eventCollector = createEventCollector();
+    const service = createInventoryService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      eventPublisher: eventCollector.publisher,
+      idGenerator: createSequenceIdGenerator([
+        "iitem_adjust_retry",
+        "sloc_adjust_retry",
+        "ilvl_adjust_retry",
+        "iadj_adjust_retry",
+        "evt_adjust_retry",
+        "iadj_adjust_retry_duplicate",
+        "evt_adjust_retry_duplicate",
+      ]),
+      repository,
+    });
+    const item = await service.createInventoryItem({
+      sku: "adjust-retry-sku",
+      title: "Adjust retry item",
+    });
+    const location = await service.createStockLocation({
+      name: "Adjust retry warehouse",
+    });
+    await service.setInventoryLevel({
+      inventoryItemId: item.id,
+      stockLocationId: location.id,
+      stockedQuantity: 1,
+    });
+
+    const firstAdjustment = await service.adjustInventory({
+      adjustment: 4,
+      correlationId: "stock_count_retry",
+      idempotencyKey: "adjust_stock_count_retry",
+      inventoryItemId: item.id,
+      reason: "restock",
+      stockLocationId: location.id,
+    });
+    const duplicateAdjustment = await service.adjustInventory({
+      adjustment: 4,
+      correlationId: "stock_count_retry",
+      idempotencyKey: "adjust_stock_count_retry",
+      inventoryItemId: item.id,
+      reason: "restock",
+      stockLocationId: location.id,
+    });
+
+    expect(firstAdjustment).toMatchObject({
+      adjustment: 4,
+      id: "iadj_adjust_retry",
+      updatedStockedQuantity: 5,
+    });
+    expect(duplicateAdjustment).toMatchObject({
+      adjustment: 4,
+      id: "iadj_adjust_retry",
+      updatedStockedQuantity: 5,
+    });
+    await expect(repository.findLevel(item.id, location.id)).resolves.toMatchObject({
+      stockedQuantity: 5,
+    });
+    expect(eventCollector.events.map((event) => event.name)).toEqual([
+      "inventory.adjusted",
+    ]);
   });
 
   it("does not emit duplicate events when reservation save resolves as duplicate", async () => {

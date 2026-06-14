@@ -141,6 +141,32 @@ const waitForDuplicateReservationReplay = async (
   return null;
 };
 
+const waitForDuplicateAdjustmentReplay = async (
+  repository: InventoryRepository,
+  idempotencyKey: string
+): Promise<InventoryAdjustmentEventRecord | null> => {
+  for (
+    let attempt = 0;
+    attempt < DUPLICATE_RESERVATION_REPLAY_ATTEMPTS;
+    attempt += 1
+  ) {
+    const event =
+      await repository.findAdjustmentEventByIdempotencyKey(idempotencyKey);
+
+    if (event) {
+      return event;
+    }
+
+    if (attempt < DUPLICATE_RESERVATION_REPLAY_ATTEMPTS - 1) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, DUPLICATE_RESERVATION_REPLAY_DELAY_MS);
+      });
+    }
+  }
+
+  return null;
+};
+
 const createAvailability = ({
   level,
   salesChannelId,
@@ -173,6 +199,44 @@ export const createInventoryService = ({
     adjustInventory: async (input) => {
       const inventoryItemId = createInventoryItemId(input.inventoryItemId);
       const stockLocationId = createStockLocationId(input.stockLocationId);
+      const duplicateEvent =
+        await repository.findAdjustmentEventByIdempotencyKey(
+          input.idempotencyKey
+        );
+
+      if (duplicateEvent) {
+        return duplicateEvent;
+      }
+
+      const coordination = await coordinator.coordinate(
+        defineStatefulCoordinationRequest({
+          causationId: input.causationId,
+          coordinatorKey: "inventory.adjustment",
+          correlationId: input.correlationId,
+          idempotencyKey: input.idempotencyKey,
+          operationName: "adjustInventory",
+          payload: input,
+          subject: {
+            id: inventoryItemId,
+            type: "inventory-item",
+          },
+          workflowRunId: input.workflowRunId,
+        })
+      );
+
+      if (coordination.duplicate) {
+        const coordinatedEvent = await waitForDuplicateAdjustmentReplay(
+          repository,
+          input.idempotencyKey
+        );
+
+        if (coordinatedEvent) {
+          return coordinatedEvent;
+        }
+
+        throw new Error("Duplicate adjustment is still being coordinated.");
+      }
+
       const level = await repository.findLevel(
         inventoryItemId,
         stockLocationId
@@ -203,6 +267,7 @@ export const createInventoryService = ({
         id: createInventoryAdjustmentEventId(
           createId(INVENTORY_ADJUSTMENT_EVENT_ID_PREFIX, idGenerator)
         ),
+        idempotencyKey: input.idempotencyKey,
         inventoryItemId,
         reason: input.reason ?? "correction",
         stockLocationId,

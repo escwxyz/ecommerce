@@ -1,4 +1,5 @@
 export {
+  inventoryAdjustmentEventIdempotencyIndexName,
   inventoryAdjustmentEventTableName,
   inventoryItemSkuIndexName,
   inventoryItemTableName,

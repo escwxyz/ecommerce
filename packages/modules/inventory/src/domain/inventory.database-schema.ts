@@ -19,6 +19,8 @@ export const inventoryReservationIdempotencyIndexName =
   "inventory_reservation_idempotency_idx" as const;
 export const inventoryReservationLevelIndexName =
   "inventory_reservation_level_idx" as const;
+export const inventoryAdjustmentEventIdempotencyIndexName =
+  "inventory_adjustment_event_idempotency_idx" as const;
 
 type TimestampMsColumn = ColumnType<number, number, number>;
 
@@ -72,6 +74,7 @@ export interface InventoryAdjustmentEventTable {
   correlation_id: string;
   created_at: TimestampMsColumn;
   id: string;
+  idempotency_key: string;
   inventory_item_id: string;
   reason: string;
   stock_location_id: string;
@@ -222,6 +225,7 @@ export const inventoryMigration: Migration = {
       .createTable(inventoryAdjustmentEventTableName)
       .ifNotExists()
       .addColumn("id", "text", (column) => column.primaryKey())
+      .addColumn("idempotency_key", "text", (column) => column.notNull())
       .addColumn("inventory_item_id", "text", (column) => column.notNull())
       .addColumn("stock_location_id", "text", (column) => column.notNull())
       .addColumn("adjustment", "integer", (column) => column.notNull())
@@ -233,6 +237,14 @@ export const inventoryMigration: Migration = {
       .addColumn("causation_id", "text")
       .addColumn("workflow_run_id", "text")
       .addColumn("created_at", "integer", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createIndex(inventoryAdjustmentEventIdempotencyIndexName)
+      .ifNotExists()
+      .unique()
+      .on(inventoryAdjustmentEventTableName)
+      .column("idempotency_key")
       .execute();
   },
 };

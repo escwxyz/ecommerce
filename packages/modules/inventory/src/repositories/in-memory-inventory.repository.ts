@@ -54,6 +54,10 @@ export class InMemoryInventoryRepository implements ResettableInventoryRepositor
     string,
     InventoryAdjustmentEventRecord
   >();
+  readonly #adjustmentEventIdempotency = new Map<
+    string,
+    InventoryAdjustmentEventRecord
+  >();
   readonly #items = new Map<string, InventoryItemRecord>();
   readonly #levels = new Map<string, InventoryLevelRecord>();
   readonly #reservations = new Map<string, InventoryReservationRecord>();
@@ -65,6 +69,7 @@ export class InMemoryInventoryRepository implements ResettableInventoryRepositor
 
   clear(): void {
     this.#adjustmentEvents.clear();
+    this.#adjustmentEventIdempotency.clear();
     this.#items.clear();
     this.#levels.clear();
     this.#reservations.clear();
@@ -84,6 +89,14 @@ export class InMemoryInventoryRepository implements ResettableInventoryRepositor
     }
 
     return Promise.resolve(sortByCreatedAtDescending(events));
+  }
+
+  findAdjustmentEventByIdempotencyKey(
+    idempotencyKey: string
+  ): Promise<InventoryAdjustmentEventRecord | null> {
+    return Promise.resolve(
+      this.#adjustmentEventIdempotency.get(idempotencyKey) ?? null
+    );
   }
 
   findInventoryItemById(
@@ -152,6 +165,7 @@ export class InMemoryInventoryRepository implements ResettableInventoryRepositor
     event: InventoryAdjustmentEventRecord
   ): Promise<InventoryAdjustmentEventRecord> {
     this.#adjustmentEvents.set(event.id, event);
+    this.#adjustmentEventIdempotency.set(event.idempotencyKey, event);
     return Promise.resolve(event);
   }
 

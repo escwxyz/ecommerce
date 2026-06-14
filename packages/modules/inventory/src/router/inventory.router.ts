@@ -126,6 +126,7 @@ const serializeAdjustmentEvent = (
   correlationId: event.correlationId,
   createdAt: event.createdAt.toISOString(),
   id: event.id,
+  idempotencyKey: event.idempotencyKey,
   inventoryItemId: event.inventoryItemId,
   reason: event.reason,
   stockLocationId: event.stockLocationId,

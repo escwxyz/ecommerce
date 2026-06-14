@@ -16,6 +16,7 @@ export {
   serializeStockLocationId,
 } from "./inventory-id";
 export {
+  inventoryAdjustmentEventIdempotencyIndexName,
   inventoryAdjustmentEventTableName,
   inventoryItemSkuIndexName,
   inventoryItemTableName,
