@@ -5,6 +5,8 @@ import type { CreateFulfillmentRouteFragmentOptions } from "@ecommerce/fulfillme
 import { createFulfillmentRouteFragment } from "@ecommerce/fulfillment/router";
 import type { CreateInventoryRouteFragmentOptions } from "@ecommerce/inventory/router";
 import { createInventoryRouteFragment } from "@ecommerce/inventory/router";
+import type { CreateNotificationEventRouteFragmentOptions } from "@ecommerce/notification-event/router";
+import { createNotificationEventRouteFragment } from "@ecommerce/notification-event/router";
 import type { CreatePaymentRouteFragmentOptions } from "@ecommerce/payment/router";
 import { createPaymentRouteFragment } from "@ecommerce/payment/router";
 import type { CreatePricingRouteFragmentOptions } from "@ecommerce/pricing/router";
@@ -134,6 +136,7 @@ export interface CreateBuiltinRouteFragmentsOptions {
   readonly customer?: CreateCustomerRouteFragmentOptions;
   readonly fulfillment?: CreateFulfillmentRouteFragmentOptions;
   readonly inventory?: CreateInventoryRouteFragmentOptions;
+  readonly notificationEvent?: CreateNotificationEventRouteFragmentOptions;
   readonly payment?: CreatePaymentRouteFragmentOptions;
   readonly product?: CreateProductRouteFragmentOptions;
   readonly pricing?: CreatePricingRouteFragmentOptions;
@@ -147,6 +150,7 @@ export const createBuiltinRouteFragments = ({
   customer,
   fulfillment,
   inventory,
+  notificationEvent,
   payment,
   product,
   pricing,
@@ -175,6 +179,10 @@ export const createBuiltinRouteFragments = ({
     }),
     createApiRouteFragment({
       ...createInventoryRouteFragment(inventory),
+      owner: "module",
+    }),
+    createApiRouteFragment({
+      ...createNotificationEventRouteFragment(notificationEvent),
       owner: "module",
     }),
     createApiRouteFragment({

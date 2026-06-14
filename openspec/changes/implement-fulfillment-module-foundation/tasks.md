@@ -9,8 +9,9 @@
 - [x] 2.2 Add fulfillment-owned schema contributions through shared database assembly.
 - [x] 2.3 Implement foundation operations and fake-provider support for fulfillment actions.
 - [x] 2.4 Compose API fragments and admin metadata through shared module contracts.
+- [x] 2.5 Add fulfillment D1 repository adapter and D1 SQL migration file.
 
 ## 3. Verification
 
 - [x] 3.1 Add service, repository, fake-provider, API assembly, admin metadata, and import-boundary tests.
-- [x] 3.2 Run targeted tests plus repo-relevant typecheck/lint.
+- [x] 3.2 Run targeted tests plus repo-relevant typecheck/lint, including D1 adapter and migration checks.

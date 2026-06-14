@@ -17,6 +17,9 @@
     "./schema/inventory": {
       "default": "./src/schema/inventory.ts"
     },
+    "./schema/notification-event": {
+      "default": "./src/schema/notification-event.ts"
+    },
     "./schema/payment": {
       "default": "./src/schema/payment.ts"
     },
@@ -47,6 +50,7 @@
     "@ecommerce/customer": "workspace:*",
     "@ecommerce/fulfillment": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
+    "@ecommerce/notification-event": "workspace:*",
     "@ecommerce/payment": "workspace:*",
     "@ecommerce/pricing": "workspace:*",
     "@ecommerce/product": "workspace:*",

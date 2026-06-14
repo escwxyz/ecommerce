@@ -8,6 +8,8 @@ import { fulfillmentMigration } from "./schema/fulfillment";
 import type { FulfillmentDatabase } from "./schema/fulfillment";
 import { inventoryMigration } from "./schema/inventory";
 import type { InventoryDatabase } from "./schema/inventory";
+import { notificationEventMigration } from "./schema/notification-event";
+import type { NotificationEventDatabase } from "./schema/notification-event";
 import { paymentMigration } from "./schema/payment";
 import type { PaymentDatabase } from "./schema/payment";
 import { pricingMigration } from "./schema/pricing";
@@ -35,6 +37,8 @@ export * as fulfillmentSchema from "./schema/fulfillment";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as inventorySchema from "./schema/inventory";
 // oxlint-disable-next-line oxc/no-barrel-file
+export * as notificationEventSchema from "./schema/notification-event";
+// oxlint-disable-next-line oxc/no-barrel-file
 export * as paymentSchema from "./schema/payment";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as productSchema from "./schema/product";
@@ -61,6 +65,7 @@ export interface CommerceDatabase
     CustomerDatabase,
     FulfillmentDatabase,
     InventoryDatabase,
+    NotificationEventDatabase,
     PaymentDatabase,
     StoreDatabase,
     ProductDatabase,
@@ -85,4 +90,5 @@ export const commerceMigrations = {
   "008_tax": taxMigration,
   "009_payment": paymentMigration,
   "010_fulfillment": fulfillmentMigration,
+  "011_notification_event": notificationEventMigration,
 } as const;

@@ -15,6 +15,7 @@ describe("promotion API and admin assembly", () => {
       "module:product",
       "module:region-sales-channel",
       "module:inventory",
+      "module:notification-event",
       "module:pricing",
       "module:promotion",
       "module:tax",
