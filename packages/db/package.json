@@ -28,6 +28,9 @@
     },
     "./schema/store": {
       "default": "./src/schema/store.ts"
+    },
+    "./schema/tax": {
+      "default": "./src/schema/tax.ts"
     }
   },
   "scripts": {
@@ -42,6 +45,7 @@
     "@ecommerce/promotion": "workspace:*",
     "@ecommerce/region-sales-channel": "workspace:*",
     "@ecommerce/store": "workspace:*",
+    "@ecommerce/tax": "workspace:*",
     "kysely": "catalog:",
     "zod": "catalog:"
   },

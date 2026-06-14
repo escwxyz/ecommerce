@@ -16,6 +16,8 @@ import { regionSalesChannelMigration } from "./schema/region-sales-channel";
 import type { RegionSalesChannelDatabase } from "./schema/region-sales-channel";
 import { storeMigration } from "./schema/store";
 import type { StoreDatabase } from "./schema/store";
+import { taxMigration } from "./schema/tax";
+import type { TaxDatabase } from "./schema/tax";
 
 export * from "./adapters";
 export * from "./dialect-helpers";
@@ -36,6 +38,8 @@ export * as regionSalesChannelSchema from "./schema/region-sales-channel";
 export * as promotionSchema from "./schema/promotion";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as storeSchema from "./schema/store";
+// oxlint-disable-next-line oxc/no-barrel-file
+export * as taxSchema from "./schema/tax";
 
 /**
  * Shared Kysely database assembly for commerce-owned primary relational data.
@@ -52,7 +56,8 @@ export interface CommerceDatabase
     ProductDatabase,
     PricingDatabase,
     PromotionDatabase,
-    RegionSalesChannelDatabase {}
+    RegionSalesChannelDatabase,
+    TaxDatabase {}
 
 export type CommerceKyselyDatabase = Kysely<CommerceDatabase>;
 export type CommerceDatabaseSchema = CommerceDatabase;
@@ -67,4 +72,5 @@ export const commerceMigrations = {
   "005_promotion": promotionMigration,
   "006_customer": customerMigration,
   "007_inventory": inventoryMigration,
+  "008_tax": taxMigration,
 } as const;
