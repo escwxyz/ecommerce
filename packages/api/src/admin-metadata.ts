@@ -1,3 +1,4 @@
+import { cartAdminMetadata } from "@ecommerce/cart/admin";
 import { composeAdminMetadata } from "@ecommerce/core/admin";
 import { customerAdminMetadata } from "@ecommerce/customer/admin";
 import { fulfillmentAdminMetadata } from "@ecommerce/fulfillment/admin";
@@ -42,6 +43,7 @@ export const createAdminMetadataModel = (context: Context) =>
       taxAdminMetadata,
       paymentAdminMetadata,
       fulfillmentAdminMetadata,
+      cartAdminMetadata,
     ],
     permissionValidator: validateBuiltinCommercePermission,
     permissions: getContextPermissionKeys(context),

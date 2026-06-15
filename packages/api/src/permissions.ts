@@ -1,5 +1,6 @@
 import type { AuthPermissionInput, AuthSession } from "@ecommerce/auth";
 import { createAuthorizationEvaluator } from "@ecommerce/auth";
+import { cartModule } from "@ecommerce/cart/module";
 import {
   composeCommerceModulePermissions,
   createCommercePermissionValidator,
@@ -29,6 +30,7 @@ export const builtinPermissionModules = [
   taxModule,
   paymentModule,
   fulfillmentModule,
+  cartModule,
 ] as const;
 
 export const builtinPermissionComposition = composeCommerceModulePermissions(

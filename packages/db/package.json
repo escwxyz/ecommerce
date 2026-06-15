@@ -5,6 +5,9 @@
     ".": {
       "default": "./src/index.ts"
     },
+    "./schema/cart": {
+      "default": "./src/schema/cart.ts"
+    },
     "./schema/auth": {
       "default": "./src/schema/auth.ts"
     },
@@ -47,6 +50,7 @@
     "test": "bun test ./src"
   },
   "dependencies": {
+    "@ecommerce/cart": "workspace:*",
     "@ecommerce/customer": "workspace:*",
     "@ecommerce/fulfillment": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
