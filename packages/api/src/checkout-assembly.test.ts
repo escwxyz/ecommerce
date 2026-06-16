@@ -17,10 +17,22 @@ describe("checkout API and admin assembly", () => {
     ]);
   });
 
-  it("includes checkout route fragments in builtin API composition", () => {
+  it("does not register checkout route handlers without service options", () => {
     const checkoutFragment = createBuiltinRouteFragments().find(
       (fragment) => fragment.key === "module:checkout"
     );
+
+    expect(checkoutFragment?.router).toEqual({});
+  });
+
+  it("includes checkout route handlers when service options are configured", () => {
+    const checkoutFragment = createBuiltinRouteFragments({
+      checkout: {
+        createServiceOptionsForContext: () => {
+          throw new Error("Factory should not be called during assembly.");
+        },
+      },
+    }).find((fragment) => fragment.key === "module:checkout");
 
     expect(Object.keys(checkoutFragment?.router ?? {})).toContain(
       "checkoutComplete"

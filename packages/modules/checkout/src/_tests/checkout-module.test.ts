@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import { createEventCollector } from "@ecommerce/core/testing";
+import { call } from "@orpc/server";
 
 import { checkoutAdminMetadata } from "../admin";
 import { checkoutModule } from "../module";
+import { createCheckoutRouteFragment } from "../router";
 import {
   CHECKOUT_COMPLETED_EVENT,
   CHECKOUT_FAILED_EVENT,
@@ -588,5 +590,35 @@ describe("checkout workflow orchestration", () => {
 
     expect(calls).toContain("payment.authorizePaymentSession");
     expect(calls).not.toContain("payment.capturePayment");
+  });
+
+  it("builds checkout routes from direct service options", async () => {
+    const calls: string[] = [];
+    const fragment = createCheckoutRouteFragment(createDependencyStubs(calls));
+
+    if (!("checkoutComplete" in fragment.router)) {
+      throw new Error("Expected checkoutComplete route to be registered.");
+    }
+
+    const result = await call(fragment.router.checkoutComplete, checkoutInput, {
+      context: {
+        auth: {},
+        authorization: {
+          evaluatePermission: () => ({ allowed: true as const }),
+        },
+        session: {
+          user: {
+            permissions: ["checkout:execute"],
+          },
+        },
+      },
+    });
+
+    expect(result.orderId).toBe("ord_1");
+    expect(calls).toContain("order.createOrderFromCheckout");
+  });
+
+  it("does not register checkoutComplete without service options", () => {
+    expect(createCheckoutRouteFragment().router).toEqual({});
   });
 });

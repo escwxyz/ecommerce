@@ -62,25 +62,58 @@ export interface CreateCheckoutRouteFragmentOptions extends Partial<CreateChecko
   readonly key?: string;
 }
 
+const directServiceOptionKeys = [
+  "cart",
+  "customer",
+  "fulfillment",
+  "inventory",
+  "order",
+  "payment",
+  "pricing",
+  "product",
+  "promotion",
+  "region",
+  "salesChannel",
+  "store",
+  "tax",
+] as const satisfies readonly (keyof CreateCheckoutServiceOptions)[];
+
+const hasDirectServiceOptions = (
+  options: Partial<CreateCheckoutServiceOptions>
+): options is CreateCheckoutServiceOptions =>
+  directServiceOptionKeys.every((key) => options[key] !== undefined);
+
 export const createCheckoutRouteFragment = ({
   createServiceOptionsForContext,
   key = "module:checkout",
   ...options
 }: CreateCheckoutRouteFragmentOptions = {}) => {
+  if (!createServiceOptionsForContext && !hasDirectServiceOptions(options)) {
+    return {
+      key,
+      router: {},
+    } as const satisfies CommerceModuleApiFragment<Record<string, never>>;
+  }
+
+  const directServiceOptions = hasDirectServiceOptions(options)
+    ? options
+    : null;
   const baseImplementation = implement(
     checkoutContractRouter
   ).$context<CheckoutModuleContext>();
   const getService = (context: CheckoutModuleContext) => {
-    if (!createServiceOptionsForContext) {
-      throw new Error(
-        "Checkout route requires request-scoped service options."
-      );
+    if (createServiceOptionsForContext) {
+      return createCheckoutService({
+        ...options,
+        ...createServiceOptionsForContext(context),
+      });
     }
 
-    return createCheckoutService({
-      ...options,
-      ...createServiceOptionsForContext(context),
-    });
+    if (!directServiceOptions) {
+      throw new Error("Checkout route requires service options.");
+    }
+
+    return createCheckoutService(directServiceOptions);
   };
   const router = baseImplementation.router({
     checkoutComplete: baseImplementation.checkoutComplete.handler(
