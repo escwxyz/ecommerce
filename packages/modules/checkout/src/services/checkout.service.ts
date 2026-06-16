@@ -656,15 +656,6 @@ export const createCheckoutService = ({
           sessionId: session.id,
         });
 
-        const captureResult = input.payment.capture
-          ? await payment.capturePayment({
-              amount: totals.total,
-              idempotencyKey: `${input.idempotencyKey}:payment:capture`,
-              paymentId: authorizedPayment.id,
-            })
-          : null;
-        const paymentReferenceStatus =
-          captureResult?.status ?? authorizedPayment.status;
         const orderAggregate = await order.createOrderFromCheckout({
           ...metadata,
           billingAddress: aggregate.cart.billingAddress,
@@ -693,7 +684,7 @@ export const createCheckoutService = ({
               paymentCollectionId: collection.id,
               paymentId: authorizedPayment.id,
               providerId: authorizedPayment.providerKey,
-              status: paymentReferenceStatus,
+              status: authorizedPayment.status,
             },
           ],
           shippingAddress: aggregate.cart.shippingAddress,
@@ -714,6 +705,14 @@ export const createCheckoutService = ({
         });
         const fulfillmentId = fulfillmentDetail.fulfillment.id;
         state.fulfillmentIds.push(fulfillmentId);
+
+        if (input.payment.capture) {
+          await payment.capturePayment({
+            amount: totals.total,
+            idempotencyKey: `${input.idempotencyKey}:payment:capture`,
+            paymentId: authorizedPayment.id,
+          });
+        }
 
         const result: CheckoutCompletionResult = {
           cartId: aggregate.cart.id,

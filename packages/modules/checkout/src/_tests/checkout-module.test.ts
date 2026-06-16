@@ -476,9 +476,9 @@ describe("checkout workflow orchestration", () => {
       "payment.createSession",
       "cart.setCheckoutReferences",
       "payment.authorizePaymentSession",
-      "payment.capturePayment",
       "order.createOrderFromCheckout",
       "fulfillment.createFulfillment",
+      "payment.capturePayment",
       `notificationEvent.publishEvent:${CHECKOUT_COMPLETED_EVENT}`,
     ]);
     expect(eventCollector.events.map((event) => event.name)).toEqual([
@@ -567,5 +567,26 @@ describe("checkout workflow orchestration", () => {
     expect(eventCollector.events.map((event) => event.name)).toEqual([
       CHECKOUT_FAILED_EVENT,
     ]);
+  });
+
+  it("does not capture payment before later fallible checkout steps complete", async () => {
+    const calls: string[] = [];
+    const dependencies = createDependencyStubs(calls);
+    const service = createCheckoutService({
+      ...dependencies,
+      order: {
+        createOrderFromCheckout: async () => {
+          calls.push("order.createOrderFromCheckout");
+          throw new Error("order unavailable");
+        },
+      },
+    });
+
+    await expect(service.completeCheckout(checkoutInput)).rejects.toThrow(
+      "order unavailable"
+    );
+
+    expect(calls).toContain("payment.authorizePaymentSession");
+    expect(calls).not.toContain("payment.capturePayment");
   });
 });
