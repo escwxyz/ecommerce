@@ -156,3 +156,7 @@ ecommerce/
 - `bun run db:push`: Apply local D1 migrations from the D1 adapter package
 - `bun run db:generate`: Validate Kysely migration definitions
 - `bun run check`: Run Oxlint and Oxfmt
+
+## Todos
+
+- migrate oRPC with Effect when https://github.com/utopyin/effect-orpc/pull/10 is ready
