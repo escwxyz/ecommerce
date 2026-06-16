@@ -26,6 +26,7 @@
       "dependencies": {
         "@ecommerce/api": "workspace:*",
         "@ecommerce/auth": "workspace:*",
+        "@ecommerce/cart": "workspace:*",
         "@ecommerce/db-d1": "workspace:*",
         "@ecommerce/env": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
@@ -104,6 +105,7 @@
       "name": "@ecommerce/api",
       "dependencies": {
         "@ecommerce/auth": "workspace:*",
+        "@ecommerce/cart": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "@ecommerce/customer": "workspace:*",
         "@ecommerce/db": "workspace:*",
@@ -163,6 +165,7 @@
     "packages/db": {
       "name": "@ecommerce/db",
       "dependencies": {
+        "@ecommerce/cart": "workspace:*",
         "@ecommerce/customer": "workspace:*",
         "@ecommerce/fulfillment": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
@@ -233,6 +236,26 @@
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "alchemy": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/modules/cart": {
+      "name": "@ecommerce/cart",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ecommerce/core": "workspace:*",
+        "@ecommerce/module-contracts": "workspace:*",
+        "@ecommerce/utils": "workspace:*",
+        "@orpc/server": "catalog:",
+        "effect": "catalog:",
+        "kysely": "catalog:",
+        "nanoid": "^5.1.6",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
+        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -472,6 +495,7 @@
     "packages/platform-cloudflare": {
       "name": "@ecommerce/platform-cloudflare",
       "dependencies": {
+        "@ecommerce/cart": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "@ecommerce/notification-event": "workspace:*",
       },
@@ -756,6 +780,8 @@
     "@ecommerce/api": ["@ecommerce/api@workspace:packages/api"],
 
     "@ecommerce/auth": ["@ecommerce/auth@workspace:packages/auth"],
+
+    "@ecommerce/cart": ["@ecommerce/cart@workspace:packages/modules/cart"],
 
     "@ecommerce/config": ["@ecommerce/config@workspace:packages/config"],
 

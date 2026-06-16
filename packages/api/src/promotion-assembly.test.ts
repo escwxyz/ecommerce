@@ -21,6 +21,7 @@ describe("promotion API and admin assembly", () => {
       "module:tax",
       "module:payment",
       "module:fulfillment",
+      "module:cart",
     ]);
   });
 

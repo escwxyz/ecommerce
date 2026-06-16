@@ -2,6 +2,8 @@ import type { Kysely } from "kysely";
 
 import { authMigration } from "./schema/auth";
 import type { AuthDatabase } from "./schema/auth";
+import { cartMigration } from "./schema/cart";
+import type { CartDatabase } from "./schema/cart";
 import { customerMigration } from "./schema/customer";
 import type { CustomerDatabase } from "./schema/customer";
 import { fulfillmentMigration } from "./schema/fulfillment";
@@ -30,6 +32,8 @@ export * from "./dialect-helpers";
 export * from "./migrations";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as authSchema from "./schema/auth";
+// oxlint-disable-next-line oxc/no-barrel-file
+export * as cartSchema from "./schema/cart";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as customerSchema from "./schema/customer";
 // oxlint-disable-next-line oxc/no-barrel-file
@@ -62,6 +66,7 @@ export * as taxSchema from "./schema/tax";
 export interface CommerceDatabase
   extends
     AuthDatabase,
+    CartDatabase,
     CustomerDatabase,
     FulfillmentDatabase,
     InventoryDatabase,
@@ -91,4 +96,5 @@ export const commerceMigrations = {
   "009_payment": paymentMigration,
   "010_fulfillment": fulfillmentMigration,
   "011_notification_event": notificationEventMigration,
+  "012_cart": cartMigration,
 } as const;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import Stack, {
+  cartCache,
   database,
   notificationEventDeadLetterQueue,
   notificationEventQueue,
@@ -14,6 +15,7 @@ import Stack, {
 describe("alchemy stack exports", () => {
   it("defines the stack and deployable resources without executing deploy", () => {
     expect(Stack).toBeDefined();
+    expect(cartCache).toBeDefined();
     expect(database).toBeDefined();
     expect(notificationEventDeadLetterQueue).toBeDefined();
     expect(notificationEventQueue).toBeDefined();

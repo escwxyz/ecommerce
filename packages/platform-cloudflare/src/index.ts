@@ -1,4 +1,11 @@
 export {
+  createCartCacheDurableObjectName,
+  createCloudflareCartActiveCache,
+  createCloudflareCartCacheRepository,
+  type CloudflareCartCacheOptions,
+  type CloudflareCartCacheRepositoryOptions,
+} from "./cart-cache";
+export {
   createCloudflareQueuePublisher,
   type CloudflareQueuePublisherOptions,
 } from "./queue";

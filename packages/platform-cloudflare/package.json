@@ -5,6 +5,9 @@
     ".": {
       "default": "./src/index.ts"
     },
+    "./cart-cache-do": {
+      "default": "./src/cart-cache-do.ts"
+    },
     "./notification-event-realtime-do": {
       "default": "./src/notification-event-realtime-do.ts"
     },
@@ -17,6 +20,7 @@
     "test": "bun test ./src"
   },
   "dependencies": {
+    "@ecommerce/cart": "workspace:*",
     "@ecommerce/core": "workspace:*",
     "@ecommerce/notification-event": "workspace:*"
   },

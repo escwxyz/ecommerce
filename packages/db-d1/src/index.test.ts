@@ -178,6 +178,16 @@ describe("db d1 adapter", () => {
     await expect(
       indexExists(database.db, "notification_dispatch_idempotency_idx")
     ).resolves.toBe(true);
+    await expect(tableExists(database.db, "cart")).resolves.toBe(true);
+    await expect(tableExists(database.db, "cart_line_item")).resolves.toBe(
+      true
+    );
+    await expect(tableExists(database.db, "cart_adjustment")).resolves.toBe(
+      true
+    );
+    await expect(indexExists(database.db, "cart_customer_idx")).resolves.toBe(
+      true
+    );
 
     sqlite.close();
   });
@@ -587,7 +597,39 @@ describe("db d1 adapter", () => {
     sqlite.close();
   });
 
-  it("applies the SQL migration directory used by db:push through notification-event", () => {
+  it("ships SQL migrations for cart tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(readFileSync(join(migrationsDir, "0013_cart.sql"), "utf8"));
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining(["cart", "cart_line_item", "cart_adjustment"])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'index'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "cart_customer_idx",
+        "cart_line_item_cart_idx",
+        "cart_line_item_idempotency_idx",
+        "cart_adjustment_cart_idx",
+        "cart_adjustment_idempotency_idx",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("applies the SQL migration directory used by db:push through cart", () => {
     const sqlite = new Database(":memory:");
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
@@ -640,6 +682,9 @@ describe("db d1 adapter", () => {
         "notification_template",
         "notification_dispatch",
         "notification_provider",
+        "cart",
+        "cart_line_item",
+        "cart_adjustment",
       ])
     );
 

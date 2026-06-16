@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@ecommerce/auth": "workspace:*",
+    "@ecommerce/cart": "workspace:*",
     "@ecommerce/core": "workspace:*",
     "@ecommerce/customer": "workspace:*",
     "@ecommerce/db": "workspace:*",
