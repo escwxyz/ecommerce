@@ -12,7 +12,13 @@ import {
 } from "@ecommerce/core/testing";
 import { call } from "@orpc/server";
 
+import {
+  createCachedCartRepository,
+  createInMemoryCartActiveCache,
+  createVisitorCartScope,
+} from "../cache";
 import { cartContractRouter } from "../contracts";
+import { createCartId } from "../domain";
 import { cartModule } from "../module";
 import { createResettableInMemoryCartRepository } from "../repositories";
 import { createCartRouteFragment } from "../router";
@@ -308,6 +314,70 @@ describe("cart module foundation", () => {
       currencyCode: "USD",
       id: "cart_api",
       status: "active",
+    });
+  });
+
+  it("allows anonymous visitor sessions to create and mutate carts", async () => {
+    const projectionRepository = createResettableInMemoryCartRepository();
+    const fragment = createCartRouteFragment({
+      createServiceOptionsForContext: () => ({
+        repository: createCachedCartRepository({
+          cache: createInMemoryCartActiveCache(),
+          projectionRepository,
+          scope: createVisitorCartScope("visitor_1"),
+        }),
+      }),
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "cart_visitor",
+        "evt_visitor_created",
+        "clitem_visitor",
+        "evt_visitor_line",
+      ]),
+    });
+    const anonymousContext = {
+      context: {
+        auth: {},
+        authorization: createAllowedContext().context.authorization,
+        session: null,
+      },
+    } as const;
+    const cart = await call(
+      fragment.router.cartCreate,
+      {
+        currencyCode: "USD",
+      },
+      anonymousContext
+    );
+
+    const updated = await call(
+      fragment.router.cartAddLineItem,
+      {
+        cartId: cart.id,
+        correlationId: "visitor_line",
+        idempotencyKey: "visitor_line",
+        productId: "prod_hat",
+        quantity: 1,
+        title: "Hat",
+        unitPrice: 1200,
+        variantId: "variant_hat_black",
+      },
+      anonymousContext
+    );
+
+    expect(cart.id).toBe("cart_visitor");
+    expect(updated.lineItems).toHaveLength(1);
+    await expect(
+      projectionRepository.getCartAggregate(createCartId(cart.id))
+    ).resolves.toMatchObject({
+      cart: {
+        id: cart.id,
+      },
+      lineItems: [
+        {
+          id: "clitem_visitor",
+        },
+      ],
     });
   });
 });

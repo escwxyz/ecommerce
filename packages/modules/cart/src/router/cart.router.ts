@@ -71,6 +71,18 @@ const assertPermission = (
   throw new ORPCError("FORBIDDEN");
 };
 
+const assertAuthenticatedPermission = (
+  session: CartModuleContext["session"],
+  permission: CommercePermissionDescriptor,
+  authorization: CartModuleContext["authorization"]
+): void => {
+  if (!session?.user) {
+    return;
+  }
+
+  assertPermission(session, permission, authorization);
+};
+
 const serializeCart = (cart: CartRecord): CartApiRecord => ({
   ...cart,
   completedAt: cart.completedAt?.toISOString() ?? null,
@@ -133,23 +145,8 @@ export const createCartRouteFragment = ({
   const baseImplementation =
     implement(cartContractRouter).$context<CartModuleContext>();
 
-  const protectedImplementation = baseImplementation.use(
-    ({ context, next }) => {
-      if (!context.session?.user) {
-        throw new ORPCError("UNAUTHORIZED");
-      }
-
-      return next({
-        context: {
-          auth: context.auth,
-          session: context.session,
-        },
-      });
-    }
-  );
-
-  const router = protectedImplementation.router({
-    cartAddLineItem: protectedImplementation.cartAddLineItem.handler(
+  const router = baseImplementation.router({
+    cartAddLineItem: baseImplementation.cartAddLineItem.handler(
       async ({
         context,
         input,
@@ -157,7 +154,7 @@ export const createCartRouteFragment = ({
         readonly context: CartModuleContext;
         readonly input: AddCartLineItemInput;
       }) => {
-        assertPermission(
+        assertAuthenticatedPermission(
           context.session,
           cartPermissions.write,
           context.authorization
@@ -166,7 +163,7 @@ export const createCartRouteFragment = ({
         return serializeAggregate(await getService(context).addLineItem(input));
       }
     ),
-    cartAdjustmentApply: protectedImplementation.cartAdjustmentApply.handler(
+    cartAdjustmentApply: baseImplementation.cartAdjustmentApply.handler(
       async ({
         context,
         input,
@@ -174,7 +171,7 @@ export const createCartRouteFragment = ({
         readonly context: CartModuleContext;
         readonly input: ApplyCartAdjustmentInput;
       }) => {
-        assertPermission(
+        assertAuthenticatedPermission(
           context.session,
           cartPermissions.write,
           context.authorization
@@ -185,27 +182,26 @@ export const createCartRouteFragment = ({
         );
       }
     ),
-    cartAssociateCustomer:
-      protectedImplementation.cartAssociateCustomer.handler(
-        async ({
-          context,
-          input,
-        }: {
-          readonly context: CartModuleContext;
-          readonly input: AssociateCartCustomerInput;
-        }) => {
-          assertPermission(
-            context.session,
-            cartPermissions.write,
-            context.authorization
-          );
+    cartAssociateCustomer: baseImplementation.cartAssociateCustomer.handler(
+      async ({
+        context,
+        input,
+      }: {
+        readonly context: CartModuleContext;
+        readonly input: AssociateCartCustomerInput;
+      }) => {
+        assertAuthenticatedPermission(
+          context.session,
+          cartPermissions.write,
+          context.authorization
+        );
 
-          return serializeAggregate(
-            await getService(context).associateCustomer(input)
-          );
-        }
-      ),
-    cartCreate: protectedImplementation.cartCreate.handler(
+        return serializeAggregate(
+          await getService(context).associateCustomer(input)
+        );
+      }
+    ),
+    cartCreate: baseImplementation.cartCreate.handler(
       async ({
         context,
         input,
@@ -213,7 +209,7 @@ export const createCartRouteFragment = ({
         readonly context: CartModuleContext;
         readonly input: CreateCartInput;
       }) => {
-        assertPermission(
+        assertAuthenticatedPermission(
           context.session,
           cartPermissions.write,
           context.authorization
@@ -222,7 +218,7 @@ export const createCartRouteFragment = ({
         return serializeCart(await getService(context).createCart(input));
       }
     ),
-    cartGet: protectedImplementation.cartGet.handler(
+    cartGet: baseImplementation.cartGet.handler(
       async ({
         context,
         input,
@@ -230,7 +226,7 @@ export const createCartRouteFragment = ({
         readonly context: CartModuleContext;
         readonly input: CartIdentifierInput;
       }) => {
-        assertPermission(
+        assertAuthenticatedPermission(
           context.session,
           cartPermissions.read,
           context.authorization
@@ -241,7 +237,7 @@ export const createCartRouteFragment = ({
         return cart ? serializeAggregate(cart) : null;
       }
     ),
-    cartLineItemUpdate: protectedImplementation.cartLineItemUpdate.handler(
+    cartLineItemUpdate: baseImplementation.cartLineItemUpdate.handler(
       async ({
         context,
         input,
@@ -249,7 +245,7 @@ export const createCartRouteFragment = ({
         readonly context: CartModuleContext;
         readonly input: UpdateCartLineItemInput;
       }) => {
-        assertPermission(
+        assertAuthenticatedPermission(
           context.session,
           cartPermissions.write,
           context.authorization
@@ -260,7 +256,7 @@ export const createCartRouteFragment = ({
         );
       }
     ),
-    cartSetAddresses: protectedImplementation.cartSetAddresses.handler(
+    cartSetAddresses: baseImplementation.cartSetAddresses.handler(
       async ({
         context,
         input,
@@ -268,7 +264,7 @@ export const createCartRouteFragment = ({
         readonly context: CartModuleContext;
         readonly input: SetCartAddressesInput;
       }) => {
-        assertPermission(
+        assertAuthenticatedPermission(
           context.session,
           cartPermissions.write,
           context.authorization
@@ -280,7 +276,7 @@ export const createCartRouteFragment = ({
       }
     ),
     cartSetCheckoutReferences:
-      protectedImplementation.cartSetCheckoutReferences.handler(
+      baseImplementation.cartSetCheckoutReferences.handler(
         async ({
           context,
           input,
@@ -288,7 +284,7 @@ export const createCartRouteFragment = ({
           readonly context: CartModuleContext;
           readonly input: SetCartCheckoutReferencesInput;
         }) => {
-          assertPermission(
+          assertAuthenticatedPermission(
             context.session,
             cartPermissions.write,
             context.authorization
@@ -299,7 +295,7 @@ export const createCartRouteFragment = ({
           );
         }
       ),
-    cartSetRegionChannel: protectedImplementation.cartSetRegionChannel.handler(
+    cartSetRegionChannel: baseImplementation.cartSetRegionChannel.handler(
       async ({
         context,
         input,
@@ -307,7 +303,7 @@ export const createCartRouteFragment = ({
         readonly context: CartModuleContext;
         readonly input: SetCartRegionChannelInput;
       }) => {
-        assertPermission(
+        assertAuthenticatedPermission(
           context.session,
           cartPermissions.write,
           context.authorization
@@ -318,7 +314,7 @@ export const createCartRouteFragment = ({
         );
       }
     ),
-    cartTotalsUpdate: protectedImplementation.cartTotalsUpdate.handler(
+    cartTotalsUpdate: baseImplementation.cartTotalsUpdate.handler(
       async ({
         context,
         input,
@@ -326,7 +322,7 @@ export const createCartRouteFragment = ({
         readonly context: CartModuleContext;
         readonly input: UpdateCartTotalsInput;
       }) => {
-        assertPermission(
+        assertAuthenticatedPermission(
           context.session,
           cartPermissions.write,
           context.authorization
