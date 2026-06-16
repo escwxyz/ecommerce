@@ -143,6 +143,9 @@ interface CheckoutInventoryContract {
   adjustInventory(input: Record<string, unknown>): Promise<unknown>;
   checkAvailability(input: Record<string, unknown>): Promise<{
     readonly availableQuantity: number;
+    readonly scopedBy?: {
+      readonly stockLocationId?: string;
+    };
   }>;
   reserveInventory(input: Record<string, unknown>): Promise<{
     readonly reservation?: {
@@ -265,6 +268,29 @@ const getLineMetadataValue = (
 ): string | undefined => {
   const value = metadata[key];
   return typeof value === "string" && value ? value : undefined;
+};
+
+const requireReservationStockLocationId = ({
+  availability,
+  lineItemId,
+  metadataStockLocationId,
+}: {
+  readonly availability: {
+    readonly scopedBy?: { readonly stockLocationId?: string };
+  };
+  readonly lineItemId: string;
+  readonly metadataStockLocationId?: string;
+}): string => {
+  const stockLocationId =
+    metadataStockLocationId ?? availability.scopedBy?.stockLocationId;
+
+  if (!stockLocationId) {
+    throw new Error(
+      `Line item "${lineItemId}" requires a stockLocationId for inventory reservation.`
+    );
+  }
+
+  return stockLocationId;
 };
 
 const assertCartReady = (aggregate: CheckoutCartAggregate): void => {
@@ -560,9 +586,14 @@ export const createCheckoutService = ({
             continue;
           }
 
+          const metadataStockLocationId = getLineMetadataValue(
+            lineItem.metadata,
+            "stockLocationId"
+          );
           const availability = await inventory.checkAvailability({
             inventoryItemId,
             salesChannelId: aggregate.cart.salesChannelId ?? undefined,
+            stockLocationId: metadataStockLocationId,
           });
 
           if (availability.availableQuantity < lineItem.quantity) {
@@ -571,11 +602,17 @@ export const createCheckoutService = ({
             );
           }
 
+          const stockLocationId = requireReservationStockLocationId({
+            availability,
+            lineItemId: lineItem.id,
+            metadataStockLocationId,
+          });
           const reservationResult = await inventory.reserveInventory({
             ...metadata,
             inventoryItemId,
             quantity: lineItem.quantity,
             salesChannelId: aggregate.cart.salesChannelId ?? undefined,
+            stockLocationId,
           });
 
           const reservations =

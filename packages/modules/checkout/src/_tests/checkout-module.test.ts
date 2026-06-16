@@ -66,6 +66,7 @@ const createDependencyStubs = (calls: string[]) => {
           inventoryItemId: "invitem_1",
           priceSetId: "pset_1",
           sku: "HAT-1",
+          stockLocationId: "sloc_1",
           taxCategoryId: "taxcat_1",
         },
         productId: "prod_1",
@@ -220,6 +221,7 @@ const createDependencyStubs = (calls: string[]) => {
         reservedQuantity: 0,
         scopedBy: {
           salesChannelId: "sc_1",
+          stockLocationId: "sloc_1",
         },
         stockedQuantity: 10,
       };
@@ -236,7 +238,7 @@ const createDependencyStubs = (calls: string[]) => {
             idempotencyKey: "checkout_1:inventory:reserve:invitem_1",
             inventoryItemId: "invitem_1",
             quantity: 1,
-            stockLocationId: "stockloc_1",
+            stockLocationId: "sloc_1",
             workflowRunId: "checkout_1",
           },
         ],
@@ -495,6 +497,51 @@ describe("checkout workflow orchestration", () => {
     expect(
       calls.filter((call) => call === "order.createOrderFromCheckout")
     ).toHaveLength(1);
+  });
+
+  it("passes the selected stock location to inventory reservations", async () => {
+    const calls: string[] = [];
+    const dependencies = createDependencyStubs(calls);
+    const reserveInputs: Record<string, unknown>[] = [];
+    const service = createCheckoutService({
+      ...dependencies,
+      inventory: {
+        ...dependencies.inventory,
+        checkAvailability: async () => {
+          calls.push("inventory.checkAvailability");
+          return {
+            availableQuantity: 10,
+            inventoryItemId: "invitem_1",
+            reservedQuantity: 0,
+            scopedBy: {
+              salesChannelId: "sc_1",
+              stockLocationId: "sloc_1",
+            },
+            stockedQuantity: 10,
+          };
+        },
+        reserveInventory: async (input) => {
+          calls.push("inventory.reserveInventory");
+          reserveInputs.push(input);
+
+          if (input.stockLocationId !== "sloc_1") {
+            throw new Error("stockLocationId is required");
+          }
+
+          return {
+            reservation: {
+              inventoryItemId: "invitem_1",
+              quantity: 1,
+              stockLocationId: "sloc_1",
+            },
+          };
+        },
+      },
+    });
+
+    await service.completeCheckout(checkoutInput);
+
+    expect(reserveInputs[0]?.stockLocationId).toBe("sloc_1");
   });
 
   it("compensates inventory and emits a failed event when order creation fails after reservation", async () => {
