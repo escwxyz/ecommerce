@@ -189,7 +189,24 @@ export const createCloudflareCartActiveCache = ({
 
     return cart ? deserializeCart(cart) : null;
   },
-  findLineItemById: () => Promise.resolve(null),
+  findLineItemById: async ({ id, cartId, scope }) => {
+    if (!cartId) {
+      return null;
+    }
+
+    const item = await requestCartCache<StoredLineItemRecord | null>({
+      cartId,
+      namespace,
+      operation: {
+        cartId,
+        id,
+        scope,
+        type: "findLineItemById",
+      },
+    });
+
+    return item ? deserializeLineItem(item) : null;
+  },
   findLineItemByIdempotencyKey: () => Promise.resolve(null),
   getCartAggregate: async ({ id, scope }) => {
     const aggregate = await requestCartCache<StoredCartAggregate | null>({

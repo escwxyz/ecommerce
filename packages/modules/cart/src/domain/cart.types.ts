@@ -91,13 +91,16 @@ export interface CartRepository {
     idempotencyKey: string
   ): Promise<CartAdjustmentRecord | null>;
   findCartById(id: CartId): Promise<CartRecord | null>;
-  findLineItemById(id: CartLineItemId): Promise<CartLineItemRecord | null>;
+  findLineItemById(
+    id: CartLineItemId,
+    cartId?: CartId
+  ): Promise<CartLineItemRecord | null>;
   findLineItemByIdempotencyKey(
     idempotencyKey: string
   ): Promise<CartLineItemRecord | null>;
   getCartAggregate(id: CartId): Promise<CartAggregate | null>;
   listCarts(): Promise<readonly CartRecord[]>;
-  removeLineItem(id: CartLineItemId): Promise<void>;
+  removeLineItem(id: CartLineItemId, cartId?: CartId): Promise<void>;
   saveAdjustment(
     adjustment: CartAdjustmentRecord,
     idempotencyKey: string

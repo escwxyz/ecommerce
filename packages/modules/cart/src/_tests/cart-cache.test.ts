@@ -169,12 +169,10 @@ describe("cart active cache repository", () => {
 
   it("retains pending projection failure metadata for retry or reconciliation", async () => {
     const failures: CartProjectionSyncFailure[] = [];
-    const failingProjection = {
-      ...createResettableInMemoryCartRepository(),
-      saveCart: async () => {
-        throw new Error("projection unavailable");
-      },
-    } satisfies CartRepository;
+    const failingProjection = createResettableInMemoryCartRepository();
+    failingProjection.saveCart = async () => {
+      throw new Error("projection unavailable");
+    };
     const { service } = createService({
       projection: failingProjection,
       scope: createVisitorCartScope("visitor_1"),

@@ -94,7 +94,7 @@ export const createD1CartRepository = ({
 
     return row ? toCartRecord(row) : null;
   },
-  findLineItemById: async (id) => {
+  findLineItemById: async (id, _cartId) => {
     const row = await db
       .selectFrom("cart_line_item")
       .selectAll()
@@ -149,7 +149,7 @@ export const createD1CartRepository = ({
 
     return rows.map(toCartRecord);
   },
-  removeLineItem: async (id) => {
+  removeLineItem: async (id, _cartId) => {
     await db.deleteFrom("cart_line_item").where("id", "=", id).execute();
   },
   saveAdjustment: async (adjustment, idempotencyKey) => {

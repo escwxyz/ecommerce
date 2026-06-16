@@ -134,13 +134,14 @@ export const createCachedCartRepository = ({
 
       return aggregate?.cart ?? null;
     },
-    findLineItemById: async (id: CartLineItemId) => {
+    findLineItemById: async (id: CartLineItemId, cartId?: CartId) => {
       const currentScope = getScope();
       let cached = null;
 
       try {
         cached = await cache.findLineItemById({
           id,
+          cartId,
           scope: currentScope,
         });
       } catch (error) {
@@ -151,7 +152,9 @@ export const createCachedCartRepository = ({
         throw error;
       }
 
-      return cached ?? (await projectionRepository.findLineItemById(id));
+      return (
+        cached ?? (await projectionRepository.findLineItemById(id, cartId))
+      );
     },
     findLineItemByIdempotencyKey: async (idempotencyKey) => {
       const currentScope = getScope();
@@ -179,12 +182,15 @@ export const createCachedCartRepository = ({
     },
     getCartAggregate: hydrateAggregate,
     listCarts: () => projectionRepository.listCarts(),
-    removeLineItem: async (id) => {
+    removeLineItem: async (id, cartId) => {
       const currentScope = getScope();
-      const item =
-        (await cache
+      let item: CartLineItemRecord | null = null;
+
+      if (cartId) {
+        item = await cache
           .findLineItemById({
             id,
+            cartId,
             scope: currentScope,
           })
           .catch((error: unknown) => {
@@ -193,14 +199,20 @@ export const createCachedCartRepository = ({
             }
 
             throw error;
-          })) ?? (await projectionRepository.findLineItemById(id));
+          });
+      }
+
+      if (!item) {
+        item = await projectionRepository.findLineItemById(id, cartId);
+      }
+
       const aggregate = await cache.removeLineItem({
-        cartId: item?.cartId,
+        cartId: cartId ?? item?.cartId,
         id,
         scope: currentScope,
       });
 
-      await projectionRepository.removeLineItem(id);
+      await projectionRepository.removeLineItem(id, cartId ?? item?.cartId);
 
       if (aggregate) {
         await syncProjectionAfterCacheWrite(aggregate.cart.id);

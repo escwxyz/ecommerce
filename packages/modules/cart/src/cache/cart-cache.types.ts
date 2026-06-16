@@ -66,6 +66,7 @@ export interface CartActiveCache {
   }): Promise<CartRecord | null>;
   findLineItemById(input: {
     readonly id: CartLineItemId;
+    readonly cartId?: CartId;
     readonly scope: CartOwnershipScope;
   }): Promise<CartLineItemRecord | null>;
   findLineItemByIdempotencyKey(input: {

@@ -68,7 +68,10 @@ export class InMemoryCartRepository implements ResettableCartRepository {
     return Promise.resolve(this.#carts.get(id) ?? null);
   }
 
-  findLineItemById(id: CartLineItemId): Promise<CartLineItemRecord | null> {
+  findLineItemById(
+    id: CartLineItemId,
+    _cartId?: CartId
+  ): Promise<CartLineItemRecord | null> {
     return Promise.resolve(this.#lineItems.get(id) ?? null);
   }
 
@@ -113,7 +116,7 @@ export class InMemoryCartRepository implements ResettableCartRepository {
     return Promise.resolve(sortByCreatedAtDescending(this.#carts.values()));
   }
 
-  removeLineItem(id: CartLineItemId): Promise<void> {
+  removeLineItem(id: CartLineItemId, _cartId?: CartId): Promise<void> {
     this.#lineItems.delete(id);
     return Promise.resolve();
   }

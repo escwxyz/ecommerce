@@ -74,14 +74,20 @@ export class InMemoryCartActiveCache implements CartActiveCache {
 
   async findLineItemById({
     id,
+    cartId,
     scope,
   }: {
     readonly id: CartLineItemId;
+    readonly cartId?: CartId;
     readonly scope: CartOwnershipScope;
   }): Promise<CartLineItemRecord | null> {
     const item = await this.#repository.findLineItemById(id);
 
     if (!item) {
+      return null;
+    }
+
+    if (cartId && item.cartId !== cartId) {
       return null;
     }
 
@@ -131,13 +137,15 @@ export class InMemoryCartActiveCache implements CartActiveCache {
   }
 
   async removeLineItem({
+    cartId,
     id,
     scope,
   }: {
+    readonly cartId?: CartId;
     readonly id: CartLineItemId;
     readonly scope: CartOwnershipScope;
   }): Promise<CartAggregate | null> {
-    const item = await this.findLineItemById({ id, scope });
+    const item = await this.findLineItemById({ cartId, id, scope });
 
     if (!item) {
       return null;

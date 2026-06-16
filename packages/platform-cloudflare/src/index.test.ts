@@ -166,9 +166,9 @@ const createFakeCartCacheNamespace = () => {
     string,
     {
       aggregate: {
-        adjustments: unknown[];
-        cart: unknown | null;
-        lineItems: unknown[];
+        adjustments: { readonly id: string }[];
+        cart: { readonly customerId: string | null } | null;
+        lineItems: { readonly id: string }[];
       };
       adjustmentIdempotency: Map<string, unknown>;
       lineItemIdempotency: Map<string, unknown>;
@@ -186,9 +186,9 @@ const createFakeCartCacheNamespace = () => {
     const created = {
       adjustmentIdempotency: new Map<string, unknown>(),
       aggregate: {
-        adjustments: [],
+        adjustments: [] as { readonly id: string }[],
         cart: null,
-        lineItems: [],
+        lineItems: [] as { readonly id: string }[],
       },
       lineItemIdempotency: new Map<string, unknown>(),
       owner: null,
@@ -215,13 +215,16 @@ const createFakeCartCacheNamespace = () => {
           const operation = (await request.json()) as {
             readonly adjustment?: { readonly id: string };
             readonly aggregate?: {
-              readonly adjustments: readonly unknown[];
+              readonly adjustments: readonly { readonly id: string }[];
               readonly cart: { readonly customerId: string | null };
-              readonly lineItems: readonly unknown[];
+              readonly lineItems: readonly {
+                readonly id: string;
+              }[];
             };
             readonly cart?: { readonly customerId: string | null };
             readonly cartId?: string;
             readonly failedAt?: string;
+            readonly id?: string;
             readonly idempotencyKey?: string;
             readonly item?: { readonly id: string };
             readonly reason?: string;
@@ -246,6 +249,14 @@ const createFakeCartCacheNamespace = () => {
             case "getCartAggregate":
               return Response.json({
                 output: object.aggregate.cart ? object.aggregate : null,
+              });
+            case "findLineItemById":
+              return Response.json({
+                output:
+                  object.aggregate.lineItems.find(
+                    (lineItem: { readonly id: string }) =>
+                      operation.id === lineItem.id
+                  ) ?? null,
               });
             case "hydrateCartAggregate":
               if (
@@ -276,6 +287,15 @@ const createFakeCartCacheNamespace = () => {
               failures.push(operation);
               return Response.json({ output: null });
             case "saveAdjustment": {
+              const adjustment = operation.adjustment;
+
+              if (!adjustment) {
+                return Response.json(
+                  { error: "missing adjustment", output: null },
+                  { status: 400 }
+                );
+              }
+
               if (
                 operation.idempotencyKey &&
                 object.adjustmentIdempotency.has(operation.idempotencyKey)
@@ -287,25 +307,34 @@ const createFakeCartCacheNamespace = () => {
                 });
               }
 
-              object.aggregate.adjustments.push(operation.adjustment);
+              object.aggregate.adjustments.push(adjustment);
 
               if (operation.idempotencyKey) {
                 object.adjustmentIdempotency.set(
                   operation.idempotencyKey,
-                  operation.adjustment
+                  adjustment
                 );
               }
 
-              return Response.json({ output: operation.adjustment });
+              return Response.json({ output: adjustment });
             }
             case "saveCart":
-              object.aggregate.cart = operation.cart;
+              object.aggregate.cart = operation.cart ?? null;
               object.owner =
                 operation.scope.type === "system" && operation.cart?.customerId
                   ? { id: operation.cart.customerId, type: "customer" }
                   : operation.scope;
               return Response.json({ output: operation.cart });
             case "saveLineItem":
+              const item = operation.item;
+
+              if (!item) {
+                return Response.json(
+                  { error: "missing item", output: null },
+                  { status: 400 }
+                );
+              }
+
               if (
                 operation.idempotencyKey &&
                 object.lineItemIdempotency.has(operation.idempotencyKey)
@@ -317,16 +346,13 @@ const createFakeCartCacheNamespace = () => {
                 });
               }
 
-              object.aggregate.lineItems.push(operation.item);
+              object.aggregate.lineItems.push(item);
 
               if (operation.idempotencyKey) {
-                object.lineItemIdempotency.set(
-                  operation.idempotencyKey,
-                  operation.item
-                );
+                object.lineItemIdempotency.set(operation.idempotencyKey, item);
               }
 
-              return Response.json({ output: operation.item });
+              return Response.json({ output: item });
             default:
               return Response.json({ output: null });
           }
@@ -422,11 +448,9 @@ describe("cloudflare cart cache adapter", () => {
       },
     });
 
-    const failingProjection = {
-      ...createResettableInMemoryCartRepository(),
-      saveCart: async () => {
-        throw new Error("projection offline");
-      },
+    const failingProjection = createResettableInMemoryCartRepository();
+    failingProjection.saveCart = async () => {
+      throw new Error("projection offline");
     };
     const failuresCache = createFakeCartCacheNamespace();
     const failingRepository = createCloudflareCartCacheRepository({
@@ -534,6 +558,53 @@ describe("cloudflare cart cache adapter", () => {
         scope: createVisitorCartScope("visitor_2"),
       }).getCartAggregate(customerCart.id)
     ).rejects.toThrow(/denied/);
+  });
+
+  it("reads active line items from the Durable Object when projection sync fails", async () => {
+    const cartCache = createFakeCartCacheNamespace();
+    const projectionRepository = createResettableInMemoryCartRepository();
+    projectionRepository.saveLineItem = async () => {
+      throw new Error("projection unavailable");
+    };
+    const repository = createCloudflareCartCacheRepository({
+      namespace: cartCache.namespace,
+      projectionRepository,
+      scope: createVisitorCartScope("visitor_3"),
+    });
+    const service = createCartService({
+      clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "cart_line_do",
+        "evt_cart_line_do",
+        "clitem_line_do",
+        "evt_line_do",
+      ]),
+      repository,
+    });
+
+    const cart = await service.createCart({ currencyCode: "USD" });
+    const withLineItem = await service.addLineItem({
+      cartId: cart.id,
+      correlationId: "cart_line_do",
+      idempotencyKey: "cart_line_do",
+      productId: "prod_hat",
+      quantity: 1,
+      title: "Hat",
+      unitPrice: 1200,
+      variantId: "variant_hat",
+    });
+    const lineItem = withLineItem.lineItems[0];
+
+    if (!lineItem) {
+      throw new Error("Expected an active line item in the cart cache.");
+    }
+
+    await expect(
+      repository.findLineItemById(lineItem.id, cart.id)
+    ).resolves.toMatchObject({
+      id: lineItem.id,
+      cartId: cart.id,
+    });
   });
 });
 

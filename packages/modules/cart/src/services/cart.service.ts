@@ -289,7 +289,7 @@ export const createCartService = ({
         : null;
 
       if (lineItemId) {
-        const lineItem = await repository.findLineItemById(lineItemId);
+        const lineItem = await repository.findLineItemById(lineItemId, cartId);
 
         if (!lineItem || lineItem.cartId !== cartId) {
           throw new Error(
@@ -466,14 +466,14 @@ export const createCartService = ({
       const cartId = createCartId(input.cartId);
       await requireCart(repository, cartId);
       const lineItemId = createCartLineItemId(input.lineItemId);
-      const lineItem = await repository.findLineItemById(lineItemId);
+      const lineItem = await repository.findLineItemById(lineItemId, cartId);
 
       if (!lineItem || lineItem.cartId !== cartId) {
         throw new Error(`Cart line item "${input.lineItemId}" was not found.`);
       }
 
       await (input.quantity === 0
-        ? repository.removeLineItem(lineItemId)
+        ? repository.removeLineItem(lineItemId, cartId)
         : repository.saveLineItem({
             ...lineItem,
             quantity: input.quantity,
