@@ -106,6 +106,7 @@
       "dependencies": {
         "@ecommerce/auth": "workspace:*",
         "@ecommerce/cart": "workspace:*",
+        "@ecommerce/checkout": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "@ecommerce/customer": "workspace:*",
         "@ecommerce/db": "workspace:*",
@@ -258,6 +259,36 @@
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
         "kysely-d1": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/modules/checkout": {
+      "name": "@ecommerce/checkout",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ecommerce/cart": "workspace:*",
+        "@ecommerce/core": "workspace:*",
+        "@ecommerce/customer": "workspace:*",
+        "@ecommerce/fulfillment": "workspace:*",
+        "@ecommerce/inventory": "workspace:*",
+        "@ecommerce/module-contracts": "workspace:*",
+        "@ecommerce/notification-event": "workspace:*",
+        "@ecommerce/order": "workspace:*",
+        "@ecommerce/payment": "workspace:*",
+        "@ecommerce/pricing": "workspace:*",
+        "@ecommerce/product": "workspace:*",
+        "@ecommerce/promotion": "workspace:*",
+        "@ecommerce/region-sales-channel": "workspace:*",
+        "@ecommerce/store": "workspace:*",
+        "@ecommerce/tax": "workspace:*",
+        "@orpc/server": "catalog:",
+        "effect": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/auth": "workspace:*",
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -802,6 +833,8 @@
     "@ecommerce/auth": ["@ecommerce/auth@workspace:packages/auth"],
 
     "@ecommerce/cart": ["@ecommerce/cart@workspace:packages/modules/cart"],
+
+    "@ecommerce/checkout": ["@ecommerce/checkout@workspace:packages/modules/checkout"],
 
     "@ecommerce/config": ["@ecommerce/config@workspace:packages/config"],
 

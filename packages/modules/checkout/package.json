@@ -1,28 +1,42 @@
 {
-  "name": "@ecommerce/api",
+  "name": "@ecommerce/checkout",
+  "version": "0.0.0",
+  "private": true,
   "type": "module",
   "exports": {
     ".": {
       "default": "./src/index.ts"
     },
-    "./*": {
-      "default": "./src/*.ts"
+    "./admin": {
+      "default": "./src/admin/index.ts"
+    },
+    "./contracts": {
+      "default": "./src/contracts/index.ts"
+    },
+    "./domain": {
+      "default": "./src/domain/index.ts"
+    },
+    "./module": {
+      "default": "./src/module/index.ts"
+    },
+    "./router": {
+      "default": "./src/router/index.ts"
+    },
+    "./service": {
+      "default": "./src/services/index.ts"
     }
   },
   "scripts": {
-    "check-types": "tsc -b",
-    "test": "bun test ./src/*.test.ts"
+    "check-types": "tsc --noEmit",
+    "test": "bun test ./src/_tests"
   },
   "dependencies": {
-    "@ecommerce/auth": "workspace:*",
     "@ecommerce/cart": "workspace:*",
-    "@ecommerce/checkout": "workspace:*",
     "@ecommerce/core": "workspace:*",
     "@ecommerce/customer": "workspace:*",
-    "@ecommerce/db": "workspace:*",
-    "@ecommerce/env": "workspace:*",
     "@ecommerce/fulfillment": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
+    "@ecommerce/module-contracts": "workspace:*",
     "@ecommerce/notification-event": "workspace:*",
     "@ecommerce/order": "workspace:*",
     "@ecommerce/payment": "workspace:*",
@@ -32,17 +46,14 @@
     "@ecommerce/region-sales-channel": "workspace:*",
     "@ecommerce/store": "workspace:*",
     "@ecommerce/tax": "workspace:*",
-    "@orpc/client": "catalog:",
-    "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",
-    "@orpc/zod": "catalog:",
-    "dotenv": "catalog:",
+    "effect": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@ecommerce/auth": "workspace:*",
     "@ecommerce/config": "workspace:*",
     "bun-types": "catalog:",
-    "hono": "catalog:",
     "typescript": "catalog:"
   }
 }
