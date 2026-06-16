@@ -75,6 +75,9 @@ export interface OrderRepository {
   findOrderByIdempotencyKey(
     idempotencyKey: string
   ): Promise<OrderRecord | null>;
+  findStateTransitionByIdempotencyKey(
+    idempotencyKey: string
+  ): Promise<OrderStateTransitionRecord | null>;
   getOrderAggregate(orderId: string): Promise<OrderAggregate | null>;
   listOrders(): Promise<readonly OrderRecord[]>;
   saveOrderAggregate(

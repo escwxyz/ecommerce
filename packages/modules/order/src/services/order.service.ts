@@ -284,6 +284,24 @@ export const createOrderService = ({
   },
   transitionStatus: async (input) => {
     const orderId = createOrderId(input.orderId);
+    const duplicateTransition =
+      await repository.findStateTransitionByIdempotencyKey(
+        input.idempotencyKey
+      );
+
+    if (duplicateTransition) {
+      if (
+        duplicateTransition.orderId !== orderId ||
+        duplicateTransition.toStatus !== input.status
+      ) {
+        throw new Error(
+          `Order status transition idempotency key "${input.idempotencyKey}" was already used.`
+        );
+      }
+
+      return requireAggregate(repository, orderId);
+    }
+
     const existing = await requireOrder(repository, orderId);
 
     if (existing.status === input.status) {

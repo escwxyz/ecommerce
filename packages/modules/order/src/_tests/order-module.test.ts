@@ -168,6 +168,56 @@ describe("order module foundation", () => {
     ]);
   });
 
+  it("rejects conflicting transition idempotency reuse before mutating order state", async () => {
+    const published: unknown[] = [];
+    const repository = createInMemoryOrderRepository();
+    const service = createOrderService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      eventPublisher: {
+        publish: async (event) => {
+          published.push(event);
+        },
+      },
+      idGenerator: createSequenceIdGenerator([
+        "ord_1",
+        "ordli_1",
+        "evt_placed",
+        "evt_transition",
+      ]),
+      repository,
+    });
+    const created = await service.createOrderFromCheckout(checkoutInput);
+
+    await service.transitionStatus({
+      correlationId: "corr_2",
+      idempotencyKey: "transition_1",
+      orderId: created.order.id,
+      status: "completed",
+    });
+
+    await expect(
+      service.transitionStatus({
+        correlationId: "corr_3",
+        idempotencyKey: "transition_1",
+        orderId: created.order.id,
+        status: "canceled",
+      })
+    ).rejects.toThrow("already used");
+
+    await expect(
+      service.getOrder(createOrderId(created.order.id))
+    ).resolves.toMatchObject({
+      order: {
+        status: "completed",
+      },
+      stateTransitions: [{ toStatus: "placed" }, { toStatus: "completed" }],
+    });
+    expect(published).toMatchObject([
+      { name: ORDER_PLACED_EVENT },
+      { name: ORDER_STATUS_TRANSITIONED_EVENT },
+    ]);
+  });
+
   it("declares contract-first order route metadata", () => {
     expect(
       orderContractRouter.orderCreateFromCheckout["~orpc"].route.operationId

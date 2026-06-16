@@ -60,7 +60,10 @@ export class InMemoryOrderRepository implements OrderRepository {
   readonly #aggregates = new Map<string, OrderAggregate>();
   readonly #orderIdempotency = new Map<string, string>();
   readonly #transactionIdempotency = new Map<string, string>();
-  readonly #transitionIdempotency = new Map<string, string>();
+  readonly #transitionIdempotency = new Map<
+    string,
+    OrderStateTransitionRecord
+  >();
 
   findOrderById(orderId: string): Promise<OrderRecord | null> {
     const aggregate = this.#aggregates.get(orderId);
@@ -74,6 +77,22 @@ export class InMemoryOrderRepository implements OrderRepository {
     const orderId = this.#orderIdempotency.get(idempotencyKey);
 
     return orderId ? this.findOrderById(orderId) : Promise.resolve(null);
+  }
+
+  findStateTransitionByIdempotencyKey(
+    idempotencyKey: string
+  ): Promise<OrderStateTransitionRecord | null> {
+    const transition = this.#transitionIdempotency.get(idempotencyKey);
+
+    return Promise.resolve(
+      transition
+        ? {
+            ...transition,
+            changedAt: cloneDate(transition.changedAt),
+            metadata: { ...transition.metadata },
+          }
+        : null
+    );
   }
 
   getOrderAggregate(orderId: string): Promise<OrderAggregate | null> {
@@ -151,7 +170,7 @@ export class InMemoryOrderRepository implements OrderRepository {
 
     if (!this.#transitionIdempotency.has(idempotencyKey)) {
       aggregate.stateTransitions = [...aggregate.stateTransitions, transition];
-      this.#transitionIdempotency.set(idempotencyKey, transition.orderId);
+      this.#transitionIdempotency.set(idempotencyKey, transition);
     }
 
     return Promise.resolve({
