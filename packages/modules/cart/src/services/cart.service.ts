@@ -444,13 +444,19 @@ export const createCartService = ({
     setRegionChannel: async (input) => {
       const cartId = createCartId(input.cartId);
       const cart = await requireCart(repository, cartId);
+      const currencyCode = input.currencyCode
+        ? normalizeCurrencyCode(input.currencyCode)
+        : cart.currencyCode;
+
       await repository.saveCart({
         ...cart,
-        currencyCode: input.currencyCode
-          ? normalizeCurrencyCode(input.currencyCode)
-          : cart.currencyCode,
+        currencyCode,
         regionId: input.regionId ?? cart.regionId,
         salesChannelId: input.salesChannelId ?? cart.salesChannelId,
+        totals:
+          currencyCode === cart.currencyCode
+            ? cart.totals
+            : createEmptyTotals(currencyCode),
         updatedAt: clock.now(),
       });
 

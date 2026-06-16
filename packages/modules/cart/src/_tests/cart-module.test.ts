@@ -237,6 +237,57 @@ describe("cart module foundation", () => {
     ).rejects.toThrow(`Cart line item "${lineItem.id}" was not found.`);
   });
 
+  it("resets totals snapshot when changing cart currency", async () => {
+    const repository = createResettableInMemoryCartRepository();
+    const service = createCartService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "cart_currency",
+        "evt_currency_created",
+        "evt_currency_totals",
+      ]),
+      repository,
+    });
+    const cart = await service.createCart({ currencyCode: "USD" });
+    await service.updateTotals({
+      cartId: cart.id,
+      correlationId: "cart_currency_totals",
+      idempotencyKey: "cart_currency_totals",
+      totals: {
+        adjustmentTotal: -100,
+        currencyCode: "USD",
+        discountTotal: 100,
+        giftCardTotal: 0,
+        itemSubtotal: 1500,
+        shippingTotal: 500,
+        subtotal: 1500,
+        taxTotal: 200,
+        total: 2100,
+      },
+    });
+
+    const updated = await service.setRegionChannel({
+      cartId: cart.id,
+      correlationId: "cart_currency_change",
+      currencyCode: "eur",
+      idempotencyKey: "cart_currency_change",
+      regionId: "reg_eu",
+    });
+
+    expect(updated.cart.currencyCode).toBe("EUR");
+    expect(updated.cart.totals).toEqual({
+      adjustmentTotal: 0,
+      currencyCode: "EUR",
+      discountTotal: 0,
+      giftCardTotal: 0,
+      itemSubtotal: 0,
+      shippingTotal: 0,
+      subtotal: 0,
+      taxTotal: 0,
+      total: 0,
+    });
+  });
+
   it("exposes cart operations through shared API fragments", async () => {
     const repository = createResettableInMemoryCartRepository();
     const fragment = createCartRouteFragment({
