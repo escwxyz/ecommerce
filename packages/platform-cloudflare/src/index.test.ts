@@ -5,6 +5,7 @@ import {
   createSystemCartScope,
   createVisitorCartScope,
 } from "@ecommerce/cart/cache";
+import { createCartId } from "@ecommerce/cart/domain";
 import { createResettableInMemoryCartRepository } from "@ecommerce/cart/repository";
 import { createCartService } from "@ecommerce/cart/service";
 import {
@@ -247,6 +248,21 @@ const createFakeCartCacheNamespace = () => {
                 output: object.aggregate.cart ? object.aggregate : null,
               });
             case "hydrateCartAggregate":
+              if (
+                operation.aggregate &&
+                operation.aggregate.cart.customerId &&
+                !(
+                  operation.scope.type === "system" ||
+                  (operation.scope.type === "customer" &&
+                    operation.scope.id === operation.aggregate.cart.customerId)
+                )
+              ) {
+                return Response.json(
+                  { error: "denied", output: null },
+                  { status: 403 }
+                );
+              }
+
               if (operation.aggregate) {
                 object.aggregate = {
                   adjustments: [...operation.aggregate.adjustments],
@@ -468,6 +484,56 @@ describe("cloudflare cart cache adapter", () => {
         id: cart.id,
       },
     });
+  });
+
+  it("rejects mismatched customer scope when hydrating a projected customer cart", async () => {
+    const cartCache = createFakeCartCacheNamespace();
+    const projectionRepository = createResettableInMemoryCartRepository();
+    const customerCart = await projectionRepository.saveCart({
+      billingAddress: null,
+      completedAt: null,
+      createdAt: new Date("2026-06-16T10:00:00.000Z"),
+      currencyCode: "USD",
+      customerId: "cus_1",
+      email: null,
+      id: createCartId("cart_projection"),
+      metadata: {},
+      paymentCollectionId: null,
+      regionId: null,
+      salesChannelId: null,
+      shippingAddress: null,
+      shippingOptionId: null,
+      status: "active",
+      totals: {
+        adjustmentTotal: 0,
+        currencyCode: "USD",
+        discountTotal: 0,
+        giftCardTotal: 0,
+        itemSubtotal: 0,
+        shippingTotal: 0,
+        subtotal: 0,
+        taxTotal: 0,
+        total: 0,
+      },
+      updatedAt: new Date("2026-06-16T10:00:00.000Z"),
+    });
+    const mismatchedRepository = createCloudflareCartCacheRepository({
+      namespace: cartCache.namespace,
+      projectionRepository,
+      scope: createCustomerCartScope("cus_2"),
+    });
+
+    await expect(
+      mismatchedRepository.getCartAggregate(customerCart.id)
+    ).rejects.toThrow(/denied/);
+
+    await expect(
+      createCloudflareCartCacheRepository({
+        namespace: cartCache.namespace,
+        projectionRepository,
+        scope: createVisitorCartScope("visitor_2"),
+      }).getCartAggregate(customerCart.id)
+    ).rejects.toThrow(/denied/);
   });
 });
 

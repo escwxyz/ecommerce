@@ -128,13 +128,31 @@ const canAccessScope = (
   requested: CartOwnershipScope
 ): boolean => requested.type === "system" || isSameScope(current, requested);
 
-const ownerFromCart = (
+const resolveHydratedOwner = (
   cart: StoredCartRecord,
-  fallback: CartOwnershipScope
-): CartOwnershipScope =>
-  fallback.type === "system" && cart.customerId
-    ? { id: cart.customerId, type: "customer" }
-    : fallback;
+  scope: CartOwnershipScope
+): CartOwnershipScope => {
+  if (cart.customerId) {
+    if (
+      scope.type === "system" ||
+      (scope.type === "customer" && scope.id === cart.customerId)
+    ) {
+      return { id: cart.customerId, type: "customer" };
+    }
+
+    throw new CartCacheOwnershipError(
+      `Cart "${cart.id}" is owned by customer:${cart.customerId}.`
+    );
+  }
+
+  if (scope.type === "customer") {
+    throw new CartCacheOwnershipError(
+      `Cart "${cart.id}" is not assigned to an authenticated customer.`
+    );
+  }
+
+  return scope;
+};
 
 const toStoredCartAggregate = (
   aggregate: StoredAggregate
@@ -237,7 +255,7 @@ export class CartCacheDurableObject extends DurableObject {
   ): Promise<void> {
     const current =
       await this.ctx.storage.get<CartOwnershipScope>(ownerStorageKey);
-    const next = ownerFromCart(cart, scope);
+    const next = resolveHydratedOwner(cart, scope);
 
     if (
       current &&
