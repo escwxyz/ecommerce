@@ -113,6 +113,7 @@
         "@ecommerce/fulfillment": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
         "@ecommerce/notification-event": "workspace:*",
+        "@ecommerce/order": "workspace:*",
         "@ecommerce/payment": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
@@ -170,6 +171,7 @@
         "@ecommerce/fulfillment": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
         "@ecommerce/notification-event": "workspace:*",
+        "@ecommerce/order": "workspace:*",
         "@ecommerce/payment": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
@@ -345,6 +347,24 @@
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
         "kysely-d1": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/modules/order": {
+      "name": "@ecommerce/order",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ecommerce/core": "workspace:*",
+        "@ecommerce/module-contracts": "workspace:*",
+        "@orpc/server": "catalog:",
+        "effect": "catalog:",
+        "kysely": "catalog:",
+        "nanoid": "^5.1.6",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -806,6 +826,8 @@
     "@ecommerce/module-contracts": ["@ecommerce/module-contracts@workspace:packages/modules/module-contracts"],
 
     "@ecommerce/notification-event": ["@ecommerce/notification-event@workspace:packages/modules/notification-event"],
+
+    "@ecommerce/order": ["@ecommerce/order@workspace:packages/modules/order"],
 
     "@ecommerce/payment": ["@ecommerce/payment@workspace:packages/modules/payment"],
 

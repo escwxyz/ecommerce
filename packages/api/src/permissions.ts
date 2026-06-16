@@ -10,6 +10,7 @@ import { customerModule } from "@ecommerce/customer/module";
 import { fulfillmentModule } from "@ecommerce/fulfillment/module";
 import { inventoryModule } from "@ecommerce/inventory/module";
 import { notificationEventModule } from "@ecommerce/notification-event/module";
+import { orderModule } from "@ecommerce/order/module";
 import { paymentModule } from "@ecommerce/payment/module";
 import { pricingModule } from "@ecommerce/pricing/module";
 import { productModule } from "@ecommerce/product/module";
@@ -31,6 +32,7 @@ export const builtinPermissionModules = [
   paymentModule,
   fulfillmentModule,
   cartModule,
+  orderModule,
 ] as const;
 
 export const builtinPermissionComposition = composeCommerceModulePermissions(

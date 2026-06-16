@@ -22,6 +22,7 @@ describe("tax API and admin assembly", () => {
       "module:payment",
       "module:fulfillment",
       "module:cart",
+      "module:order",
     ]);
   });
 
