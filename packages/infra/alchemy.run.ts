@@ -44,6 +44,10 @@ export const statefulCoordinator = Cloudflare.DurableObjectNamespace(
   "StatefulCoordinatorDurableObject"
 );
 
+export const cartCache = Cloudflare.DurableObjectNamespace(
+  "CartCacheDurableObject"
+);
+
 export const notificationEventQueue = Cloudflare.Queue(
   "NotificationEventQueue",
   {
@@ -72,6 +76,7 @@ export const server = Cloudflare.Worker("Server", {
   },
   env: {
     ...requiredServerConfig,
+    CART_CACHE: cartCache,
     DB: database,
     NOTIFICATION_EVENT_DEAD_LETTER_QUEUE: notificationEventDeadLetterQueue,
     NOTIFICATION_EVENT_QUEUE: notificationEventQueue,

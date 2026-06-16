@@ -13,6 +13,9 @@
     "./adapters/d1": {
       "default": "./src/adapters/d1/index.ts"
     },
+    "./cache": {
+      "default": "./src/cache/index.ts"
+    },
     "./contracts": {
       "default": "./src/contracts/index.ts"
     },

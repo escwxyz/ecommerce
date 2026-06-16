@@ -1,6 +1,13 @@
 import { describe, expect, it, spyOn } from "bun:test";
 
 import {
+  createCustomerCartScope,
+  createSystemCartScope,
+  createVisitorCartScope,
+} from "@ecommerce/cart/cache";
+import { createResettableInMemoryCartRepository } from "@ecommerce/cart/repository";
+import { createCartService } from "@ecommerce/cart/service";
+import {
   defineQueueMessage,
   defineSandboxPlugin,
   defineWorkflow,
@@ -19,6 +26,8 @@ import {
   activateSandboxPlugin,
   createCloudflareQueuePublisher,
   createCloudflareQueuedNotificationProvider,
+  createCartCacheDurableObjectName,
+  createCloudflareCartCacheRepository,
   composeSandboxPluginDispatch,
   createCloudflareSandboxPluginRunner,
   createCloudflareStatefulCoordinator,
@@ -148,6 +157,319 @@ const createFakeDurableObjectNamespace = () => {
     } as unknown as DurableObjectNamespace,
   };
 };
+
+const createFakeCartCacheNamespace = () => {
+  const fetches: { readonly name: string; readonly operation: unknown }[] = [];
+  const failures: unknown[] = [];
+  const objects = new Map<
+    string,
+    {
+      aggregate: {
+        adjustments: unknown[];
+        cart: unknown | null;
+        lineItems: unknown[];
+      };
+      adjustmentIdempotency: Map<string, unknown>;
+      lineItemIdempotency: Map<string, unknown>;
+      owner: { readonly id: string; readonly type: string } | null;
+    }
+  >();
+
+  const getObject = (name: string) => {
+    const existing = objects.get(name);
+
+    if (existing) {
+      return existing;
+    }
+
+    const created = {
+      adjustmentIdempotency: new Map<string, unknown>(),
+      aggregate: {
+        adjustments: [],
+        cart: null,
+        lineItems: [],
+      },
+      lineItemIdempotency: new Map<string, unknown>(),
+      owner: null,
+    };
+    objects.set(name, created);
+
+    return created;
+  };
+
+  const canRead = (
+    owner: { readonly id: string; readonly type: string } | null,
+    scope: { readonly id: string; readonly type: string }
+  ) =>
+    !owner ||
+    scope.type === "system" ||
+    (owner.id === scope.id && owner.type === scope.type);
+
+  return {
+    failures,
+    fetches,
+    namespace: {
+      getByName: (name: string) => ({
+        fetch: async (request: Request) => {
+          const operation = (await request.json()) as {
+            readonly adjustment?: { readonly id: string };
+            readonly aggregate?: {
+              readonly adjustments: readonly unknown[];
+              readonly cart: { readonly customerId: string | null };
+              readonly lineItems: readonly unknown[];
+            };
+            readonly cart?: { readonly customerId: string | null };
+            readonly cartId?: string;
+            readonly failedAt?: string;
+            readonly idempotencyKey?: string;
+            readonly item?: { readonly id: string };
+            readonly reason?: string;
+            readonly scope: { readonly id: string; readonly type: string };
+            readonly type: string;
+          };
+          const object = getObject(name);
+          fetches.push({ name, operation });
+
+          if (!canRead(object.owner, operation.scope)) {
+            return Response.json(
+              { error: "denied", output: null },
+              { status: 403 }
+            );
+          }
+
+          switch (operation.type) {
+            case "findCartById":
+              return Response.json({
+                output: object.aggregate.cart,
+              });
+            case "getCartAggregate":
+              return Response.json({
+                output: object.aggregate.cart ? object.aggregate : null,
+              });
+            case "hydrateCartAggregate":
+              if (operation.aggregate) {
+                object.aggregate = {
+                  adjustments: [...operation.aggregate.adjustments],
+                  cart: operation.aggregate.cart,
+                  lineItems: [...operation.aggregate.lineItems],
+                };
+                object.owner = operation.scope;
+              }
+              return Response.json({ output: null });
+            case "recordProjectionSyncFailure":
+              failures.push(operation);
+              return Response.json({ output: null });
+            case "saveAdjustment": {
+              if (
+                operation.idempotencyKey &&
+                object.adjustmentIdempotency.has(operation.idempotencyKey)
+              ) {
+                return Response.json({
+                  output: object.adjustmentIdempotency.get(
+                    operation.idempotencyKey
+                  ),
+                });
+              }
+
+              object.aggregate.adjustments.push(operation.adjustment);
+
+              if (operation.idempotencyKey) {
+                object.adjustmentIdempotency.set(
+                  operation.idempotencyKey,
+                  operation.adjustment
+                );
+              }
+
+              return Response.json({ output: operation.adjustment });
+            }
+            case "saveCart":
+              object.aggregate.cart = operation.cart;
+              object.owner =
+                operation.scope.type === "system" && operation.cart?.customerId
+                  ? { id: operation.cart.customerId, type: "customer" }
+                  : operation.scope;
+              return Response.json({ output: operation.cart });
+            case "saveLineItem":
+              if (
+                operation.idempotencyKey &&
+                object.lineItemIdempotency.has(operation.idempotencyKey)
+              ) {
+                return Response.json({
+                  output: object.lineItemIdempotency.get(
+                    operation.idempotencyKey
+                  ),
+                });
+              }
+
+              object.aggregate.lineItems.push(operation.item);
+
+              if (operation.idempotencyKey) {
+                object.lineItemIdempotency.set(
+                  operation.idempotencyKey,
+                  operation.item
+                );
+              }
+
+              return Response.json({ output: operation.item });
+            default:
+              return Response.json({ output: null });
+          }
+        },
+      }),
+    } as unknown as DurableObjectNamespace,
+  };
+};
+
+describe("cloudflare cart cache adapter", () => {
+  it("routes active cart mutations through deterministic cart Durable Object names and syncs D1 projection", async () => {
+    const cartCache = createFakeCartCacheNamespace();
+    const projectionRepository = createResettableInMemoryCartRepository();
+    const repository = createCloudflareCartCacheRepository({
+      namespace: cartCache.namespace,
+      projectionRepository,
+      scope: createVisitorCartScope("visitor_1"),
+    });
+    const service = createCartService({
+      clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "cart_cf",
+        "evt_cart_cf",
+        "clitem_cf",
+        "evt_line_cf",
+      ]),
+      repository,
+    });
+
+    const cart = await service.createCart({ currencyCode: "USD" });
+    const aggregate = await service.addLineItem({
+      cartId: cart.id,
+      correlationId: "cart_cf_line",
+      idempotencyKey: "cart_cf_line",
+      productId: "prod_hat",
+      quantity: 1,
+      title: "Hat",
+      unitPrice: 1200,
+      variantId: "variant_hat",
+    });
+    const duplicate = await service.addLineItem({
+      cartId: cart.id,
+      correlationId: "cart_cf_line",
+      idempotencyKey: "cart_cf_line",
+      productId: "prod_hat",
+      quantity: 1,
+      title: "Hat",
+      unitPrice: 1200,
+      variantId: "variant_hat",
+    });
+
+    expect(cartCache.fetches.map(({ name }) => name)).toContain(
+      createCartCacheDurableObjectName(cart.id)
+    );
+    await expect(
+      projectionRepository.getCartAggregate(cart.id)
+    ).resolves.toMatchObject({
+      lineItems: [
+        {
+          id: aggregate.lineItems[0]?.id,
+        },
+      ],
+    });
+    expect(duplicate.lineItems).toHaveLength(1);
+  });
+
+  it("hydrates cache misses from projection and records projection sync failures", async () => {
+    const cartCache = createFakeCartCacheNamespace();
+    const projectionRepository = createResettableInMemoryCartRepository();
+    const seedRepository = createCloudflareCartCacheRepository({
+      namespace: cartCache.namespace,
+      projectionRepository,
+      scope: createVisitorCartScope("visitor_1"),
+    });
+    const seedService = createCartService({
+      clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["cart_seed", "evt_seed"]),
+      repository: seedRepository,
+    });
+    const cart = await seedService.createCart({ currencyCode: "USD" });
+    const emptyCache = createFakeCartCacheNamespace();
+    const hydratedRepository = createCloudflareCartCacheRepository({
+      namespace: emptyCache.namespace,
+      projectionRepository,
+      scope: createVisitorCartScope("visitor_1"),
+    });
+
+    await expect(
+      hydratedRepository.getCartAggregate(cart.id)
+    ).resolves.toMatchObject({
+      cart: {
+        id: cart.id,
+      },
+    });
+
+    const failingProjection = {
+      ...createResettableInMemoryCartRepository(),
+      saveCart: async () => {
+        throw new Error("projection offline");
+      },
+    };
+    const failuresCache = createFakeCartCacheNamespace();
+    const failingRepository = createCloudflareCartCacheRepository({
+      namespace: failuresCache.namespace,
+      projectionRepository: failingProjection,
+      scope: createVisitorCartScope("visitor_2"),
+    });
+    const failingService = createCartService({
+      clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["cart_fail", "evt_fail"]),
+      repository: failingRepository,
+    });
+
+    await failingService.createCart({ currencyCode: "USD" });
+
+    expect(failuresCache.failures).toEqual([
+      expect.objectContaining({
+        reason: "projection offline",
+      }),
+    ]);
+  });
+
+  it("enforces visitor and customer scope isolation in the Cloudflare cache adapter", async () => {
+    const cartCache = createFakeCartCacheNamespace();
+    const projectionRepository = createResettableInMemoryCartRepository();
+    const visitorRepository = createCloudflareCartCacheRepository({
+      namespace: cartCache.namespace,
+      projectionRepository,
+      scope: createVisitorCartScope("visitor_1"),
+    });
+    const customerRepository = createCloudflareCartCacheRepository({
+      namespace: cartCache.namespace,
+      projectionRepository,
+      scope: createCustomerCartScope("cus_1"),
+    });
+    const systemRepository = createCloudflareCartCacheRepository({
+      namespace: cartCache.namespace,
+      projectionRepository,
+      scope: createSystemCartScope(),
+    });
+    const visitorService = createCartService({
+      clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["cart_owner", "evt_owner"]),
+      repository: visitorRepository,
+    });
+    const cart = await visitorService.createCart({ currencyCode: "USD" });
+
+    await expect(
+      customerRepository.getCartAggregate(cart.id)
+    ).resolves.toBeNull();
+    await expect(
+      systemRepository.getCartAggregate(cart.id)
+    ).resolves.toMatchObject({
+      cart: {
+        id: cart.id,
+      },
+    });
+  });
+});
 
 describe("cloudflare workflow runtime adapter", () => {
   it("starts workflows through bindings and projects metadata", async () => {

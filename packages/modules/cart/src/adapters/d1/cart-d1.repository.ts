@@ -175,6 +175,16 @@ export const createD1CartRepository = ({
         type: adjustment.type,
         updated_at: adjustment.updatedAt.getTime(),
       })
+      .onConflict((conflict) =>
+        conflict.column("id").doUpdateSet({
+          amount: adjustment.amount,
+          line_item_id: adjustment.lineItemId,
+          metadata_json: toJsonColumn(adjustment.metadata),
+          source: adjustment.source,
+          type: adjustment.type,
+          updated_at: adjustment.updatedAt.getTime(),
+        })
+      )
       .execute();
 
     return adjustment;

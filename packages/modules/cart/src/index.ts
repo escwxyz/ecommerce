@@ -4,6 +4,18 @@ export {
   type CreateD1CartRepositoryOptions,
 } from "./adapters";
 export { cartAdminSurfaces } from "./admin";
+export {
+  createCachedCartRepository,
+  createCustomerCartScope,
+  createInMemoryCartActiveCache,
+  createSystemCartScope,
+  createVisitorCartScope,
+  syncCartProjection,
+  type CartActiveCache,
+  type CartOwnershipScope,
+  type CartProjectionSyncFailure,
+  type CreateCachedCartRepositoryOptions,
+} from "./cache";
 export { cartContractRouter } from "./contracts";
 export {
   AddCartLineItemInputSchema,

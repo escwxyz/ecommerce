@@ -103,10 +103,14 @@ const serializeAggregate = (
 });
 
 export interface CreateCartRouteFragmentOptions extends CreateCartServiceOptions {
+  readonly createServiceOptionsForContext?: (
+    context: CartModuleContext
+  ) => CreateCartServiceOptions;
   readonly key?: string;
 }
 
 export const createCartRouteFragment = ({
+  createServiceOptionsForContext,
   key = "module:cart",
   ...options
 }: CreateCartRouteFragmentOptions = {}) => {
@@ -118,6 +122,13 @@ export const createCartRouteFragment = ({
     options.eventPublisher
       ? createCartService(options)
       : defaultCartService;
+  const getService = (context: CartModuleContext) =>
+    createServiceOptionsForContext
+      ? createCartService({
+          ...options,
+          ...createServiceOptionsForContext(context),
+        })
+      : service;
 
   const baseImplementation =
     implement(cartContractRouter).$context<CartModuleContext>();
@@ -152,7 +163,7 @@ export const createCartRouteFragment = ({
           context.authorization
         );
 
-        return serializeAggregate(await service.addLineItem(input));
+        return serializeAggregate(await getService(context).addLineItem(input));
       }
     ),
     cartAdjustmentApply: protectedImplementation.cartAdjustmentApply.handler(
@@ -169,7 +180,9 @@ export const createCartRouteFragment = ({
           context.authorization
         );
 
-        return serializeAggregate(await service.applyAdjustment(input));
+        return serializeAggregate(
+          await getService(context).applyAdjustment(input)
+        );
       }
     ),
     cartAssociateCustomer:
@@ -187,7 +200,9 @@ export const createCartRouteFragment = ({
             context.authorization
           );
 
-          return serializeAggregate(await service.associateCustomer(input));
+          return serializeAggregate(
+            await getService(context).associateCustomer(input)
+          );
         }
       ),
     cartCreate: protectedImplementation.cartCreate.handler(
@@ -204,7 +219,7 @@ export const createCartRouteFragment = ({
           context.authorization
         );
 
-        return serializeCart(await service.createCart(input));
+        return serializeCart(await getService(context).createCart(input));
       }
     ),
     cartGet: protectedImplementation.cartGet.handler(
@@ -221,7 +236,7 @@ export const createCartRouteFragment = ({
           context.authorization
         );
 
-        const cart = await service.getCart(createCartId(input.id));
+        const cart = await getService(context).getCart(createCartId(input.id));
 
         return cart ? serializeAggregate(cart) : null;
       }
@@ -240,7 +255,9 @@ export const createCartRouteFragment = ({
           context.authorization
         );
 
-        return serializeAggregate(await service.updateLineItem(input));
+        return serializeAggregate(
+          await getService(context).updateLineItem(input)
+        );
       }
     ),
     cartSetAddresses: protectedImplementation.cartSetAddresses.handler(
@@ -257,7 +274,9 @@ export const createCartRouteFragment = ({
           context.authorization
         );
 
-        return serializeAggregate(await service.setAddresses(input));
+        return serializeAggregate(
+          await getService(context).setAddresses(input)
+        );
       }
     ),
     cartSetCheckoutReferences:
@@ -275,7 +294,9 @@ export const createCartRouteFragment = ({
             context.authorization
           );
 
-          return serializeAggregate(await service.setCheckoutReferences(input));
+          return serializeAggregate(
+            await getService(context).setCheckoutReferences(input)
+          );
         }
       ),
     cartSetRegionChannel: protectedImplementation.cartSetRegionChannel.handler(
@@ -292,7 +313,9 @@ export const createCartRouteFragment = ({
           context.authorization
         );
 
-        return serializeAggregate(await service.setRegionChannel(input));
+        return serializeAggregate(
+          await getService(context).setRegionChannel(input)
+        );
       }
     ),
     cartTotalsUpdate: protectedImplementation.cartTotalsUpdate.handler(
@@ -309,7 +332,9 @@ export const createCartRouteFragment = ({
           context.authorization
         );
 
-        return serializeAggregate(await service.updateTotals(input));
+        return serializeAggregate(
+          await getService(context).updateTotals(input)
+        );
       }
     ),
   });

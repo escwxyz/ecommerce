@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test";
 
+import { createStoreAdminAuthSession } from "@ecommerce/auth/testing";
+import { createResettableInMemoryCartRepository } from "@ecommerce/cart/repository";
+import {
+  createSequenceIdGenerator,
+  createStaticClock,
+} from "@ecommerce/core/testing";
+import { call } from "@orpc/server";
+
 import { createAdminMetadataModel } from "./admin-metadata";
 import {
   authorizationEvaluator,
@@ -21,6 +29,50 @@ describe("cart API and admin assembly", () => {
     expect(Object.keys(cartFragment?.router ?? {})).toContain(
       "cartAddLineItem"
     );
+  });
+
+  it("uses injected request-scoped cart route service options", async () => {
+    const repository = createResettableInMemoryCartRepository();
+    const cartFragment = createBuiltinRouteFragments({
+      cart: {
+        createServiceOptionsForContext: (context) => {
+          expect(context.session?.user).toBeDefined();
+
+          return {
+            clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
+            idGenerator: createSequenceIdGenerator(["cart_api_injected"]),
+            repository,
+          };
+        },
+      },
+    }).find((fragment) => fragment.key === "module:cart");
+
+    if (!cartFragment) {
+      throw new Error("Expected cart fragment to be assembled.");
+    }
+
+    if (!("cartCreate" in cartFragment.router)) {
+      throw new Error("Expected cart fragment router to expose cartCreate.");
+    }
+
+    const cart = await call(
+      cartFragment.router.cartCreate,
+      {
+        currencyCode: "USD",
+      },
+      {
+        context: {
+          auth: {},
+          authorization: authorizationEvaluator,
+          session: createStoreAdminAuthSession({
+            permissions: ["cart:write"],
+          }),
+        },
+      }
+    );
+
+    expect(cart.id).toBe("cart_api_injected");
+    await expect(repository.listCarts()).resolves.toHaveLength(1);
   });
 
   it("exposes cart admin metadata through shared module contracts", () => {
