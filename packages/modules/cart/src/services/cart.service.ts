@@ -284,6 +284,19 @@ export const createCartService = ({
       }
 
       await requireCart(repository, cartId);
+      const lineItemId = input.lineItemId
+        ? createCartLineItemId(input.lineItemId)
+        : null;
+
+      if (lineItemId) {
+        const lineItem = await repository.findLineItemById(lineItemId);
+
+        if (!lineItem || lineItem.cartId !== cartId) {
+          throw new Error(
+            `Cart line item "${input.lineItemId}" was not found.`
+          );
+        }
+      }
 
       const now = clock.now();
       const adjustment = await repository.saveAdjustment(
@@ -294,9 +307,7 @@ export const createCartService = ({
           id: createCartAdjustmentId(
             createPrefixedId(idGenerator, CART_ADJUSTMENT_ID_PREFIX)
           ),
-          lineItemId: input.lineItemId
-            ? createCartLineItemId(input.lineItemId)
-            : null,
+          lineItemId,
           metadata: input.metadata ?? {},
           source: input.source,
           type: input.type,

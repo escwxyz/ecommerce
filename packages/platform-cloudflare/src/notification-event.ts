@@ -266,7 +266,10 @@ const recordNotificationDeadLetter = async (
   attempts: number,
   now: Date
 ): Promise<NotificationDispatchRecord> => {
-  const existing = await findDispatchById(repository, source.payload.dispatch.id);
+  const existing = await findDispatchById(
+    repository,
+    source.payload.dispatch.id
+  );
   const dispatch = existing ?? source.payload.dispatch;
 
   return repository.saveDispatch({

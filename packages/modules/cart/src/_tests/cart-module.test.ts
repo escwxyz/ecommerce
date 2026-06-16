@@ -176,6 +176,67 @@ describe("cart module foundation", () => {
     ]);
   });
 
+  it("rejects line-item adjustments for missing or different-cart line items", async () => {
+    const repository = createResettableInMemoryCartRepository();
+    const service = createCartService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "cart_a",
+        "evt_cart_a",
+        "cart_b",
+        "evt_cart_b",
+        "clitem_cart_b",
+        "evt_line_cart_b",
+        "cadj_missing",
+        "evt_missing",
+        "cadj_cross_cart",
+        "evt_cross_cart",
+      ]),
+      repository,
+    });
+    const cartA = await service.createCart({ currencyCode: "USD" });
+    const cartB = await service.createCart({ currencyCode: "USD" });
+    const cartBLine = await service.addLineItem({
+      cartId: cartB.id,
+      correlationId: "cart_b_line",
+      idempotencyKey: "cart_b_line",
+      productId: "prod_hat",
+      quantity: 1,
+      title: "Hat",
+      unitPrice: 1200,
+      variantId: "variant_hat_black",
+    });
+    const lineItem = cartBLine.lineItems[0];
+
+    if (!lineItem) {
+      throw new Error("Expected cart B to have one line item.");
+    }
+
+    await expect(
+      service.applyAdjustment({
+        amount: -100,
+        cartId: cartA.id,
+        correlationId: "missing_line",
+        idempotencyKey: "missing_line",
+        lineItemId: "clitem_missing",
+        source: "tax",
+        type: "tax",
+      })
+    ).rejects.toThrow('Cart line item "clitem_missing" was not found.');
+
+    await expect(
+      service.applyAdjustment({
+        amount: -100,
+        cartId: cartA.id,
+        correlationId: "cross_cart_line",
+        idempotencyKey: "cross_cart_line",
+        lineItemId: lineItem.id,
+        source: "promotion",
+        type: "promotion",
+      })
+    ).rejects.toThrow(`Cart line item "${lineItem.id}" was not found.`);
+  });
+
   it("exposes cart operations through shared API fragments", async () => {
     const repository = createResettableInMemoryCartRepository();
     const fragment = createCartRouteFragment({
