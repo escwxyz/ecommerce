@@ -188,6 +188,25 @@ describe("db d1 adapter", () => {
     await expect(indexExists(database.db, "cart_customer_idx")).resolves.toBe(
       true
     );
+    await expect(tableExists(database.db, "order_record")).resolves.toBe(true);
+    await expect(tableExists(database.db, "order_line_item")).resolves.toBe(
+      true
+    );
+    await expect(tableExists(database.db, "order_transaction")).resolves.toBe(
+      true
+    );
+    await expect(
+      tableExists(database.db, "order_state_transition")
+    ).resolves.toBe(true);
+    await expect(
+      tableExists(database.db, "order_post_purchase_operation")
+    ).resolves.toBe(true);
+    await expect(indexExists(database.db, "order_cart_id_idx")).resolves.toBe(
+      true
+    );
+    await expect(
+      indexExists(database.db, "order_line_item_order_id_idx")
+    ).resolves.toBe(true);
 
     sqlite.close();
   });
@@ -629,7 +648,44 @@ describe("db d1 adapter", () => {
     sqlite.close();
   });
 
-  it("applies the SQL migration directory used by db:push through cart", () => {
+  it("ships SQL migrations for order tables", () => {
+    const sqlite = new Database(":memory:");
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    sqlite.exec(readFileSync(join(migrationsDir, "0014_order.sql"), "utf8"));
+
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "order_record",
+        "order_line_item",
+        "order_transaction",
+        "order_state_transition",
+        "order_post_purchase_operation",
+      ])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'index'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).toEqual(
+      expect.arrayContaining([
+        "order_cart_id_idx",
+        "order_customer_id_idx",
+        "order_line_item_order_id_idx",
+        "order_transaction_order_id_idx",
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it("applies the SQL migration directory used by db:push through order", () => {
     const sqlite = new Database(":memory:");
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
@@ -685,6 +741,11 @@ describe("db d1 adapter", () => {
         "cart",
         "cart_line_item",
         "cart_adjustment",
+        "order_record",
+        "order_line_item",
+        "order_transaction",
+        "order_state_transition",
+        "order_post_purchase_operation",
       ])
     );
 
