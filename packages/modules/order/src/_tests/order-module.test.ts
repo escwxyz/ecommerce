@@ -4,7 +4,7 @@ import {
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
-import { call } from "@orpc/server";
+import { call, ORPCError } from "@orpc/server";
 
 import { orderContractRouter } from "../contracts";
 import type { CreateOrderFromCheckoutInput } from "../domain";
@@ -211,5 +211,27 @@ describe("order module foundation", () => {
 
     expect(aggregate.order.createdAt).toBe("2026-01-01T00:00:00.000Z");
     expect(aggregate.order.id).toBe("ord_1");
+  });
+
+  it("rejects unauthenticated order route requests before permission evaluation", async () => {
+    const fragment = createOrderRouteFragment({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["ord_1", "ordli_1", "evt_1"]),
+      repository: createInMemoryOrderRepository(),
+    });
+
+    await expect(
+      call(fragment.router.orderCreateFromCheckout, checkoutInput, {
+        context: {
+          auth: {},
+          authorization: {
+            evaluatePermission: () => {
+              throw new Error("Permission evaluator should not be called.");
+            },
+          },
+          session: null,
+        },
+      })
+    ).rejects.toBeInstanceOf(ORPCError);
   });
 });

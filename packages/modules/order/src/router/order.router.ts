@@ -54,7 +54,7 @@ const assertAuthenticatedPermission = (
   authorization: OrderModuleContext["authorization"]
 ): void => {
   if (!session?.user) {
-    return;
+    throw new ORPCError("UNAUTHORIZED");
   }
 
   const decision = authorization.evaluatePermission({ permission, session });
