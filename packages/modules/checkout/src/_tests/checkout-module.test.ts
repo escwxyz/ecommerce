@@ -488,6 +488,106 @@ describe("checkout workflow orchestration", () => {
     ]);
   });
 
+  it("passes repriced line totals into the order snapshot", async () => {
+    const calls: string[] = [];
+    const dependencies = createDependencyStubs(calls);
+    let orderInput: Record<string, unknown> | undefined;
+    const service = createCheckoutService({
+      ...dependencies,
+      order: {
+        createOrderFromCheckout: async (input) => {
+          calls.push("order.createOrderFromCheckout");
+          orderInput = input;
+
+          return dependencies.order.createOrderFromCheckout(input);
+        },
+      },
+      pricing: {
+        calculatePrice: async () => {
+          calls.push("pricing.calculatePrice");
+          return {
+            amount: 900,
+            currencyCode: "USD",
+            priceSetId: "pset_1",
+            quantity: 1,
+            subtotal: 900,
+            trace: {
+              moneyAmountId: "money_1",
+              ruleMatches: [],
+              source: "sale",
+            },
+          };
+        },
+      },
+      promotion: {
+        calculateAdjustments: async () => {
+          calls.push("promotion.calculateAdjustments");
+          return {
+            adjustments: [],
+            totalDiscount: 0,
+          };
+        },
+      },
+      tax: {
+        calculateTax: async () => {
+          calls.push("tax.calculateTax");
+          return {
+            currencyCode: "USD",
+            id: "taxcalc_1",
+            lines: [],
+            providerKey: "manual",
+            regionId: "reg_1",
+            totalTax: 0,
+          };
+        },
+      },
+      payment: {
+        ...dependencies.payment,
+        authorizePaymentSession: async () => {
+          calls.push("payment.authorizePaymentSession");
+          return {
+            id: "pay_1",
+            providerKey: "test-payments",
+            status: "authorized",
+          };
+        },
+        capturePayment: async () => {
+          calls.push("payment.capturePayment");
+          return {
+            status: "succeeded",
+          };
+        },
+        createCollection: async () => {
+          calls.push("payment.createCollection");
+          return {
+            id: "paycol_1",
+          };
+        },
+        createSession: async () => {
+          calls.push("payment.createSession");
+          return {
+            id: "payses_1",
+          };
+        },
+      },
+    });
+
+    await service.completeCheckout(checkoutInput);
+
+    expect(orderInput).toMatchObject({
+      lineItems: [
+        {
+          total: 900,
+          unitPrice: 900,
+        },
+      ],
+      totals: {
+        itemSubtotal: 900,
+        total: 1100,
+      },
+    });
+  });
+
   it("deduplicates checkout completion by idempotency key", async () => {
     const calls: string[] = [];
     const service = createCheckoutService(createDependencyStubs(calls));

@@ -662,20 +662,30 @@ export const createCheckoutService = ({
           cartId: aggregate.cart.id,
           customerId: aggregate.cart.customerId ?? undefined,
           email: aggregate.cart.email ?? undefined,
-          lineItems: aggregate.lineItems.map((lineItem) => ({
-            itemSnapshot: {
-              metadata: lineItem.metadata,
-              productId: lineItem.productId,
-              productTitle: lineItem.title,
-              sku: getLineMetadataValue(lineItem.metadata, "sku"),
-              variantId: lineItem.variantId,
-              variantTitle: lineItem.title,
-            },
-            quantity: lineItem.quantity,
-            title: lineItem.title,
-            total: lineItem.unitPrice * lineItem.quantity,
-            unitPrice: lineItem.unitPrice,
-          })),
+          lineItems: aggregate.lineItems.map((lineItem) => {
+            const pricedLine = calculatedLines.find(
+              (calculated) => calculated.lineItem.id === lineItem.id
+            );
+
+            return {
+              itemSnapshot: {
+                metadata: lineItem.metadata,
+                productId: lineItem.productId,
+                productTitle: lineItem.title,
+                sku: getLineMetadataValue(lineItem.metadata, "sku"),
+                variantId: lineItem.variantId,
+                variantTitle: lineItem.title,
+              },
+              quantity: lineItem.quantity,
+              title: lineItem.title,
+              total:
+                pricedLine?.price.subtotal ??
+                lineItem.unitPrice * lineItem.quantity,
+              unitPrice: pricedLine?.price.subtotal
+                ? pricedLine.price.subtotal / lineItem.quantity
+                : lineItem.unitPrice,
+            };
+          }),
           metadata: input.metadata,
           paymentReferences: [
             {
