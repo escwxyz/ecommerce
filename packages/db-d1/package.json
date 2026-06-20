@@ -8,7 +8,8 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "db:push": "wrangler d1 migrations apply Database --local --migrations-dir ./src/migrations/sql",
+    "db:push": "wrangler d1 migrations apply Database --local",
+    "db:seed": "bun ./src/seed/run.ts",
     "db:generate": "bun test ./src/index.test.ts",
     "test": "bun test ./src"
   },
