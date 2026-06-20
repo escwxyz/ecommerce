@@ -15,6 +15,9 @@ interface DevelopmentSeedModule {
     readonly salesChannel: string;
     readonly stockLocation: string;
     readonly store: string;
+    readonly taxCategory: string;
+    readonly taxRate: string;
+    readonly taxRegion: string;
   };
   getDevelopmentSeedWranglerArguments?(artifactPath: string): readonly string[];
   generateDevelopmentSeedSql(): string;
@@ -160,6 +163,31 @@ describe("deterministic development seed", () => {
       shipping_option_id: seedModule.developmentSeedIds.fulfillmentOption,
       stock_location_id: seedModule.developmentSeedIds.stockLocation,
       variant_id: seedModule.developmentSeedIds.productVariant,
+    });
+
+    const taxFixture = database
+      .query<
+        {
+          rate_region_id: string;
+          tax_region_id: string;
+          tax_region_name: string;
+        },
+        []
+      >(
+        `SELECT
+          tr.id AS tax_region_id,
+          tr.name AS tax_region_name,
+          trt.region_id AS rate_region_id
+        FROM tax_region tr
+        JOIN tax_rate trt ON trt.region_id = tr.id
+        WHERE tr.id = 'reg_dev_us'`
+      )
+      .get();
+
+    expect(taxFixture).toEqual({
+      rate_region_id: seedModule.developmentSeedIds.taxRegion,
+      tax_region_id: seedModule.developmentSeedIds.region,
+      tax_region_name: "United States",
     });
 
     const store = database

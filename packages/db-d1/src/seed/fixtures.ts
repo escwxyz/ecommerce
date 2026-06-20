@@ -35,7 +35,9 @@ export const developmentSeedIds = {
   taxPolicy: "txpolicy_dev_us",
   taxProvider: "txprov_dev_manual",
   taxRate: "txrate_dev_us_standard",
-  taxRegion: "txreg_dev_us",
+  // Checkout currently passes the commerce region id into tax.calculateTax,
+  // so the development seed aligns the tax region primary key with that lookup.
+  taxRegion: "reg_dev_us",
 } as const;
 
 const defineSeedWrite = <Table extends keyof CommerceDatabase>(
