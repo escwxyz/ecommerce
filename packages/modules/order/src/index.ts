@@ -1,4 +1,9 @@
 export { orderAdminMetadata, orderAdminSurfaces } from "./admin";
+export {
+  createD1OrderRepository,
+  type CreateD1OrderRepositoryOptions,
+  type OrderD1Database,
+} from "./adapters";
 export { orderContractRouter } from "./contracts";
 export {
   CreateOrderFromCheckoutInputSchema,

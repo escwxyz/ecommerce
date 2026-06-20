@@ -113,6 +113,15 @@ export class InMemoryOrderRepository implements OrderRepository {
     aggregate: OrderAggregate,
     idempotencyKey: string
   ): Promise<OrderAggregate> {
+    const existingOrderId = this.#orderIdempotency.get(idempotencyKey);
+
+    if (existingOrderId) {
+      const existing = this.#aggregates.get(existingOrderId);
+      if (existing) {
+        return Promise.resolve(cloneAggregate(existing));
+      }
+    }
+
     const cloned = cloneAggregate(aggregate);
     this.#aggregates.set(cloned.order.id, cloned);
     this.#orderIdempotency.set(idempotencyKey, cloned.order.id);
@@ -160,6 +169,16 @@ export class InMemoryOrderRepository implements OrderRepository {
     transition: OrderStateTransitionRecord,
     idempotencyKey: string
   ): Promise<OrderStateTransitionRecord> {
+    const existing = this.#transitionIdempotency.get(idempotencyKey);
+
+    if (existing) {
+      return Promise.resolve({
+        ...existing,
+        changedAt: cloneDate(existing.changedAt),
+        metadata: { ...existing.metadata },
+      });
+    }
+
     const aggregate = this.#aggregates.get(transition.orderId);
 
     if (!aggregate) {
@@ -168,10 +187,8 @@ export class InMemoryOrderRepository implements OrderRepository {
       );
     }
 
-    if (!this.#transitionIdempotency.has(idempotencyKey)) {
-      aggregate.stateTransitions = [...aggregate.stateTransitions, transition];
-      this.#transitionIdempotency.set(idempotencyKey, transition);
-    }
+    aggregate.stateTransitions = [...aggregate.stateTransitions, transition];
+    this.#transitionIdempotency.set(idempotencyKey, transition);
 
     return Promise.resolve({
       ...transition,
