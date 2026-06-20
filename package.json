@@ -44,6 +44,7 @@
     "dev:web": "turbo -F web dev",
     "dev:server": "turbo -F server dev",
     "db:push": "turbo -F @ecommerce/db-d1 db:push",
+    "db:seed": "turbo -F @ecommerce/db-d1 db:seed",
     "db:generate": "turbo -F @ecommerce/db-d1 db:generate",
     "deploy": "turbo -F @ecommerce/infra deploy",
     "destroy": "turbo -F @ecommerce/infra destroy",
