@@ -17,3 +17,7 @@
 
 - [x] 4.1 Add workflow sequencing, idempotency, compensation, event, API assembly, and boundary tests.
 - [x] 4.2 Run targeted tests plus repo-relevant typecheck/lint.
+
+## 5. Maintenance
+
+- [x] 5.1 Type checkout dependency stubs against the service contract so delegated order inputs remain type-safe in regression tests.

@@ -10,6 +10,7 @@ import {
   CHECKOUT_COMPLETED_EVENT,
   CHECKOUT_FAILED_EVENT,
   createCheckoutService,
+  type CheckoutServiceDependencies,
 } from "../services";
 
 const checkoutInput = {
@@ -23,7 +24,9 @@ const checkoutInput = {
   shippingOptionId: "shipopt_1",
 };
 
-const createDependencyStubs = (calls: string[]) => {
+const createDependencyStubs = (
+  calls: string[]
+): CheckoutServiceDependencies => {
   const cartAggregate = {
     adjustments: [],
     cart: {
