@@ -13,14 +13,15 @@ const seedTimestamp = Date.UTC(2026, 0, 1);
 const emptyJson = JSON.stringify({});
 
 export const developmentSeedIds = {
-  customer: "cus_dev_ada",
-  customerAddress: "cusaddr_dev_ada_home",
+  currency: "cur_dev_usd",
+  customer: "cust_dev_ada",
+  customerAddress: "caddr_dev_ada_home",
   fulfillmentOption: "shipopt_dev_ground",
   fulfillmentProvider: "fulprov_dev_manual",
-  fulfillmentSet: "fulset_dev_us",
+  fulfillmentSet: "fset_dev_us",
   inventoryItem: "iitem_dev_tshirt_black",
-  inventoryLevel: "ilevel_dev_tshirt_black_main",
-  moneyAmount: "money_dev_tshirt_usd",
+  inventoryLevel: "ilvl_dev_tshirt_black_main",
+  moneyAmount: "amt_dev_tshirt_usd",
   priceSet: "pset_dev_tshirt",
   product: "prod_dev_tshirt",
   productVariant: "variant_dev_tshirt_black",
@@ -282,7 +283,7 @@ const currency = defineSeedWrite(
   {
     code: "USD",
     created_at: seedTimestamp,
-    id: "currency_dev_usd",
+    id: developmentSeedIds.currency,
     name: "US Dollar",
     precision: 2,
     updated_at: seedTimestamp,
