@@ -29,3 +29,8 @@
 - [x] 5.2 Add server and infra tests for Worker exports, WebSocket route authorization, binding configuration, and Alchemy resource graph.
 - [x] 5.3 Add or extend import-boundary tests proving pure modules do not import Cloudflare runtime or platform adapter code.
 - [x] 5.4 Run targeted platform/server/infra tests plus repo-relevant typecheck and lint.
+
+## 6. Local Development Maintenance
+
+- [x] 6.1 Omit notification queue bindings and consumer registration in Alchemy local mode, where queue bindings are unsupported.
+- [x] 6.2 Run the admin app through its standalone Vite task during local development while retaining Alchemy Vite deployment composition.
