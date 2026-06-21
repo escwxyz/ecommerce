@@ -58,6 +58,12 @@ The project SHALL include an automated server integration test covering product,
 - **THEN** the test MUST verify persisted cart totals and checkout references, inventory reservation, order aggregate, payment collection/session/payment/capture, fulfillment, and checkout event records
 - **AND** those records MUST retain compatible seeded product, customer, region, currency, stock-location, and shipping-option relationships where owned by their module contracts
 
+#### Scenario: Completed checkout is retried through a new request
+
+- **WHEN** the same cart and checkout idempotency key are submitted through a later HTTP request
+- **THEN** the server MUST return the original checkout completion result
+- **AND** it MUST NOT create another payment collection or session or replace the cart's captured payment collection reference
+
 ### Requirement: Smoke test is isolated and credential-free
 
 The local golden-path smoke test SHALL run deterministically without Cloudflare account credentials, external payment credentials, external fulfillment credentials, or a developer's existing Wrangler database.

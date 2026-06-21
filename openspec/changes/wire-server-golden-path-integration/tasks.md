@@ -36,3 +36,9 @@ Verification notes:
 - `bun run check-types`, `bun run test`, the server build, and changed-file static analysis passed.
 - `bun run check` is clean for this change but remains non-zero because of pre-existing formatting in `apps/web/src/routeTree.gen.ts`; it also reports the existing `packages/ui/src/components/label.tsx` accessibility warning.
 - `bun run test:integration` completed with the Alchemy deployment test credential-skipped; the local golden checkout smoke passed independently in the ordinary server test task.
+
+## 5. Cross-Request Checkout Idempotency
+
+- [x] 5.1 Add a failing transport regression that retries checkout with the same idempotency key and verifies the response, payment records, and cart checkout references remain unchanged.
+- [x] 5.2 Share checkout completion state across request-scoped checkout service instances without weakening actor-scoped cart repository resolution.
+- [x] 5.3 Run checkout, server integration, typecheck, and changed-file static verification, then confirm the OpenSpec apply state is complete.
