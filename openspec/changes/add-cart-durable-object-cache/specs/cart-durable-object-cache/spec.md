@@ -26,6 +26,12 @@ The cart cache SHALL distinguish anonymous visitor cart scopes from authenticate
 - **THEN** the cart cache MUST associate the active cart with a stable visitor scope
 - **AND** later requests using that visitor scope MUST resolve to the same active cart until the cart is completed, deleted, expired, or claimed
 
+#### Scenario: Independent visitors use isolated scopes
+
+- **WHEN** unauthenticated clients access guest cart routes
+- **THEN** the server MUST derive each visitor scope from an opaque per-client token or cookie
+- **AND** it MUST NOT use a shared anonymous visitor identity that allows one client to access another client's cart
+
 #### Scenario: Customer cart is cached
 
 - **WHEN** an authenticated customer creates, reads, or mutates a cart

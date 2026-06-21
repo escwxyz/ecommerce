@@ -1,0 +1,14 @@
+{
+  "extends": "@ecommerce/config/tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    "strictNullChecks": true
+  },
+  "exclude": ["dist", "**/*.test.ts"]
+}

@@ -1,0 +1,49 @@
+import { describe, expect, it } from "bun:test";
+
+import type { CommerceKyselyDatabase } from "@ecommerce/db";
+import { createFulfillmentProviderRegistry } from "@ecommerce/fulfillment";
+
+import {
+  createDevelopmentCommerceProviderRegistries,
+  createServerCommerceRuntime,
+} from "./commerce-runtime";
+
+const unusedDatabase = {} as CommerceKyselyDatabase;
+
+describe("server commerce runtime", () => {
+  it("registers persistent module routes but omits checkout without providers", () => {
+    const runtime = createServerCommerceRuntime({ db: unusedDatabase });
+    const routeKeys = Object.keys(runtime.apiAssembly.router);
+
+    expect(runtime.checkoutConfigured).toBe(false);
+    expect(routeKeys).toContain("customerGet");
+    expect(routeKeys).toContain("taxCalculate");
+    expect(routeKeys).toContain("paymentCollectionCreate");
+    expect(routeKeys).toContain("fulfillmentCreate");
+    expect(routeKeys).toContain("orderCreateFromCheckout");
+    expect(routeKeys).not.toContain("checkoutComplete");
+  });
+
+  it("registers checkout when explicit development providers are supplied", () => {
+    const runtime = createServerCommerceRuntime({
+      ...createDevelopmentCommerceProviderRegistries(),
+      db: unusedDatabase,
+    });
+
+    expect(runtime.checkoutConfigured).toBe(true);
+    expect(Object.keys(runtime.apiAssembly.router)).toContain(
+      "checkoutComplete"
+    );
+  });
+
+  it("rejects incomplete checkout provider composition", () => {
+    expect(() =>
+      createServerCommerceRuntime({
+        db: unusedDatabase,
+        fulfillmentProviderRegistry: createFulfillmentProviderRegistry([]),
+      })
+    ).toThrow(
+      "Checkout composition requires both payment and fulfillment provider registries."
+    );
+  });
+});

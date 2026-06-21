@@ -5,7 +5,10 @@ import { implement, ORPCError } from "@orpc/server";
 import { checkoutContractRouter } from "../contracts";
 import type { CompleteCheckoutInput } from "../domain";
 import { checkoutPermissions } from "../permissions";
-import { createCheckoutService } from "../services";
+import {
+  createCheckoutService,
+  createInMemoryCheckoutCompletionStore,
+} from "../services";
 import type { CreateCheckoutServiceOptions } from "../services";
 
 export interface CheckoutModuleContext {
@@ -98,22 +101,33 @@ export const createCheckoutRouteFragment = ({
   const directServiceOptions = hasDirectServiceOptions(options)
     ? options
     : null;
+  const routeCompletionStore =
+    options.completionStore ?? createInMemoryCheckoutCompletionStore();
+  const directService = directServiceOptions
+    ? createCheckoutService({
+        ...directServiceOptions,
+        completionStore: routeCompletionStore,
+      })
+    : null;
   const baseImplementation = implement(
     checkoutContractRouter
   ).$context<CheckoutModuleContext>();
   const getService = (context: CheckoutModuleContext) => {
     if (createServiceOptionsForContext) {
+      const contextualOptions = createServiceOptionsForContext(context);
       return createCheckoutService({
         ...options,
-        ...createServiceOptionsForContext(context),
+        ...contextualOptions,
+        completionStore:
+          contextualOptions.completionStore ?? routeCompletionStore,
       });
     }
 
-    if (!directServiceOptions) {
+    if (!directService) {
       throw new Error("Checkout route requires service options.");
     }
 
-    return createCheckoutService(directServiceOptions);
+    return directService;
   };
   const router = baseImplementation.router({
     checkoutComplete: baseImplementation.checkoutComplete.handler(

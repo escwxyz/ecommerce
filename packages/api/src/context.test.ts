@@ -31,11 +31,13 @@ describe("createContext", () => {
     const context = await createContext({
       auth,
       context: createRequestContext(),
+      visitorId: "visitor_test_1",
     });
 
     expect(context.auth).toBe(auth);
     expect(context.session?.user).toMatchObject({
       email: "ada@example.com",
     });
+    expect(context.visitorId).toBe("visitor_test_1");
   });
 });

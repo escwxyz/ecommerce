@@ -39,6 +39,7 @@ export interface CartModuleContext {
   readonly session: {
     readonly user?: unknown | null;
   } | null;
+  readonly visitorId?: string;
 }
 
 type CartAuthorizationDecision =

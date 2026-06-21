@@ -4,6 +4,9 @@
   "exports": {
     ".": {
       "default": "./src/index.ts"
+    },
+    "./seed": {
+      "default": "./src/seed/index.ts"
     }
   },
   "scripts": {
