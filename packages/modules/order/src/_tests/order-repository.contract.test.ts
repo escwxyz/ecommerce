@@ -272,11 +272,7 @@ const createFakeD1Binding = (sqlite: Database) => ({
   prepare: (query: string) => new FakeD1PreparedStatement(sqlite, query),
 });
 
-runOrderRepositoryContract("in-memory order repository", () => ({
-  repository: createInMemoryOrderRepository(),
-}));
-
-runOrderRepositoryContract("D1 order repository", async () => {
+const createD1OrderRepositoryContext = async (): Promise<RepositoryTestContext> => {
   const sqlite = new Database(":memory:");
   sqlite.exec("pragma foreign_keys = on");
   const db = new Kysely<OrderDatabase>({
@@ -293,4 +289,48 @@ runOrderRepositoryContract("D1 order repository", async () => {
     },
     repository: createD1OrderRepository({ db }),
   };
+};
+
+runOrderRepositoryContract("in-memory order repository", () => ({
+  repository: createInMemoryOrderRepository(),
+}));
+
+runOrderRepositoryContract("D1 order repository", createD1OrderRepositoryContext);
+
+describe("D1 order repository rollback safety", () => {
+  let cleanup: (() => void) | undefined;
+
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+  });
+
+  it("preserves an existing order when a conflicting aggregate insert fails", async () => {
+    const context = await createD1OrderRepositoryContext();
+    cleanup = context.cleanup;
+    const repository = context.repository;
+    const aggregate = createAggregate();
+
+    await repository.saveOrderAggregate(aggregate, "order_contract");
+
+    await expect(
+      repository.saveOrderAggregate(
+        {
+          ...aggregate,
+          order: {
+            ...aggregate.order,
+            email: "conflict@example.com",
+          },
+        },
+        "order_contract_conflict"
+      )
+    ).rejects.toThrow();
+
+    await expect(repository.getOrderAggregate(orderId)).resolves.toEqual(
+      aggregate
+    );
+    await expect(repository.findOrderByIdempotencyKey("order_contract")).resolves.toEqual(
+      aggregate.order
+    );
+  });
 });

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { authorizationEvaluator } from "@ecommerce/api";
 import type { AuthService } from "@ecommerce/auth";
 import { createStoreAdminAuthSession } from "@ecommerce/auth/testing";
+import { createD1CartRepository, type CartD1Database } from "@ecommerce/cart";
 import { createD1Database } from "@ecommerce/db-d1";
 import {
   developmentSeedIds,
@@ -145,9 +146,14 @@ describe("server golden checkout path", () => {
     const database = createD1Database(
       createFakeD1Binding(sqlite) as unknown as D1Database
     );
+    const cartRepository = createD1CartRepository({
+      db: database.db as unknown as CartD1Database,
+    });
     const runtime = createServerCommerceRuntime({
       ...createDevelopmentCommerceProviderRegistries(),
+      cartRepository,
       clock: { now: () => new Date("2026-01-02T00:00:00.000Z") },
+      createCartRepositoryForContext: () => cartRepository,
       db: database.db,
       idGenerator: createDeterministicIdGenerator(),
     });
@@ -234,6 +240,20 @@ describe("server golden checkout path", () => {
           shippingOptionId: developmentSeedIds.fulfillmentOption,
         },
       });
+      const retry = await callRpc<typeof checkout>({
+        app,
+        operation: "checkoutComplete",
+        input: {
+          cartId: cart.id,
+          correlationId: "golden-checkout-retry",
+          idempotencyKey: "golden-checkout",
+          payment: {
+            capture: true,
+            providerKey: "manual",
+          },
+          shippingOptionId: developmentSeedIds.fulfillmentOption,
+        },
+      });
 
       expect(checkout).toMatchObject({
         cartId: cart.id,
@@ -243,6 +263,28 @@ describe("server golden checkout path", () => {
       expect(checkout.orderId).toStartWith("ord_");
       expect(checkout.paymentId).toStartWith("pay_");
       expect(checkout.fulfillmentIds).toHaveLength(1);
+      expect(retry).toEqual(checkout);
+
+      const retryCounts = sqlite
+        .query<
+          {
+            collection_count: number;
+            session_count: number;
+          },
+          [string]
+        >(
+          `SELECT
+            COUNT(DISTINCT pcl.id) AS collection_count,
+            COUNT(DISTINCT ps.id) AS session_count
+          FROM payment_collection pcl
+          JOIN payment_session ps ON ps.collection_id = pcl.id
+          WHERE pcl.cart_id = ?`
+        )
+        .get(cart.id);
+      expect(retryCounts).toEqual({
+        collection_count: 1,
+        session_count: 1,
+      });
 
       const persisted = sqlite
         .query<

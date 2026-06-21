@@ -294,11 +294,14 @@ export const createD1OrderRepository = ({
       return stored;
     }
 
+    let insertedOrderRecord = false;
+
     try {
       await db
         .insertInto("order_record")
         .values(toOrderInsert(aggregate.order, idempotencyKey))
         .execute();
+      insertedOrderRecord = true;
 
       if (aggregate.lineItems.length > 0) {
         await db
@@ -344,10 +347,12 @@ export const createD1OrderRepository = ({
     } catch (error) {
       // kysely-d1 does not expose transactions. Removing the parent record
       // cascades any children written before a failed aggregate operation.
-      await db
-        .deleteFrom("order_record")
-        .where("id", "=", aggregate.order.id)
-        .execute();
+      if (insertedOrderRecord) {
+        await db
+          .deleteFrom("order_record")
+          .where("id", "=", aggregate.order.id)
+          .execute();
+      }
       throw error;
     }
 

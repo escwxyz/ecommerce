@@ -19,6 +19,20 @@ export interface CheckoutServiceShape {
   ): Promise<CheckoutCompletionResult>;
 }
 
+export interface CheckoutCompletionStore {
+  get(input: {
+    readonly cartId: string;
+    readonly idempotencyKey: string;
+  }): CheckoutCompletionResult | undefined;
+  set(
+    input: {
+      readonly cartId: string;
+      readonly idempotencyKey: string;
+    },
+    result: CheckoutCompletionResult
+  ): void;
+}
+
 export const CheckoutService = Context.Service<CheckoutServiceShape>(
   "@ecommerce/checkout/CheckoutService"
 );
@@ -41,9 +55,31 @@ export interface CheckoutServiceDependencies {
 }
 
 export interface CreateCheckoutServiceOptions extends CheckoutServiceDependencies {
+  readonly completionStore?: CheckoutCompletionStore;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
 }
+
+const createCheckoutCompletionKey = ({
+  cartId,
+  idempotencyKey,
+}: {
+  readonly cartId: string;
+  readonly idempotencyKey: string;
+}): string => `${cartId}:${idempotencyKey}`;
+
+/** Creates isolate-local checkout completion state scoped by cart and key. */
+export const createInMemoryCheckoutCompletionStore =
+  (): CheckoutCompletionStore => {
+    const completedRuns = new Map<string, CheckoutCompletionResult>();
+
+    return {
+      get: (input) => completedRuns.get(createCheckoutCompletionKey(input)),
+      set: (input, result) => {
+        completedRuns.set(createCheckoutCompletionKey(input), result);
+      },
+    };
+  };
 
 interface CheckoutRunState {
   readonly fulfillmentIds: string[];
@@ -334,6 +370,7 @@ const toFulfillmentAddress = (
 
 export const createCheckoutService = ({
   cart,
+  completionStore = createInMemoryCheckoutCompletionStore(),
   customer,
   eventPublisher = createNoopEventPublisher(),
   fulfillment,
@@ -350,8 +387,6 @@ export const createCheckoutService = ({
   store,
   tax,
 }: CreateCheckoutServiceOptions): CheckoutServiceShape => {
-  const completedRuns = new Map<string, CheckoutCompletionResult>();
-
   const publishEvent = async (
     name: typeof CHECKOUT_COMPLETED_EVENT | typeof CHECKOUT_FAILED_EVENT,
     payload: Record<string, unknown>,
@@ -387,7 +422,7 @@ export const createCheckoutService = ({
   return {
     // eslint-disable-next-line complexity
     completeCheckout: async (input) => {
-      const duplicate = completedRuns.get(input.idempotencyKey);
+      const duplicate = completionStore.get(input);
 
       if (duplicate) {
         return duplicate;
@@ -740,7 +775,7 @@ export const createCheckoutService = ({
           workflowRunId
         );
 
-        completedRuns.set(input.idempotencyKey, result);
+        completionStore.set(input, result);
 
         return result;
       } catch (error) {
