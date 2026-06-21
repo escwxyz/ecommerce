@@ -37,6 +37,48 @@ const createTestApp = () =>
   });
 
 describe("server app", () => {
+  it("issues isolated stable visitor identities for guest requests", async () => {
+    const visitorIds: string[] = [];
+    const generatedVisitorIds = ["visitor_alpha", "visitor_beta"];
+    const app = createServerApp({
+      auth,
+      corsOrigin: "http://localhost:3001",
+      createContext: async (options) => {
+        visitorIds.push(options.visitorId ?? "missing");
+        return {
+          auth: options.auth,
+          authorization: authorizationEvaluator,
+          session: null,
+        };
+      },
+      createVisitorId: () => generatedVisitorIds.shift() ?? "visitor_extra",
+      reportError: () => {},
+    });
+
+    const firstResponse = await app.request("/rpc/healthCheck");
+    const secondResponse = await app.request("/rpc/healthCheck");
+    const firstCookie = firstResponse.headers.get("set-cookie");
+    const secondCookie = secondResponse.headers.get("set-cookie");
+
+    expect(firstCookie).toContain("commerce_visitor=visitor_alpha");
+    expect(secondCookie).toContain("commerce_visitor=visitor_beta");
+    expect(firstCookie).toContain("HttpOnly");
+    expect(visitorIds).toEqual(["visitor_alpha", "visitor_beta"]);
+
+    const returningResponse = await app.request("/rpc/healthCheck", {
+      headers: {
+        cookie: firstCookie?.split(";")[0] ?? "",
+      },
+    });
+
+    expect(returningResponse.headers.get("set-cookie")).toBeNull();
+    expect(visitorIds).toEqual([
+      "visitor_alpha",
+      "visitor_beta",
+      "visitor_alpha",
+    ]);
+  });
+
   it("serves the health route without requiring auth context", async () => {
     const app = createTestApp();
 

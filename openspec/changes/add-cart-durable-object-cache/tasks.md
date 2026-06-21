@@ -29,3 +29,9 @@
 - [x] 5.2 Run targeted cart, API assembly, platform-cloudflare, infra, and server tests for the changed surfaces.
 - [x] 5.3 Run repo-relevant typecheck and lint checks.
 - [x] 5.4 Run `openspec status --change "add-cart-durable-object-cache"` and confirm all expected artifacts/tasks are tracked.
+
+## 6. Guest Visitor Isolation
+
+- [x] 6.1 Add a failing server transport regression proving independent unauthenticated clients receive distinct stable visitor identities.
+- [x] 6.2 Issue and propagate an opaque HttpOnly visitor cookie through request context and use it as the cart visitor ownership scope without a shared fallback.
+- [x] 6.3 Run API/server tests, typechecks, and changed-file static verification, then confirm OpenSpec apply state is complete.

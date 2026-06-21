@@ -7,6 +7,7 @@ import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins";
 import { RPCHandler } from "@orpc/server/fetch";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import { Hono } from "hono";
+import { getCookie, setCookie } from "hono/cookie";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 
@@ -22,6 +23,7 @@ export interface CreateServerAppOptions {
   auth: AuthService;
   corsOrigin: string;
   createContext: CreateContext;
+  createVisitorId?: () => string;
   notificationEventRealtime?: NotificationEventRealtimeRouteOptions;
   reportError?: (error: unknown) => void;
 }
@@ -31,11 +33,18 @@ export interface NotificationEventRealtimeRouteOptions {
   readonly routePath?: string;
 }
 
+const visitorCookieName = "commerce_visitor";
+const visitorIdPattern = /^[A-Za-z0-9_-]{8,128}$/u;
+const visitorCookieMaxAgeSeconds = 60 * 60 * 24 * 365;
+
+const createDefaultVisitorId = (): string => crypto.randomUUID();
+
 export const createServerApp = ({
   apiAssembly = defaultApiAssembly,
   auth,
   corsOrigin,
   createContext: createRequestContext,
+  createVisitorId = createDefaultVisitorId,
   notificationEventRealtime,
 }: CreateServerAppOptions) => {
   const app = new Hono();
@@ -111,7 +120,29 @@ export const createServerApp = ({
   }
 
   app.use("/*", async (c, next) => {
-    const context = await createRequestContext({ auth, context: c });
+    const requestVisitorId = getCookie(c, visitorCookieName);
+    const hasValidVisitorId =
+      requestVisitorId !== undefined && visitorIdPattern.test(requestVisitorId);
+    const visitorId = hasValidVisitorId ? requestVisitorId : createVisitorId();
+    const context = await createRequestContext({
+      auth,
+      context: c,
+      visitorId,
+    });
+
+    const persistVisitorId = () => {
+      if (context.session || hasValidVisitorId) {
+        return;
+      }
+
+      setCookie(c, visitorCookieName, visitorId, {
+        httpOnly: true,
+        maxAge: visitorCookieMaxAgeSeconds,
+        path: "/",
+        sameSite: "Lax",
+        secure: new URL(c.req.url).protocol === "https:",
+      });
+    };
 
     const rpcResult = await rpcHandler.handle(c.req.raw, {
       prefix: "/rpc",
@@ -119,6 +150,7 @@ export const createServerApp = ({
     });
 
     if (rpcResult.matched) {
+      persistVisitorId();
       return c.newResponse(rpcResult.response.body, rpcResult.response);
     }
 
@@ -128,6 +160,7 @@ export const createServerApp = ({
     });
 
     if (apiResult.matched) {
+      persistVisitorId();
       return c.newResponse(apiResult.response.body, apiResult.response);
     }
 

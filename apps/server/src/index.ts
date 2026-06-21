@@ -90,9 +90,15 @@ const createCartScope = (context: CartModuleContext) => {
     return createCustomerCartScope(String(user.email));
   }
 
-  return context.session
-    ? createSystemCartScope()
-    : createVisitorCartScope("anonymous");
+  if (context.session) {
+    return createSystemCartScope();
+  }
+
+  if (!context.visitorId) {
+    throw new Error("Guest cart requests require a visitor identity.");
+  }
+
+  return createVisitorCartScope(context.visitorId);
 };
 
 const developmentProviderRegistries =
