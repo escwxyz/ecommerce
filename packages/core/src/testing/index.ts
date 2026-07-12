@@ -39,6 +39,21 @@ import {
   createWorkflowRunError,
 } from "../workflows/index";
 
+export {
+  collectImportBoundarySourceFiles,
+  createLegacyBackendImportBoundary,
+  extractImportSpecifiers,
+  legacyBackendForbiddenSpecifiers,
+  scanImportBoundaryViolations,
+  type CollectImportBoundarySourceFilesOptions,
+  type ImportBoundary,
+  type ImportBoundaryFile,
+  type ImportBoundaryRule,
+  type ImportBoundaryViolation,
+  type LegacyBackendImportBoundaryOptions,
+  type ScanImportBoundaryViolationsOptions,
+} from "./import-boundaries";
+
 export interface TestLogEntry {
   readonly annotations: Readonly<Record<string, unknown>>;
   readonly message: unknown;
