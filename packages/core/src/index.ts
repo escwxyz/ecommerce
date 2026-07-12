@@ -20,6 +20,13 @@ export {
 } from "./admin/index";
 export { brand, type Brand } from "./brand/index";
 export {
+  nonEmptyStringConfig,
+  portConfigWithDefault,
+  requiredPortConfig,
+  secretConfig,
+  urlConfig,
+} from "./config/index";
+export {
   CommerceError,
   CyclicModuleDependencyError,
   DuplicateModuleError,

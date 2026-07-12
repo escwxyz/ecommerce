@@ -15,7 +15,7 @@
 - [x] 2.1 Define package-level conventions for domain, API, and storage Effect Schemas and transformations
 - [x] 2.2 Define schema-backed module error conventions and Cause-aware defect/interruption handling
 - [x] 2.3 Define Effect service and Layer conventions for modules, adapters, request scope, transactions, and tests
-- [ ] 2.4 Define Effect Config and Redacted conventions for environment values and secrets
+- [x] 2.4 Define Effect Config and Redacted conventions for environment values and secrets
 - [ ] 2.5 Define structured logging, span, metric, correlation, redaction, and audit conventions
 - [ ] 2.6 Provide deterministic clock, ID, configuration, telemetry, and repository test Layers
 - [ ] 2.7 Add import-boundary helpers that can ban Hono, oRPC, Zod, Kysely, and Cloudflare per migrated package
