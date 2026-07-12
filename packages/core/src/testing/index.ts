@@ -54,11 +54,13 @@ export {
   type ScanImportBoundaryViolationsOptions,
 } from "./import-boundaries";
 
+/** Captured Effect log entry used by deterministic telemetry tests. */
 export interface TestLogEntry {
   readonly annotations: Readonly<Record<string, unknown>>;
   readonly message: unknown;
 }
 
+/** In-memory telemetry fixture for logs, spans, and durable audit events. */
 export interface TestTelemetryCapture {
   readonly auditEvents: DurableAuditEvent[];
   readonly layer: Layer.Layer<DurableAudit>;
@@ -66,6 +68,7 @@ export interface TestTelemetryCapture {
   readonly spans: Tracer.Span[];
 }
 
+/** Resettable state harness for future runtime-neutral repository contracts. */
 export interface InMemoryRepositoryTestLayer<Identifier, State> {
   readonly layer: Layer.Layer<Identifier>;
   readonly reset: Effect.Effect<void>;
@@ -73,6 +76,7 @@ export interface InMemoryRepositoryTestLayer<Identifier, State> {
   readonly state: Ref.Ref<State>;
 }
 
+/** Creates a legacy clock fixture for code not yet migrated to Effect Clock. */
 export const createStaticClock = (date: Date): ClockService => ({
   now: () => date,
 });
@@ -80,6 +84,7 @@ export const createStaticClock = (date: Date): ClockService => ({
 const dateToNanoseconds = (date: Date): bigint =>
   BigInt(date.getTime()) * 1_000_000n;
 
+/** Creates an Effect `Clock.Clock` whose current time never advances. */
 export const createDeterministicEffectClock = (date: Date): Clock.Clock => ({
   currentTimeMillis: Effect.sync(() => date.getTime()),
   currentTimeMillisUnsafe: () => date.getTime(),
@@ -88,12 +93,14 @@ export const createDeterministicEffectClock = (date: Date): Clock.Clock => ({
   sleep: () => Effect.void,
 });
 
+/** Provides both Effect Clock and the legacy ClockService for migration tests. */
 export const createDeterministicClockLayer = (date: Date) =>
   Layer.mergeAll(
     Layer.succeed(Clock.Clock, createDeterministicEffectClock(date)),
     clockLayer(createStaticClock(date))
   );
 
+/** Creates a deterministic legacy ID generator from an ordered sequence. */
 export const createSequenceIdGenerator = (
   ids: readonly string[]
 ): IdGeneratorService => {
@@ -113,19 +120,23 @@ export const createSequenceIdGenerator = (
   };
 };
 
+/** Provides a deterministic ID generator Layer for runtime-neutral tests. */
 export const createSequenceIdGeneratorLayer = (ids: readonly string[]) =>
   idGeneratorLayer(createSequenceIdGenerator(ids));
 
+/** Provides an Effect ConfigProvider Layer from a plain object fixture. */
 export const createTestConfigLayer = (
   values: Readonly<Record<string, unknown>>
 ) => ConfigProvider.layer(ConfigProvider.fromUnknown(values));
 
+/** Creates a no-op legacy logger fixture for code not yet on Effect telemetry. */
 export const createTestLogger = (): LoggerService => ({
   log: () => {
     // no-op yet
   },
 });
 
+/** Captures Effect logs, spans, and durable audit events without exporters. */
 export const createTestTelemetry = (): TestTelemetryCapture => {
   const logs: TestLogEntry[] = [];
   const spans: Tracer.Span[] = [];
@@ -203,6 +214,13 @@ export const createTestTelemetry = (): TestTelemetryCapture => {
   };
 };
 
+/**
+ * Creates a resettable in-memory repository Layer.
+ *
+ * This does not define repository semantics. Module-specific contract suites
+ * should supply their own service shape and use this helper only for
+ * deterministic state control.
+ */
 export const createInMemoryRepositoryTestLayer = <Identifier, Service, State>({
   initialState,
   makeRepository,
@@ -224,12 +242,14 @@ export const createInMemoryRepositoryTestLayer = <Identifier, Service, State>({
   };
 };
 
+/** Creates a static actor context fixture for request-scope tests. */
 export const createStaticAuthContext = (
   actor: unknown | null
 ): AuthContextService => ({
   getActor: () => actor,
 });
 
+/** Creates an in-memory event publisher plus the mutable collection it appends to. */
 export const createEventCollector = () => {
   const events: CommerceEventEnvelope[] = [];
 

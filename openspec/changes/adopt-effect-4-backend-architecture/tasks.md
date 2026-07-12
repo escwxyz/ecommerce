@@ -19,7 +19,7 @@
 - [x] 2.5 Define structured logging, span, metric, correlation, redaction, and audit conventions
 - [x] 2.6 Provide deterministic clock, ID, configuration, telemetry, and repository test Layers
 - [x] 2.7 Add import-boundary helpers that can ban Hono, oRPC, Zod, Kysely, and Cloudflare per migrated package
-- [ ] 2.8 Update shared JSDoc and architecture comments for the new Effect boundaries
+- [x] 2.8 Update shared JSDoc and architecture comments for the new Effect boundaries
 
 ## 3. Effect SQL PostgreSQL and Drizzle foundation
 

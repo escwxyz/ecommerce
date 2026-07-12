@@ -1,23 +1,27 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+/** Source file loaded for import-boundary scanning. */
 export interface ImportBoundaryFile {
   readonly path: string;
   readonly source: string;
 }
 
+/** One named import rule with optional exact/prefix exceptions. */
 export interface ImportBoundaryRule {
   readonly allowedSpecifiers?: readonly string[];
   readonly forbiddenSpecifiers: readonly string[];
   readonly name: string;
 }
 
+/** Complete import-boundary policy for one package or package subtree. */
 export interface ImportBoundary {
   readonly packageName: string;
   readonly rootDir: string;
   readonly rules: readonly ImportBoundaryRule[];
 }
 
+/** Single forbidden import found while scanning a package boundary. */
 export interface ImportBoundaryViolation {
   readonly filePath: string;
   readonly packageName: string;
@@ -25,6 +29,7 @@ export interface ImportBoundaryViolation {
   readonly specifier: string;
 }
 
+/** Options for the standard legacy backend import ban. */
 export interface LegacyBackendImportBoundaryOptions {
   readonly allowedSpecifiers?: readonly string[];
   readonly extraForbiddenSpecifiers?: readonly string[];
@@ -32,11 +37,13 @@ export interface LegacyBackendImportBoundaryOptions {
   readonly rootDir: string;
 }
 
+/** Options for scanning already-loaded source files. */
 export interface ScanImportBoundaryViolationsOptions {
   readonly boundary: ImportBoundary;
   readonly files: readonly ImportBoundaryFile[];
 }
 
+/** Options for recursively loading source files from disk. */
 export interface CollectImportBoundarySourceFilesOptions {
   readonly exclude?: (path: string) => boolean;
   readonly rootDir: string;
