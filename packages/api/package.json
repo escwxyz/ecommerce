@@ -11,7 +11,7 @@
   },
   "scripts": {
     "check-types": "tsc -b",
-    "test": "bun test ./src/*.test.ts"
+    "test": "bun test ./src/*.test.ts ./src/__tests__/*.test.ts"
   },
   "dependencies": {
     "@ecommerce/auth": "workspace:*",
@@ -37,6 +37,7 @@
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
     "dotenv": "catalog:",
+    "effect": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

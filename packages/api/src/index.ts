@@ -7,6 +7,18 @@ export {
   createApiRouteFragment,
 } from "./assembly";
 export {
+  adminHttpApi,
+  defineAdminHttpApiGroupContribution,
+  defineEffectHttpApiGroupContribution,
+  defineEffectHttpApiModuleContribution,
+  defineStorefrontHttpApiGroupContribution,
+  type EffectHttpApiContributionOwner,
+  type EffectHttpApiGroupContribution,
+  type EffectHttpApiModuleContribution,
+  type EffectHttpApiSurface,
+  storefrontHttpApi,
+} from "./effect-http-api";
+export {
   createContext,
   type Context,
   type CreateContextOptions,

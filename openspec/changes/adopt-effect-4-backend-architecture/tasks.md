@@ -35,7 +35,7 @@
 
 ## 4. Effect HTTP and storefront SDK foundation
 
-- [ ] 4.1 Define canonical admin and storefront `HttpApi` roots and module group contribution contracts
+- [x] 4.1 Define canonical admin and storefront `HttpApi` roots and module group contribution contracts
 - [ ] 4.2 Define shared pagination, request identity, success, and serialized error schemas
 - [ ] 4.3 Implement Effect HTTP middleware for request context, auth provision, permissions, telemetry, deadlines, and sanitized defects
 - [ ] 4.4 Implement deterministic API assembly and duplicate method/path detection
