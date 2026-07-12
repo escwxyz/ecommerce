@@ -14,6 +14,11 @@ runtime-neutral repository services.
   roots.
 - `runPostgresMigrations` runs the checked-in Drizzle migration baseline through
   the Effect Postgres migrator.
+- `getPostgresMigrationStatus` compares checked-in Drizzle migrations with the
+  Drizzle migration journal.
+- `rollbackPostgresDevelopmentDatabase` and
+  `resetPostgresDevelopmentDatabase` execute development-only reset plans after
+  explicit destructive confirmation.
 
 The Layer constructors do not open a connection until the Layer is built by an
 Effect runtime. Credential-free tests therefore verify composition and type
@@ -47,9 +52,24 @@ infrastructure:
 Module aggregate tables are added by their vertical-slice migration tasks. Do
 not copy Kysely or D1 migration history into the PostgreSQL baseline.
 
+## Migration command rule
+
+`@ecommerce/db-postgres` owns package-local migration commands:
+
+- `bun run db:status`
+- `bun run db:migrate`
+- `bun run db:rollback-development`
+- `bun run db:reset-development`
+
+All commands require `POSTGRES_URL`. Status is read-only and reports pending,
+applied, and failed records by comparing local Drizzle migration files with the
+Drizzle migration journal. The rollback and reset commands are development-only
+because this migration has no production data. They require explicit destructive
+confirmation with `-- --confirm-development-reset` and only drop adapter-owned
+foundation objects plus Drizzle's migration schema.
+
 ## Deferred work
 
-- Task 3.4 owns migration command behavior.
 - Task 3.5 owns repository contract harnesses.
 - Task 3.6 owns concrete transactional outbox persistence and concurrent
   claiming.

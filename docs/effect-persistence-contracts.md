@@ -35,8 +35,9 @@ and dialect-specific implementation Layers. `MigrationService` exposes only
 status and apply-pending contracts so commands and tests can observe migration
 state without importing adapter execution details.
 
-Development rollback/reset command behavior is intentionally deferred to task
-3.4; the shared contract only preserves the status and failure vocabulary.
+Development rollback/reset command behavior is implemented by concrete adapters.
+`@ecommerce/db-postgres` exposes its development reset and rollback commands
+without adding destructive behavior to this runtime-neutral shared contract.
 
 ## Transactional outbox
 

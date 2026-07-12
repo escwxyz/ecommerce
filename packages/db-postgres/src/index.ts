@@ -1,5 +1,3 @@
-import { fileURLToPath } from "node:url";
-
 import { PgClient } from "@effect/sql-pg";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as PgDrizzleMigrator from "drizzle-orm/effect-postgres/migrator";
@@ -8,6 +6,18 @@ import type { Effect as EffectValue, Success } from "effect/Effect";
 import type { SqlError } from "effect/unstable/sql/SqlError";
 import { types as pgTypes } from "pg";
 import type { CustomTypesConfig } from "pg";
+
+import { createPostgresMigrationConfig } from "./migration-config";
+import type { PostgresMigrationRunnerOptions } from "./migration-config";
+
+export { postgresAdapterTarget } from "./adapter-constants";
+
+export {
+  createPostgresMigrationConfig,
+  defaultPostgresMigrationsFolder,
+  defaultPostgresMigrationsTable,
+  type PostgresMigrationRunnerOptions,
+} from "./migration-config";
 
 export {
   commerceMigrationAudit,
@@ -26,11 +36,33 @@ export {
   type CommerceOutboxRow,
 } from "./schema/index";
 
+export {
+  createPostgresDevelopmentResetPlan,
+  getPostgresMigrationStatus,
+  PostgresMigrationCommandFailure,
+  readPostgresLocalMigrations,
+  requirePostgresDevelopmentResetConfirmation,
+  resetPostgresDevelopmentDatabase,
+  resolvePostgresMigrationCommandConfig,
+  rollbackPostgresDevelopmentDatabase,
+  summarizePostgresMigrationStatus,
+  type PostgresAppliedMigrationRow,
+  type PostgresDevelopmentMigrationCommandOptions,
+  type PostgresDevelopmentMigrationCommandPlan,
+  type PostgresLocalMigrationRecord,
+  type PostgresMigrationCommand,
+  type PostgresMigrationCommandPhase,
+  type PostgresMigrationConfigResolved,
+  type PostgresMigrationRecordStatus,
+  type PostgresMigrationStatusRecord,
+  type PostgresMigrationStatusResult,
+} from "./migration-commands";
+
 /**
  * PostgreSQL adapter package. It composes `@effect/sql-pg` with Drizzle's
  * Effect PostgreSQL driver while keeping concrete database types outside core.
  */
-export const postgresAdapterTarget = "effect-postgres" as const;
+export const postgresAdapterPackage = "@ecommerce/db-postgres" as const;
 
 /** PostgreSQL type OIDs that Drizzle should receive as raw strings. */
 export const drizzleRawTextTypeOids = [
@@ -41,11 +73,6 @@ export const drizzleRawTextTypeOids = [
 export type PostgresDrizzleConfig = Parameters<
   typeof PgDrizzle.makeWithDefaults
 >[0];
-
-/** Drizzle runtime migration options accepted by the PostgreSQL adapter. */
-export type PostgresMigrationRunnerOptions = Partial<
-  Parameters<typeof PgDrizzleMigrator.migrate>[1]
->;
 
 /** Effect SQL PostgreSQL pool configuration accepted by the adapter Layer. */
 export type PostgresPoolConfig = PgClient.PgPoolConfig;
@@ -79,25 +106,6 @@ export interface PostgresDrizzleService {
 export const PostgresDrizzleService = Context.Service<PostgresDrizzleService>(
   "@ecommerce/db-postgres/PostgresDrizzleService"
 );
-
-/** Default checked-in migration folder for the clean PostgreSQL baseline. */
-export const defaultPostgresMigrationsFolder = fileURLToPath(
-  new URL("migrations", import.meta.url)
-);
-
-/** Default Drizzle migration table name for PostgreSQL stages. */
-export const defaultPostgresMigrationsTable = "__drizzle_migrations" as const;
-
-/** Resolves runtime migration options with the checked-in baseline folder. */
-export const createPostgresMigrationConfig = ({
-  migrationsFolder = defaultPostgresMigrationsFolder,
-  migrationsTable = defaultPostgresMigrationsTable,
-  migrationsSchema,
-}: PostgresMigrationRunnerOptions = {}) => ({
-  migrationsFolder,
-  migrationsSchema,
-  migrationsTable,
-});
 
 /**
  * Creates pg type parsers that leave date/time-ish PostgreSQL values as raw

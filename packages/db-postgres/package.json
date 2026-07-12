@@ -10,6 +10,10 @@
     }
   },
   "scripts": {
+    "db:migrate": "bun ./src/cli.ts migrate",
+    "db:reset-development": "bun ./src/cli.ts reset-development",
+    "db:rollback-development": "bun ./src/cli.ts rollback-development",
+    "db:status": "bun ./src/cli.ts status",
     "check-types": "tsc --noEmit",
     "test": "bun test ./src"
   },
