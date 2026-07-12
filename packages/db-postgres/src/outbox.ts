@@ -54,6 +54,27 @@ interface PostgresOutboxClaimRow extends Record<string, unknown> {
   readonly workflowRunId: string | null;
 }
 
+const hasQueryRows = <TRow>(
+  value: unknown
+): value is {
+  readonly rows: readonly TRow[];
+} =>
+  typeof value === "object" &&
+  value !== null &&
+  Array.isArray(Reflect.get(value, "rows"));
+
+const normalizeQueryRows = <TRow>(value: unknown): readonly TRow[] => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (hasQueryRows<TRow>(value)) {
+    return value.rows;
+  }
+
+  return [];
+};
+
 const defaultIdentifier = (prefix: string) =>
   Effect.sync(() => `${prefix}_${globalThis.crypto.randomUUID()}`);
 
@@ -277,7 +298,7 @@ const claimPendingOutboxRecords = ({
       };
     }
 
-    const rows = yield* service.database.execute<PostgresOutboxClaimRow>(sql`
+    const result = yield* service.database.execute<PostgresOutboxClaimRow>(sql`
       WITH claimable AS (
         SELECT record_id
         FROM ${commerceOutbox}
@@ -320,6 +341,7 @@ const claimPendingOutboxRecords = ({
         ${commerceOutbox.workflowRunId} AS "workflowRunId"
     `);
 
+    const rows = normalizeQueryRows<PostgresOutboxClaimRow>(result);
     const records = yield* Effect.all(
       rows.map((row) =>
         Effect.try({

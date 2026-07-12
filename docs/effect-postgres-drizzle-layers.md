@@ -81,6 +81,14 @@ result unless the suite passes an explicit database URL or `POSTGRES_URL` is
 present. This keeps ordinary unit tests credential-free while letting local and
 future integration jobs run the same contract cases against PostgreSQL.
 
+Task 3.8 adds a dedicated live verification suite:
+
+- `POSTGRES_URL=postgres://... bun run test:live`
+
+That suite resets the adapter-owned development objects, reapplies the checked-in
+baseline, and verifies migrations, transaction commit/rollback, duplicate-key
+constraint failures, row decoding, and concurrent outbox claims.
+
 ## Transactional outbox rule
 
 `@ecommerce/db-postgres/outbox` exposes `createPostgresOutboxLayer`, which
@@ -97,7 +105,5 @@ Delivered records transition to `delivered`; terminal failures transition to
 
 ## Deferred work
 
-- Task 3.8 owns live PostgreSQL verification for migrations, transaction
-  behavior, row decoding, and concurrent outbox claims.
 - Task 3.9 owns the first real Cloudflare/Hyperdrive PostgreSQL connection
   smoke test.

@@ -21,7 +21,8 @@
     "db:rollback-development": "bun ./src/cli.ts rollback-development",
     "db:status": "bun ./src/cli.ts status",
     "check-types": "tsc --noEmit",
-    "test": "bun test ./src"
+    "test": "bun test ./src",
+    "test:live": "bun test ./src/__tests__/postgres-live-verification.test.ts"
   },
   "dependencies": {
     "@ecommerce/core": "workspace:*",
