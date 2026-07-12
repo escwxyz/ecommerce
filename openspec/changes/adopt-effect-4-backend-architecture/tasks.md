@@ -17,7 +17,7 @@
 - [x] 2.3 Define Effect service and Layer conventions for modules, adapters, request scope, transactions, and tests
 - [x] 2.4 Define Effect Config and Redacted conventions for environment values and secrets
 - [x] 2.5 Define structured logging, span, metric, correlation, redaction, and audit conventions
-- [ ] 2.6 Provide deterministic clock, ID, configuration, telemetry, and repository test Layers
+- [x] 2.6 Provide deterministic clock, ID, configuration, telemetry, and repository test Layers
 - [ ] 2.7 Add import-boundary helpers that can ban Hono, oRPC, Zod, Kysely, and Cloudflare per migrated package
 - [ ] 2.8 Update shared JSDoc and architecture comments for the new Effect boundaries
 

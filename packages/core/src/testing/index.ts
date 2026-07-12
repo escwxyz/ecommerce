@@ -1,4 +1,14 @@
-import { Effect } from "effect";
+import {
+  Clock,
+  ConfigProvider,
+  Effect,
+  Layer,
+  Logger,
+  References,
+  Ref,
+  Tracer,
+} from "effect";
+import type { Context } from "effect";
 
 import type { CommerceEventEnvelope } from "../events/index";
 import { createEventEnvelope } from "../events/index";
@@ -9,6 +19,9 @@ import type {
   IdGeneratorService,
   LoggerService,
 } from "../services/index";
+import { clockLayer, idGeneratorLayer } from "../services/index";
+import { DurableAudit } from "../telemetry/index";
+import type { DurableAuditEvent } from "../telemetry/index";
 import type {
   CommerceWorkflowDuplicateQuery,
   CommerceWorkflowMetadataRecord,
@@ -26,9 +39,45 @@ import {
   createWorkflowRunError,
 } from "../workflows/index";
 
+export interface TestLogEntry {
+  readonly annotations: Readonly<Record<string, unknown>>;
+  readonly message: unknown;
+}
+
+export interface TestTelemetryCapture {
+  readonly auditEvents: DurableAuditEvent[];
+  readonly layer: Layer.Layer<DurableAudit>;
+  readonly logs: TestLogEntry[];
+  readonly spans: Tracer.Span[];
+}
+
+export interface InMemoryRepositoryTestLayer<Identifier, State> {
+  readonly layer: Layer.Layer<Identifier>;
+  readonly reset: Effect.Effect<void>;
+  readonly snapshot: Effect.Effect<State>;
+  readonly state: Ref.Ref<State>;
+}
+
 export const createStaticClock = (date: Date): ClockService => ({
   now: () => date,
 });
+
+const dateToNanoseconds = (date: Date): bigint =>
+  BigInt(date.getTime()) * 1_000_000n;
+
+export const createDeterministicEffectClock = (date: Date): Clock.Clock => ({
+  currentTimeMillis: Effect.sync(() => date.getTime()),
+  currentTimeMillisUnsafe: () => date.getTime(),
+  currentTimeNanos: Effect.sync(() => dateToNanoseconds(date)),
+  currentTimeNanosUnsafe: () => dateToNanoseconds(date),
+  sleep: () => Effect.void,
+});
+
+export const createDeterministicClockLayer = (date: Date) =>
+  Layer.mergeAll(
+    Layer.succeed(Clock.Clock, createDeterministicEffectClock(date)),
+    clockLayer(createStaticClock(date))
+  );
 
 export const createSequenceIdGenerator = (
   ids: readonly string[]
@@ -49,11 +98,116 @@ export const createSequenceIdGenerator = (
   };
 };
 
+export const createSequenceIdGeneratorLayer = (ids: readonly string[]) =>
+  idGeneratorLayer(createSequenceIdGenerator(ids));
+
+export const createTestConfigLayer = (
+  values: Readonly<Record<string, unknown>>
+) => ConfigProvider.layer(ConfigProvider.fromUnknown(values));
+
 export const createTestLogger = (): LoggerService => ({
   log: () => {
     // no-op yet
   },
 });
+
+export const createTestTelemetry = (): TestTelemetryCapture => {
+  const logs: TestLogEntry[] = [];
+  const spans: Tracer.Span[] = [];
+  const auditEvents: DurableAuditEvent[] = [];
+
+  const logger = Logger.make((options) => {
+    logs.push({
+      annotations: options.fiber.getRef(References.CurrentLogAnnotations),
+      message: options.message,
+    });
+  });
+  const tracer = Tracer.make({
+    span: (options) => {
+      const attributes = new Map<string, unknown>();
+      const links = [...options.links];
+      let status: Tracer.SpanStatus = {
+        _tag: "Started",
+        startTime: options.startTime,
+      };
+      const span: Tracer.Span = {
+        _tag: "Span",
+        addLinks: (newLinks) => {
+          links.push(...newLinks);
+        },
+        annotations: options.annotations,
+        attribute: (key, value) => {
+          attributes.set(key, value);
+        },
+        attributes,
+        end: (endTime, exit) => {
+          status = {
+            _tag: "Ended",
+            endTime,
+            exit,
+            startTime: options.startTime,
+          };
+        },
+        event: (name) => {
+          void name;
+        },
+        get status() {
+          return status;
+        },
+        kind: options.kind,
+        links,
+        name: options.name,
+        parent: options.parent,
+        sampled: options.sampled,
+        spanId: `span_${spans.length + 1}`,
+        traceId: "trace_test",
+      };
+      spans.push(span);
+      return span;
+    },
+  });
+  const auditLayer = Layer.succeed(
+    DurableAudit,
+    DurableAudit.of({
+      record: (event) =>
+        Effect.sync(() => {
+          auditEvents.push(event);
+        }),
+    })
+  );
+
+  return {
+    auditEvents,
+    layer: Layer.mergeAll(
+      Logger.layer([logger]),
+      Layer.succeed(Tracer.Tracer, tracer),
+      auditLayer
+    ),
+    logs,
+    spans,
+  };
+};
+
+export const createInMemoryRepositoryTestLayer = <Identifier, Service, State>({
+  initialState,
+  makeRepository,
+  service,
+}: {
+  readonly initialState: () => State;
+  readonly makeRepository: (state: Ref.Ref<State>) => Service;
+  readonly service: Context.Key<Identifier, Service>;
+}): InMemoryRepositoryTestLayer<Identifier, State> => {
+  const state = Ref.makeUnsafe(initialState());
+
+  return {
+    layer: Layer.succeed(service, makeRepository(state)),
+    reset: Effect.flatMap(Effect.sync(initialState), (nextState) =>
+      Ref.set(state, nextState)
+    ),
+    snapshot: Ref.get(state),
+    state,
+  };
+};
 
 export const createStaticAuthContext = (
   actor: unknown | null

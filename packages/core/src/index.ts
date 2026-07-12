@@ -189,13 +189,22 @@ export {
   type StatefulCoordinator,
 } from "./stateful/index";
 export {
+  createDeterministicClockLayer,
+  createDeterministicEffectClock,
   createEventCollector,
   createInMemoryWorkflowMetadataStore,
+  createInMemoryRepositoryTestLayer,
+  createSequenceIdGeneratorLayer,
   createInMemoryWorkflowRuntime,
   createStaticAuthContext,
   createSequenceIdGenerator,
   createStaticClock,
+  createTestConfigLayer,
   createTestLogger,
+  createTestTelemetry,
+  type InMemoryRepositoryTestLayer,
+  type TestLogEntry,
+  type TestTelemetryCapture,
 } from "./testing/index";
 export {
   WORKFLOW_LIFECYCLE_EVENT_NAMES,
