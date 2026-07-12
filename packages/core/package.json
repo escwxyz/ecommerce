@@ -26,6 +26,9 @@
     "./permissions": {
       "default": "./src/permissions/index.ts"
     },
+    "./persistence": {
+      "default": "./src/persistence/index.ts"
+    },
     "./plugins": {
       "default": "./src/plugins/index.ts"
     },

@@ -23,7 +23,7 @@
 
 ## 3. Effect SQL PostgreSQL and Drizzle foundation
 
-- [ ] 3.1 Define runtime-neutral repository, transaction, migration, and outbox service contracts
+- [x] 3.1 Define runtime-neutral repository, transaction, migration, and outbox service contracts
 - [ ] 3.2 Implement the Effect PostgreSQL client and Drizzle database Layers with scoped connection/transaction behavior
 - [ ] 3.3 Implement the clean PostgreSQL Drizzle schema, migration baseline, and migration runner
 - [ ] 3.4 Implement migration status, failure, rollback-development, and reset-development commands
