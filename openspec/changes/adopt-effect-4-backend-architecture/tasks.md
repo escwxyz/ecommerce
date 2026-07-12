@@ -31,7 +31,7 @@
 - [x] 3.6 Implement transactional outbox persistence and claiming primitives
 - [x] 3.7 Remove Kysely types from shared database contracts used by newly migrated code
 - [x] 3.8 Verify PostgreSQL migrations, transactions, constraint failures, row decoding, and concurrent outbox claims
-- [ ] 3.9 Provision the Cloudflare PostgreSQL connectivity resource and verify the first Hyperdrive-backed Worker connection
+- [x] 3.9 Provision the Cloudflare PostgreSQL connectivity resource and verify the first Hyperdrive-backed Worker connection
 
 ## 4. Effect HTTP and storefront SDK foundation
 

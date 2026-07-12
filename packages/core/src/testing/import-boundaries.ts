@@ -113,9 +113,12 @@ export const extractImportSpecifiers = (source: string): readonly string[] => {
     }
   }
 
-  return specifiers
-    .toSorted((left, right) => left.index - right.index)
-    .map(({ specifier }) => specifier);
+  return (
+    [...specifiers]
+      // oxlint-disable-next-line unicorn/no-array-sort -- web tsconfig does not include ES2023 toSorted yet.
+      .sort((left, right) => left.index - right.index)
+      .map(({ specifier }) => specifier)
+  );
 };
 
 /** Builds the standard Hono/oRPC/Zod/Kysely/Cloudflare import ban for a package. */

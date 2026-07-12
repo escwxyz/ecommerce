@@ -6,6 +6,7 @@ import { config } from "dotenv";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 
 const fromPackageRoot = (path: string) =>
   fileURLToPath(new URL(path, import.meta.url));
@@ -22,6 +23,11 @@ const compatibility = {
 
 const localServerUrl = "http://localhost:3000";
 const localWebUrl = "http://localhost:3001";
+const defaultLocalPostgresHost = "127.0.0.1";
+const defaultLocalPostgresPort = 5432;
+const defaultLocalPostgresDatabase = "ecommerce";
+const defaultLocalPostgresUser = "postgres";
+const defaultLocalPostgresPassword = "postgres";
 
 const requiredServerConfig = {
   BETTER_AUTH_SECRET: Config.redacted("BETTER_AUTH_SECRET"),
@@ -35,34 +41,145 @@ const requiredServerConfig = {
 
 const providers = Layer.mergeAll(Cloudflare.providers());
 
-export const database = Cloudflare.D1Database("Database", {
+type EnvironmentSource = Record<string, string | undefined>;
+type PostgresOriginConfig = Cloudflare.Hyperdrive.PublicOrigin;
+
+export interface PostgresHyperdriveConfig {
+  readonly origin: PostgresOriginConfig;
+  readonly dev: Cloudflare.Hyperdrive.DevOrigin;
+  readonly originConnectionLimit?: number;
+}
+
+const getRequiredEnvValue = (source: EnvironmentSource, name: string) => {
+  const value = source[name];
+
+  if (!value) {
+    throw new Error(
+      `${name} is required to provision the Cloudflare Hyperdrive PostgreSQL connection.`
+    );
+  }
+
+  return value;
+};
+
+const getOptionalNumberEnvValue = (
+  source: EnvironmentSource,
+  name: string
+): number | undefined => {
+  const value = source[name];
+
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+
+  return parsed;
+};
+
+const getDevPostgresOrigin = (
+  source: EnvironmentSource
+): Cloudflare.Hyperdrive.DevOrigin => ({
+  scheme: "postgres",
+  host:
+    source.POSTGRES_DEV_HOST ??
+    source.POSTGRES_HOST ??
+    defaultLocalPostgresHost,
+  port:
+    getOptionalNumberEnvValue(source, "POSTGRES_DEV_PORT") ??
+    getOptionalNumberEnvValue(source, "POSTGRES_PORT") ??
+    defaultLocalPostgresPort,
+  database:
+    source.POSTGRES_DEV_DATABASE ??
+    source.POSTGRES_DATABASE ??
+    defaultLocalPostgresDatabase,
+  user:
+    source.POSTGRES_DEV_USER ??
+    source.POSTGRES_USER ??
+    defaultLocalPostgresUser,
+  password: Redacted.make(
+    source.POSTGRES_DEV_PASSWORD ??
+      source.POSTGRES_PASSWORD ??
+      defaultLocalPostgresPassword
+  ),
+  sslmode:
+    (source.POSTGRES_DEV_SSLMODE as Cloudflare.Hyperdrive.DevOrigin["sslmode"]) ??
+    "disable",
+});
+
+export const getPostgresHyperdriveConfig = (
+  dev: boolean,
+  source: EnvironmentSource = process.env
+): PostgresHyperdriveConfig => {
+  const devOrigin = getDevPostgresOrigin(source);
+  const origin = dev
+    ? devOrigin
+    : {
+        scheme: "postgres" as const,
+        host: getRequiredEnvValue(source, "POSTGRES_HOST"),
+        port: getOptionalNumberEnvValue(source, "POSTGRES_PORT"),
+        database: getRequiredEnvValue(source, "POSTGRES_DATABASE"),
+        user: getRequiredEnvValue(source, "POSTGRES_USER"),
+        password: Redacted.make(
+          getRequiredEnvValue(source, "POSTGRES_PASSWORD")
+        ),
+      };
+  const originConnectionLimit = getOptionalNumberEnvValue(
+    source,
+    "POSTGRES_ORIGIN_CONNECTION_LIMIT"
+  );
+
+  return {
+    dev: devOrigin,
+    origin,
+    ...(originConnectionLimit ? { originConnectionLimit } : {}),
+  };
+};
+
+export const database = Cloudflare.D1.Database("Database", {
   migrationsDir: fromPackageRoot("../../packages/db-d1/src/migrations/sql"),
   migrationsTable: "d1_migrations",
 });
 
-export const statefulCoordinator = Cloudflare.DurableObjectNamespace(
+export const postgresConnection = Effect.gen(
+  function* createPostgresConnection() {
+    const { dev } = yield* Alchemy.AlchemyContext;
+    const postgresConfig = getPostgresHyperdriveConfig(dev);
+
+    return yield* Cloudflare.Hyperdrive.Connection("PostgresConnection", {
+      caching: {
+        disabled: true,
+      },
+      ...postgresConfig,
+    });
+  }
+);
+
+export const statefulCoordinator = Cloudflare.DurableObject(
   "StatefulCoordinatorDurableObject"
 );
 
-export const cartCache = Cloudflare.DurableObjectNamespace(
-  "CartCacheDurableObject"
-);
+export const cartCache = Cloudflare.DurableObject("CartCacheDurableObject");
 
-export const notificationEventQueue = Cloudflare.Queue(
+export const notificationEventQueue = Cloudflare.Queues.Queue(
   "NotificationEventQueue",
   {
     name: "notification-event-work",
   }
 );
 
-export const notificationEventDeadLetterQueue = Cloudflare.Queue(
+export const notificationEventDeadLetterQueue = Cloudflare.Queues.Queue(
   "NotificationEventDeadLetterQueue",
   {
     name: "notification-event-dead-letter",
   }
 );
 
-export const notificationEventRealtime = Cloudflare.DurableObjectNamespace(
+export const notificationEventRealtime = Cloudflare.DurableObject(
   "NotificationEventRealtimeDurableObject"
 );
 
@@ -102,6 +219,7 @@ export const server = Effect.gen(function* createServer() {
       COMMERCE_PROVIDER_MODE: dev ? "development" : "disabled",
       DB: database,
       NOTIFICATION_EVENT_REALTIME: notificationEventRealtime,
+      POSTGRES: postgresConnection,
       STATEFUL_COORDINATOR: statefulCoordinator,
     },
     url: true,
@@ -117,7 +235,7 @@ export const notificationEventQueueConsumer = Effect.gen(
     }
 
     const queue = yield* notificationEventQueue;
-    return yield* Cloudflare.QueueConsumer("NotificationEventQueueConsumer", {
+    return yield* Cloudflare.Queues.Consumer("NotificationEventQueueConsumer", {
       deadLetterQueue: "notification-event-dead-letter",
       queueId: queue.queueId,
       scriptName: "ecommerce-server",
@@ -143,7 +261,7 @@ export const web = Effect.gen(function* createWeb() {
     return localOutput;
   }
 
-  return yield* Cloudflare.Vite("Web", {
+  return yield* Cloudflare.Website.Vite("Web", {
     rootDir: fromPackageRoot("../../apps/web"),
     compatibility,
     dev: {
@@ -166,6 +284,7 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* deployStack() {
     const db = yield* database;
+    const postgres = yield* postgresConnection;
     const api = yield* server;
     const admin = yield* web;
 
@@ -174,6 +293,8 @@ export default Alchemy.Stack(
       apiUrl: api.url,
       databaseId: db.databaseId,
       databaseName: db.databaseName,
+      postgresHyperdriveId: postgres.hyperdriveId,
+      postgresHyperdriveName: postgres.name,
       notificationEventQueueConsumerId:
         yield* notificationEventQueueConsumer.pipe(
           Effect.map((consumer) => consumer?.consumerId ?? null)

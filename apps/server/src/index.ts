@@ -27,6 +27,10 @@ import {
   createDevelopmentCommerceProviderRegistries,
   createServerCommerceRuntime,
 } from "./commerce-runtime";
+import {
+  isPostgresHyperdriveHealthRequest,
+  verifyPostgresHyperdriveConnection,
+} from "./postgres-hyperdrive-smoke";
 
 interface CommerceServerEnv {
   readonly BETTER_AUTH_SECRET: string;
@@ -37,6 +41,7 @@ interface CommerceServerEnv {
   readonly DB: D1Database;
   readonly NOTIFICATION_EVENT_QUEUE?: Queue<NotificationEventQueueMessage>;
   readonly NOTIFICATION_EVENT_REALTIME: DurableObjectNamespace;
+  readonly POSTGRES: Hyperdrive;
   readonly STATEFUL_COORDINATOR: DurableObjectNamespace;
 }
 
@@ -143,7 +148,19 @@ const app = createServerApp({
 });
 
 export default {
-  fetch: app.fetch,
+  fetch: (
+    request: Request,
+    requestEnv: CommerceServerEnv,
+    executionContext: ExecutionContext
+  ) => {
+    if (isPostgresHyperdriveHealthRequest(request)) {
+      return verifyPostgresHyperdriveConnection(
+        requestEnv.POSTGRES ?? serverEnv.POSTGRES
+      );
+    }
+
+    return app.fetch(request, requestEnv, executionContext);
+  },
   queue: (batch: MessageBatch<NotificationEventQueueMessage>) =>
     processNotificationEventQueueBatch(batch, {
       clock,

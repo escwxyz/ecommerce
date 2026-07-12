@@ -103,7 +103,26 @@ attempts, and returns runtime-neutral `OutboxRecord` values for delivery.
 Delivered records transition to `delivered`; terminal failures transition to
 `failed` and insert a `commerce_outbox_dead_letter` record.
 
-## Deferred work
+## Cloudflare Hyperdrive rule
 
-- Task 3.9 owns the first real Cloudflare/Hyperdrive PostgreSQL connection
-  smoke test.
+Task 3.9 provisions the first Cloudflare Hyperdrive PostgreSQL connectivity
+resource through Alchemy and binds it to the API Worker as `POSTGRES`.
+Deployed provisioning requires:
+
+- `POSTGRES_HOST`
+- `POSTGRES_DATABASE`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+
+Optional deployed settings:
+
+- `POSTGRES_PORT`
+- `POSTGRES_ORIGIN_CONNECTION_LIMIT`
+
+Alchemy local development uses `POSTGRES_DEV_*` overrides when present and
+otherwise defaults to `127.0.0.1:5432/ecommerce` with `postgres/postgres`.
+
+The Worker exposes `/__health/postgres` as the first Hyperdrive-backed
+connectivity smoke check. It opens a PostgreSQL session through
+`env.POSTGRES.connectionString`, runs `select 1::int as ok`, and returns only
+sanitized status metadata.

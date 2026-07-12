@@ -27,6 +27,7 @@ export {
   isSqlite,
   jsonExtractExpr,
   listTablesLike,
+  tableExists,
 } from "./dialect-helpers";
 export {
   StaticCommerceMigrationProvider,
