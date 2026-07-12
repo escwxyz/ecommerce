@@ -54,6 +54,15 @@ export {
   type ScanImportBoundaryViolationsOptions,
 } from "./import-boundaries";
 
+export {
+  createInMemoryRepositoryContractHarness,
+  createRepositoryContractHarness,
+  type InMemoryRepositoryContractHarnessOptions,
+  type RepositoryContractCase,
+  type RepositoryContractHarness,
+  type RepositoryContractHarnessOptions,
+} from "./repository-contracts";
+
 /** Captured Effect log entry used by deterministic telemetry tests. */
 export interface TestLogEntry {
   readonly annotations: Readonly<Record<string, unknown>>;

@@ -68,9 +68,21 @@ because this migration has no production data. They require explicit destructive
 confirmation with `-- --confirm-development-reset` and only drop adapter-owned
 foundation objects plus Drizzle's migration schema.
 
+## Repository contract harness rule
+
+`@ecommerce/db-postgres/testing` exposes
+`createLocalPostgresRepositoryContractHarness` for module repository contract
+suites. The harness composes a module repository Layer with
+`PostgresDrizzleService`, runs the checked-in migration baseline before each
+case by default, and accepts adapter-specific reset Effects for module tables.
+
+Live PostgreSQL contract execution is opt-in. The harness returns a skipped
+result unless the suite passes an explicit database URL or `POSTGRES_URL` is
+present. This keeps ordinary unit tests credential-free while letting local and
+future integration jobs run the same contract cases against PostgreSQL.
+
 ## Deferred work
 
-- Task 3.5 owns repository contract harnesses.
 - Task 3.6 owns concrete transactional outbox persistence and concurrent
   claiming.
 - Task 3.9 owns the first real Cloudflare/Hyperdrive PostgreSQL connection

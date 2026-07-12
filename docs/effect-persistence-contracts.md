@@ -17,6 +17,13 @@ declared module error union before leaving the module boundary. Shared
 errors are available for adapter-owned translation, but modules should expose
 only actionable errors from their public contracts.
 
+Repository contract suites should use the shared harness shape from
+`@ecommerce/core/testing`. `createInMemoryRepositoryContractHarness` provides
+the deterministic adapter for fast module tests, and concrete database packages
+provide matching harnesses for their dialects. Each contract case receives only
+the module repository service Layer, so the same case list can run against
+in-memory, PostgreSQL, and future adapters without changing business logic.
+
 ## Transactions
 
 Application services own local transaction boundaries through

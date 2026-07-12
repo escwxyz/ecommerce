@@ -7,6 +7,9 @@
     },
     "./schema": {
       "default": "./src/schema/index.ts"
+    },
+    "./testing": {
+      "default": "./src/repository-contract-harness.ts"
     }
   },
   "scripts": {
@@ -18,6 +21,7 @@
     "test": "bun test ./src"
   },
   "dependencies": {
+    "@ecommerce/core": "workspace:*",
     "@effect/sql-pg": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
