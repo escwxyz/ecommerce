@@ -1,0 +1,16 @@
+export {
+  commerceMigrationAudit,
+  commerceMigrationAuditTableName,
+  commerceOutbox,
+  commerceOutboxDeadLetter,
+  commerceOutboxDeadLetterTableName,
+  commerceOutboxTableName,
+  drizzleMigrationsTableName,
+  postgresFoundationSchema,
+  type CommerceMigrationAuditInsert,
+  type CommerceMigrationAuditRow,
+  type CommerceOutboxDeadLetterInsert,
+  type CommerceOutboxDeadLetterRow,
+  type CommerceOutboxInsert,
+  type CommerceOutboxRow,
+} from "./foundation";

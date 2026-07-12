@@ -1,10 +1,30 @@
+import { fileURLToPath } from "node:url";
+
 import { PgClient } from "@effect/sql-pg";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
+import * as PgDrizzleMigrator from "drizzle-orm/effect-postgres/migrator";
 import { Context, Effect, Layer, Redacted } from "effect";
 import type { Effect as EffectValue, Success } from "effect/Effect";
 import type { SqlError } from "effect/unstable/sql/SqlError";
 import { types as pgTypes } from "pg";
 import type { CustomTypesConfig } from "pg";
+
+export {
+  commerceMigrationAudit,
+  commerceMigrationAuditTableName,
+  commerceOutbox,
+  commerceOutboxDeadLetter,
+  commerceOutboxDeadLetterTableName,
+  commerceOutboxTableName,
+  drizzleMigrationsTableName,
+  postgresFoundationSchema,
+  type CommerceMigrationAuditInsert,
+  type CommerceMigrationAuditRow,
+  type CommerceOutboxDeadLetterInsert,
+  type CommerceOutboxDeadLetterRow,
+  type CommerceOutboxInsert,
+  type CommerceOutboxRow,
+} from "./schema/index";
 
 /**
  * PostgreSQL adapter package. It composes `@effect/sql-pg` with Drizzle's
@@ -21,6 +41,11 @@ export const drizzleRawTextTypeOids = [
 export type PostgresDrizzleConfig = Parameters<
   typeof PgDrizzle.makeWithDefaults
 >[0];
+
+/** Drizzle runtime migration options accepted by the PostgreSQL adapter. */
+export type PostgresMigrationRunnerOptions = Partial<
+  Parameters<typeof PgDrizzleMigrator.migrate>[1]
+>;
 
 /** Effect SQL PostgreSQL pool configuration accepted by the adapter Layer. */
 export type PostgresPoolConfig = PgClient.PgPoolConfig;
@@ -54,6 +79,25 @@ export interface PostgresDrizzleService {
 export const PostgresDrizzleService = Context.Service<PostgresDrizzleService>(
   "@ecommerce/db-postgres/PostgresDrizzleService"
 );
+
+/** Default checked-in migration folder for the clean PostgreSQL baseline. */
+export const defaultPostgresMigrationsFolder = fileURLToPath(
+  new URL("migrations", import.meta.url)
+);
+
+/** Default Drizzle migration table name for PostgreSQL stages. */
+export const defaultPostgresMigrationsTable = "__drizzle_migrations" as const;
+
+/** Resolves runtime migration options with the checked-in baseline folder. */
+export const createPostgresMigrationConfig = ({
+  migrationsFolder = defaultPostgresMigrationsFolder,
+  migrationsTable = defaultPostgresMigrationsTable,
+  migrationsSchema,
+}: PostgresMigrationRunnerOptions = {}) => ({
+  migrationsFolder,
+  migrationsSchema,
+  migrationsTable,
+});
 
 /**
  * Creates pg type parsers that leave date/time-ish PostgreSQL values as raw
@@ -122,4 +166,15 @@ export const createPostgresDatabaseLayer = ({
 }) =>
   createPostgresDrizzleLayer(drizzle).pipe(
     Layer.provide(createPostgresClientLayer(postgres))
+  );
+
+/** Runs the checked-in Drizzle PostgreSQL migrations through Effect. */
+export const runPostgresMigrations = (
+  options?: PostgresMigrationRunnerOptions
+) =>
+  PostgresDrizzleService.use((service) =>
+    PgDrizzleMigrator.migrate(
+      service.database,
+      createPostgresMigrationConfig(options)
+    )
   );
