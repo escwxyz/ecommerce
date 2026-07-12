@@ -16,7 +16,7 @@ Effect 4 is experimental work hosted in `Effect-TS/effect-smol`. Its packages an
 - Remove Hono, oRPC, Zod, and Kysely from the permanent backend architecture.
 - Keep domain and application packages independent of Cloudflare while delivering a first-class Cloudflare runtime.
 - Provide canonical admin and storefront `HttpApi` contracts and a dedicated storefront SDK with browser HTTP and server-only Service Binding transports.
-- Use raw Effect SQL with module repository contracts, adapter-owned SQL/migrations, module-local transactions, and transactional outbox writes.
+- Use Effect SQL PostgreSQL with Drizzle ORM, module repository contracts, adapter-owned schemas/migrations, module-local transactions, and transactional outbox writes.
 - Preserve Medusa-inspired modules, providers, workflows, native plugins, sandboxed plugins, and metadata-driven admin extensibility.
 - Keep Better Auth temporarily behind a typed Effect boundary rather than reimplementing security-sensitive functionality.
 - Use Durable Objects first behind portable actor/workflow contracts and evaluate Rivet later with parity evidence.
@@ -26,7 +26,7 @@ Effect 4 is experimental work hosted in `Effect-TS/effect-smol`. Its packages an
 
 - Supporting Node or Bun in the first production milestone.
 - Maintaining compatibility with local development data, Kysely migrations, oRPC endpoints, or existing generated client types.
-- Reimplementing authentication, cryptographic primitives, an ORM, or a general distributed transaction system.
+- Reimplementing authentication, cryptographic primitives, or a general distributed transaction system.
 - Selecting Rivet as a production runtime before a separate parity and operations evaluation.
 - Giving sandboxed plugins access to the host Effect environment, SQL clients, raw Cloudflare bindings, or secrets.
 - Forcing frontend application code to use Effect or replacing frontend-only libraries solely for architectural symmetry.
@@ -43,7 +43,7 @@ Alternative considered: retain the existing frameworks and use Effect only insid
 
 ### 2. Effect 4 packages are exact-pinned and upgraded deliberately
 
-All Effect 4 packages use exact, mutually compatible versions in the root catalog and lockfile. A canary covers Schema, tagged errors, service/Layer composition, `HttpApi`, Effect SQL D1, and Cloudflare Worker startup. Effect upgrades occur only in dedicated changes that run repository-wide type, test, schema/API snapshot, SQL adapter, and Cloudflare smoke checks. The reviewed upstream version or revision is recorded in project memory.
+All Effect 4 packages use exact, mutually compatible versions in the root catalog and lockfile. A canary covers Schema, tagged errors, service/Layer composition, `HttpApi`, Effect SQL PostgreSQL, Drizzle Effect integration, and Cloudflare Worker startup. Effect upgrades occur only in dedicated changes that run repository-wide type, test, schema/API snapshot, SQL adapter, and Cloudflare smoke checks. The reviewed upstream version or revision is recorded in project memory.
 
 Alternative considered: track `latest`, a caret range, or the `main` branch. Rejected because beta API movement would make unrelated changes nondeterministic.
 
@@ -79,13 +79,13 @@ The Service Binding adapter still crosses the HTTP contract through the binding'
 
 Alternative considered: a direct in-process server SDK. Rejected because it would create a privileged behavioral path that bypasses the public contract.
 
-### 7. Effect SQL replaces Kysely without replacing it with another ORM
+### 7. Effect SQL PostgreSQL and Drizzle replace Kysely
 
-Modules define Effect-native repository service contracts. Domain and application services depend on those repositories rather than a universal SQL client. Database adapter packages own SQL text, row schemas, migrations, transaction details, and repository Layers. D1/SQLite is first; PostgreSQL, libSQL, Bun SQLite, and Node SQLite can follow by satisfying the same repository contract suites.
+Modules define Effect-native repository service contracts. Domain and application services depend on those repositories rather than a universal database client. The first adapter uses `@effect/sql-pg` for scoped connectivity and transactions and Drizzle ORM 1.0 RC's `effect-postgres` driver for PostgreSQL schemas, typed queries, relations, codecs, and migrations. Adapter packages own Drizzle schemas, migrations, transaction details, and repository Layers. Other databases follow later through their own Effect SQL and Drizzle drivers while satisfying the same repository contract suites.
 
-Portable SQL may be shared when genuinely compatible, but dialect adapters may diverge. The design does not force a lowest-common-denominator query language.
+Schema and query definitions are dialect-specific. Shared domain and repository contracts, not shared SQL or Drizzle table types, provide portability. The design does not force a lowest-common-denominator database model.
 
-Alternative considered: wrap Effect SQL in a home-grown query builder or universal repository implementation. Rejected because it recreates ORM complexity and hides dialect behavior.
+Alternative considered: use raw Effect SQL alone. Rejected because every database already requires dialect-specific work, while Drizzle 1.0 RC provides an Effect-native PostgreSQL driver and useful schema, query, relation, codec, and migration tooling without leaking into domain contracts.
 
 ### 8. Transactions are local; workflows coordinate modules
 
@@ -107,13 +107,13 @@ Alternative considered: immediately replace Better Auth with custom auth. Reject
 
 Core, modules, schemas, repositories, API contracts, and workflows cannot import Cloudflare APIs. Cloudflare-specific bindings and implementations live in platform/runtime packages and application composition. Every runtime-neutral service has a deterministic test or in-memory Layer.
 
-Cloudflare provides the first production implementations for Workers, D1, Service Bindings, Queues, Durable Objects, Worker Loader, secrets, and telemetry exporters. Node and Bun are future adapter milestones.
+Cloudflare provides the first production implementations for Workers, PostgreSQL connectivity, Service Bindings, Queues, Durable Objects, Worker Loader, secrets, and telemetry exporters. The first PostgreSQL connection is provisioned through a Cloudflare platform adapter, expected to use Hyperdrive. Node and Bun are future runtime adapter milestones.
 
 Alternative considered: implement three runtimes concurrently. Rejected because it increases migration scope before the application model is stable.
 
 ### 11. Durable Objects are the first actor implementation
 
-The core defines narrow Effect services for keyed actors, serialized commands, timers, durable workflow execution, and state/event persistence. Cloudflare implements them first with Durable Objects and may use Effect SQL's Durable Object SQLite client where appropriate. D1 remains the authoritative relational system of record; actor-local storage is coordination, workflow, or cache state unless a later spec explicitly transfers ownership.
+The core defines narrow Effect services for keyed actors, serialized commands, timers, durable workflow execution, and state/event persistence. Cloudflare implements them first with Durable Objects and may use Effect SQL's Durable Object SQLite client where appropriate. PostgreSQL remains the authoritative relational system of record; actor-local storage is coordination, workflow, or cache state unless a later spec explicitly transfers ownership.
 
 Backpine Cloudflare packages and `durable-effect` are implementation references, not core contracts. Rivet is deferred to a parity evaluation covering consistency, timers, recovery, placement, latency, deployment, operations, and cost.
 
@@ -135,9 +135,9 @@ Cloudflare supplies the first exporter integration. Deterministic test Layers ca
 
 ### 14. Migration uses verified vertical slices
 
-The migration first establishes dependency governance, canaries, conventions, Effect SQL D1, Effect HTTP, the SDK transports, and the auth adapter. The store module is the tracer slice. Modules then migrate in dependency order before transactional workflows, actors, and plugins.
+The migration first establishes dependency governance, canaries, conventions, Effect SQL PostgreSQL plus Drizzle, Effect HTTP, the SDK transports, and the auth adapter. The store module is the tracer slice. Modules then migrate in dependency order before transactional workflows, actors, and plugins.
 
-Each slice must pass deterministic domain tests, repository contracts against in-memory and local D1 implementations, schema tests, Effect HTTP tests, workflow recovery tests where relevant, Cloudflare integration checks, and import boundaries. A slice completes only when its legacy route, schema, repository, migration, and dependencies are deleted.
+Each slice must pass deterministic domain tests, repository contracts against in-memory and PostgreSQL implementations, schema tests, Effect HTTP tests, workflow recovery tests where relevant, Cloudflare integration checks, and import boundaries. A slice completes only when its legacy route, schema, repository, migration, and dependencies are deleted.
 
 Temporary bridges must have an owner, a removal task, and no use by newly migrated code. The workspace remains buildable between slices.
 
@@ -150,7 +150,8 @@ Temporary bridges must have an owner, a removal task, and no use by newly migrat
 - [Effect Layers become an abstract service locator] → Create services only at real domain, platform, resource, request, and test boundaries; keep pure functions pure.
 - [Better Auth integration blocks Effect HTTP or Effect SQL removal] → Isolate it behind an adapter and allow a temporary dedicated storage/handler seam with explicit deletion research, without leaking into modules.
 - [Service Binding and public HTTP transports diverge] → Drive both from one `HttpApi` contract and run shared SDK conformance tests.
-- [Durable Object state becomes a second system of record] → Document ownership per actor and keep D1 authoritative by default.
+- [Cloudflare-to-PostgreSQL connectivity adds latency or pool pressure] → Use a platform-owned Hyperdrive/connection Layer, bounded pools, tracing, and Cloudflare integration tests.
+- [Durable Object state becomes a second system of record] → Document ownership per actor and keep PostgreSQL authoritative by default.
 - [Workflow replay executes non-idempotent provider actions twice] → Require idempotency keys, persisted step outcomes, and provider-specific replay tests.
 - [Sandboxed plugins bypass capability policy] → Decode every message, enforce grants host-side, apply deadlines/quotas, and deny raw resource access.
 - [Cloudflare-first code leaks into core] → Maintain import-boundary tests and require test Layers for every portable contract.
@@ -161,7 +162,7 @@ Temporary bridges must have an owner, a removal task, and no use by newly migrat
 1. Accept this superseding architecture change and pause new dependencies on legacy backend abstractions.
 2. Exact-pin Effect 4 packages and add the architecture canary.
 3. Establish shared Schema, error, service/Layer, configuration, telemetry, repository, transaction, workflow, and testing conventions.
-4. Build the Effect SQL D1 client Layer, migration runner, clean schema baseline, and repository test harness.
+4. Build the Effect SQL PostgreSQL client Layer, Drizzle Effect database Layer, migration runner, clean schema baseline, and repository test harness.
 5. Build the Effect HTTP Cloudflare entrypoint, canonical APIs, OpenAPI generation, and storefront SDK HTTP/Service Binding transports.
 6. Place Better Auth behind the Effect auth boundary without expanding its footprint.
 7. Migrate `store` end-to-end and delete its Zod, Kysely, and oRPC implementation.
@@ -171,13 +172,14 @@ Temporary bridges must have an owner, a removal task, and no use by newly migrat
 11. Migrate native plugins and sandbox bridge contracts.
 12. Delete remaining Hono, oRPC, Zod, and Kysely backend dependencies; enable repository-wide forbidden-import gates; refresh architecture documentation and project memory.
 
-Rollback is source-level because there is no production data. Each slice remains independently revertible until the clean Effect SQL baseline becomes the only development schema. After that point, rollback resets local D1 rather than translating data back to Kysely migrations.
+Rollback is source-level because there is no production data. Each slice remains independently revertible until the clean PostgreSQL Drizzle baseline becomes the only development schema. After that point, rollback resets the development PostgreSQL database rather than translating data back to Kysely migrations.
 
 ## Open Questions
 
 - Which exact Effect 4 beta release/revision and package set passes the first Cloudflare canary?
 - Which Cloudflare Effect HTTP adapter approach is sufficiently maintained: upstream primitives, a minimal local adapter, or selected Backpine code?
+- Which PostgreSQL deployment and Hyperdrive configuration will be the first Cloudflare integration target?
 - Can Better Auth operate behind Effect HTTP and the new storage boundary without retaining Kysely, or does auth require a temporary isolated persistence seam?
 - What generated-client surface from Effect `HttpApi` best supports the browser SDK without importing server runtime code?
-- Which actor workloads beyond the existing cart cache justify Durable Object ownership, and what data remains exclusively in D1?
+- Which actor workloads beyond the existing cart cache justify Durable Object ownership, and what data remains exclusively in PostgreSQL?
 - Which telemetry exporter is operationally appropriate for the first Cloudflare stage?

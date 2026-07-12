@@ -29,11 +29,16 @@
       "react-dom": "^19.2.6",
       "@types/react": "^19.2.15",
       "@types/react-dom": "^19.2.3",
-      "@effect/platform-bun": ">=4.0.0-beta.84 || >=4.0.0",
-      "@effect/platform-node": ">=4.0.0-beta.84 || >=4.0.0",
-      "effect": ">=4.0.0-beta.84 || >=4.0.0",
+      "@effect/platform-bun": "4.0.0-beta.93",
+      "@effect/platform-node": "4.0.0-beta.93",
+      "@effect/sql-pg": "4.0.0-beta.93",
+      "@types/pg": "8.20.0",
+      "effect": "4.0.0-beta.93",
+      "drizzle-kit": "1.0.0-rc.4",
+      "drizzle-orm": "1.0.0-rc.4",
       "kysely": "0.28.17",
-      "kysely-d1": "^0.4.0"
+      "kysely-d1": "^0.4.0",
+      "pg": "8.22.0"
     }
   },
   "type": "module",
@@ -51,7 +56,8 @@
     "test": "turbo test",
     "test:integration": "turbo -F @ecommerce/infra test:integration",
     "check": "ultracite check",
-    "fix": "ultracite fix"
+    "fix": "ultracite fix",
+    "prepare": "effect-tsgo patch"
   },
   "dependencies": {
     "@ecommerce/env": "workspace:*",
@@ -61,7 +67,9 @@
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",
     "@ecommerce/config": "workspace:*",
+    "@effect/tsgo": "0.16.0",
     "@types/node": "catalog:",
+    "@typescript/native-preview": "latest",
     "bun-types": "catalog:",
     "oxfmt": "latest",
     "oxlint": "latest",
