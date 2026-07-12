@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  cartSchema,
-  commerceMigrations,
-  type CommerceDatabaseSchemaKey,
-} from "./index";
+import { cartSchema, type CommerceDatabaseSchemaKey } from "./index";
+import { commerceMigrations } from "./legacy";
 
 describe("cart database assembly", () => {
   it("contributes cart tables to the shared commerce database schema", () => {

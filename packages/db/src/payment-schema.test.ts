@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  commerceMigrations,
-  type CommerceDatabaseSchemaKey,
-  paymentSchema,
-} from "./index";
+import { type CommerceDatabaseSchemaKey, paymentSchema } from "./index";
+import { commerceMigrations } from "./legacy";
 
 describe("payment schema assembly", () => {
   it("contributes payment-owned tables and migration to the shared schema", () => {

@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  commerceMigrations,
-  inventorySchema,
-  type CommerceDatabaseSchemaKey,
-} from "./index";
+import { inventorySchema, type CommerceDatabaseSchemaKey } from "./index";
+import { commerceMigrations } from "./legacy";
 
 describe("inventory database assembly", () => {
   it("contributes inventory tables to the shared commerce database schema", () => {

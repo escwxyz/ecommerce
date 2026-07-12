@@ -45,6 +45,10 @@ state without importing adapter execution details.
 Development rollback/reset command behavior is implemented by concrete adapters.
 `@ecommerce/db-postgres` exposes its development reset and rollback commands
 without adding destructive behavior to this runtime-neutral shared contract.
+During migration, any remaining Kysely-specific helpers must stay behind
+explicit legacy entrypoints such as `@ecommerce/db/legacy`; migrated code must
+depend only on runtime-neutral core contracts or adapter-local Drizzle/Effect
+Layers.
 
 ## Transactional outbox
 

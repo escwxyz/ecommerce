@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  commerceMigrations,
-  pricingSchema,
-  type CommerceDatabaseSchemaKey,
-} from "./index";
+import { pricingSchema, type CommerceDatabaseSchemaKey } from "./index";
+import { commerceMigrations } from "./legacy";
 
 describe("pricing database assembly", () => {
   it("contributes pricing-owned tables and migration to the shared schema", () => {

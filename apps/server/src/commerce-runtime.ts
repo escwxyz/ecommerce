@@ -16,7 +16,6 @@ import {
   createD1CustomerRepository,
 } from "@ecommerce/customer";
 import type { CustomerD1Database } from "@ecommerce/customer";
-import type { CommerceKyselyDatabase } from "@ecommerce/db";
 import {
   createFakeFulfillmentProvider,
   createFulfillmentProviderRegistry,
@@ -79,6 +78,10 @@ type NotificationEventRuntimeHooks = NonNullable<
   CreateNotificationEventServiceOptions["runtime"]
 >;
 
+interface ServerCommerceDatabase {
+  readonly destroy?: () => Promise<void>;
+}
+
 export interface ServerCommerceRuntimeOptions {
   readonly cartCoordinator?: StatefulCoordinator;
   readonly createCartRepositoryForContext?: (
@@ -86,7 +89,7 @@ export interface ServerCommerceRuntimeOptions {
   ) => CartRepository;
   readonly cartRepository?: CartRepository;
   readonly clock?: ClockServiceShape;
-  readonly db: CommerceKyselyDatabase;
+  readonly db: ServerCommerceDatabase;
   readonly fulfillmentProviderRegistry?: FulfillmentProviderRegistry;
   readonly idGenerator?: IdGeneratorServiceShape;
   readonly inventoryCoordinator?: StatefulCoordinator;
@@ -95,7 +98,7 @@ export interface ServerCommerceRuntimeOptions {
   readonly paymentProviderRegistry?: PaymentProviderRegistry;
 }
 
-const narrowDatabase = <Database>(db: CommerceKyselyDatabase): Database =>
+const narrowDatabase = <Database>(db: ServerCommerceDatabase): Database =>
   db as unknown as Database;
 
 /**

@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  commerceMigrations,
-  type CommerceDatabaseSchemaKey,
-  customerSchema,
-} from "./index";
+import { type CommerceDatabaseSchemaKey, customerSchema } from "./index";
+import { commerceMigrations } from "./legacy";
 
 describe("customer schema assembly", () => {
   it("contributes customer-owned tables and migration to the shared schema", () => {

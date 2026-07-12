@@ -3,19 +3,23 @@
 It owns:
 
 - adapter-agnostic database types
-- Kysely database assembly and adapter descriptors
-- shared migration contribution exports
-- dialect helper contracts for timestamp, introspection, binary, and JSON behavior
+- schema assembly for commerce-owned relational tables
 - boundary tests that prevent runtime-specific imports
 
-It does not own:
+It also exposes an explicit legacy subpath:
 
+- `@ecommerce/db/legacy` for Kysely runtime aliases, migration providers, and
+  dialect helpers that still support unmigrated D1 paths during the transition
+
+The package root does not own:
+
+- Kysely runtime aliases or migration/runtime helpers
 - Cloudflare env reads
 - D1 client construction
 - D1 migration SQL artifacts
 - concrete D1 Kysely dialect construction
 
-Those D1-specific concerns live in `@ecommerce/db-d1`.
+Those D1-specific runtime concerns live in `@ecommerce/db-d1`.
 
 Compatibility note:
 

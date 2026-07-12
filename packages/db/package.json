@@ -5,6 +5,9 @@
     ".": {
       "default": "./src/index.ts"
     },
+    "./legacy": {
+      "default": "./src/legacy.ts"
+    },
     "./schema/cart": {
       "default": "./src/schema/cart.ts"
     },

@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  commerceMigrations,
-  type CommerceDatabaseSchemaKey,
-  promotionSchema,
-} from ".";
+import { type CommerceDatabaseSchemaKey, promotionSchema } from ".";
+import { commerceMigrations } from "./legacy";
 
 describe("promotion schema assembly", () => {
   it("contributes promotion-owned tables to the shared database contract", () => {

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
 import {
-  commerceMigrations,
   type CommerceDatabaseSchemaKey,
   notificationEventSchema,
 } from "./index";
+import { commerceMigrations } from "./legacy";
 
 describe("notification event schema assembly", () => {
   it("contributes event and notification-owned tables to the shared schema", () => {

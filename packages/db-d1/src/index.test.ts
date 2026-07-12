@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { D1Database } from "@cloudflare/workers-types";
-import { columnExists, indexExists, tableExists } from "@ecommerce/db";
+import { columnExists, indexExists, tableExists } from "@ecommerce/db/legacy";
 
 import { createD1Database, migrateD1ToLatest } from "./index";
 

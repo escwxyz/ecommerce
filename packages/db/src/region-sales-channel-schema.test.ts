@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
 import {
-  commerceMigrations,
   type CommerceDatabaseSchemaKey,
   regionSalesChannelSchema,
 } from "./index";
+import { commerceMigrations } from "./legacy";
 
 describe("region sales-channel database assembly", () => {
   it("contributes module-owned tables and migration to the shared schema", () => {

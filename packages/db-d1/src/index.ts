@@ -1,6 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types";
-import { defineKyselyDatabaseRuntime } from "@ecommerce/db";
 import type { CommerceDatabase } from "@ecommerce/db";
+import { defineKyselyDatabaseRuntime } from "@ecommerce/db/legacy";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
 

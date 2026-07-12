@@ -1,37 +1,18 @@
-import type { Kysely } from "kysely";
-
-import { authMigration } from "./schema/auth";
 import type { AuthDatabase } from "./schema/auth";
-import { cartMigration } from "./schema/cart";
 import type { CartDatabase } from "./schema/cart";
-import { customerMigration } from "./schema/customer";
 import type { CustomerDatabase } from "./schema/customer";
-import { fulfillmentMigration } from "./schema/fulfillment";
 import type { FulfillmentDatabase } from "./schema/fulfillment";
-import { inventoryMigration } from "./schema/inventory";
 import type { InventoryDatabase } from "./schema/inventory";
-import { notificationEventMigration } from "./schema/notification-event";
 import type { NotificationEventDatabase } from "./schema/notification-event";
-import { orderMigration } from "./schema/order";
 import type { OrderDatabase } from "./schema/order";
-import { paymentMigration } from "./schema/payment";
 import type { PaymentDatabase } from "./schema/payment";
-import { pricingMigration } from "./schema/pricing";
 import type { PricingDatabase } from "./schema/pricing";
-import { productMigration } from "./schema/product";
 import type { ProductDatabase } from "./schema/product";
-import { promotionMigration } from "./schema/promotion";
 import type { PromotionDatabase } from "./schema/promotion";
-import { regionSalesChannelMigration } from "./schema/region-sales-channel";
 import type { RegionSalesChannelDatabase } from "./schema/region-sales-channel";
-import { storeMigration } from "./schema/store";
 import type { StoreDatabase } from "./schema/store";
-import { taxMigration } from "./schema/tax";
 import type { TaxDatabase } from "./schema/tax";
 
-export * from "./adapters";
-export * from "./dialect-helpers";
-export * from "./migrations";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as authSchema from "./schema/auth";
 // oxlint-disable-next-line oxc/no-barrel-file
@@ -62,9 +43,9 @@ export * as storeSchema from "./schema/store";
 export * as taxSchema from "./schema/tax";
 
 /**
- * Shared Kysely database assembly for commerce-owned primary relational data.
- * Modules contribute table interfaces to this type; runtime packages provide
- * concrete dialect instances at the adapter edge.
+ * Shared commerce schema assembly for primary relational data.
+ * Runtime-neutral packages consume this shape without inheriting any concrete
+ * query-builder runtime types from the package root.
  */
 // oxlint-disable-next-line typescript/no-empty-interface typescript/no-empty-object-type
 export interface CommerceDatabase
@@ -84,23 +65,5 @@ export interface CommerceDatabase
     RegionSalesChannelDatabase,
     TaxDatabase {}
 
-export type CommerceKyselyDatabase = Kysely<CommerceDatabase>;
 export type CommerceDatabaseSchema = CommerceDatabase;
 export type CommerceDatabaseSchemaKey = keyof CommerceDatabaseSchema;
-
-export const commerceMigrations = {
-  "000_auth": authMigration,
-  "001_store": storeMigration,
-  "002_product": productMigration,
-  "003_region_sales_channel": regionSalesChannelMigration,
-  "004_pricing": pricingMigration,
-  "005_promotion": promotionMigration,
-  "006_customer": customerMigration,
-  "007_inventory": inventoryMigration,
-  "008_tax": taxMigration,
-  "009_payment": paymentMigration,
-  "010_fulfillment": fulfillmentMigration,
-  "011_notification_event": notificationEventMigration,
-  "012_cart": cartMigration,
-  "013_order": orderMigration,
-} as const;

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 
-import type { CommerceKyselyDatabase } from "@ecommerce/db";
 import { createFulfillmentProviderRegistry } from "@ecommerce/fulfillment";
 
 import {
@@ -8,7 +7,7 @@ import {
   createServerCommerceRuntime,
 } from "./commerce-runtime";
 
-const unusedDatabase = {} as CommerceKyselyDatabase;
+const unusedDatabase = {};
 
 describe("server commerce runtime", () => {
   it("registers persistent module routes but omits checkout without providers", () => {

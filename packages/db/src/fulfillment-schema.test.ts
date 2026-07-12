@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  commerceMigrations,
-  fulfillmentSchema,
-  type CommerceDatabaseSchemaKey,
-} from "./index";
+import { fulfillmentSchema, type CommerceDatabaseSchemaKey } from "./index";
+import { commerceMigrations } from "./legacy";
 
 describe("fulfillment schema assembly", () => {
   it("contributes fulfillment-owned tables and migration to the shared schema", () => {

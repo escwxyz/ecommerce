@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  commerceMigrations,
-  type CommerceDatabaseSchemaKey,
-  taxSchema,
-} from ".";
+import { type CommerceDatabaseSchemaKey, taxSchema } from ".";
+import { commerceMigrations } from "./legacy";
 
 describe("tax schema assembly", () => {
   it("contributes tax-owned tables to the shared database contract", () => {

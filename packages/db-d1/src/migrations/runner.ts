@@ -1,8 +1,8 @@
+import type { CommerceDatabase } from "@ecommerce/db";
 import {
   StaticCommerceMigrationProvider,
   commerceMigrations,
-} from "@ecommerce/db";
-import type { CommerceDatabase } from "@ecommerce/db";
+} from "@ecommerce/db/legacy";
 import { Migrator } from "kysely";
 import type { Kysely } from "kysely";
 
