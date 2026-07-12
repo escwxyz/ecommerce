@@ -54,5 +54,6 @@ transaction visible in the Effect requirements.
 
 `OutboxClaimerService` is post-commit delivery infrastructure. It claims,
 marks delivered, and marks failed records without access to domain repository
-services or transaction handles. Concrete concurrent claiming semantics belong
-to the PostgreSQL outbox implementation in task 3.6.
+services or transaction handles. Concrete adapters own their claim strategy; the
+PostgreSQL adapter uses row-level `FOR UPDATE SKIP LOCKED` claiming and stores
+terminal delivery failures in its dead-letter table.

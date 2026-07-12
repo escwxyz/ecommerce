@@ -81,9 +81,23 @@ result unless the suite passes an explicit database URL or `POSTGRES_URL` is
 present. This keeps ordinary unit tests credential-free while letting local and
 future integration jobs run the same contract cases against PostgreSQL.
 
+## Transactional outbox rule
+
+`@ecommerce/db-postgres/outbox` exposes `createPostgresOutboxLayer`, which
+provides the core `OutboxWriterService` and `OutboxClaimerService` contracts.
+The writer inserts `commerce_outbox` records using the current
+`CurrentTransactionService` metadata, so module mutations can commit domain
+state and outbox records in the same local transaction.
+
+The claimer is post-commit infrastructure. It reserves pending rows by topic
+with PostgreSQL `FOR UPDATE SKIP LOCKED`, stamps a claim id, increments
+attempts, and returns runtime-neutral `OutboxRecord` values for delivery.
+Delivered records transition to `delivered`; terminal failures transition to
+`failed` and insert a `commerce_outbox_dead_letter` record.
+
 ## Deferred work
 
-- Task 3.6 owns concrete transactional outbox persistence and concurrent
-  claiming.
+- Task 3.8 owns live PostgreSQL verification for migrations, transaction
+  behavior, row decoding, and concurrent outbox claims.
 - Task 3.9 owns the first real Cloudflare/Hyperdrive PostgreSQL connection
   smoke test.

@@ -5,8 +5,8 @@ import { Effect, Layer, Redacted } from "effect";
 import type {
   PostgresDrizzleConfig,
   PostgresDrizzleService,
-  PostgresPoolConfig,
-} from "./index";
+} from "./postgres-drizzle";
+import type { PostgresPoolConfig } from "./index";
 import {
   createPostgresDatabaseLayer,
   createPostgresPoolConfig,

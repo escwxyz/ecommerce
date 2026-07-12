@@ -57,6 +57,9 @@ export const commerceOutbox = pgTable(
       .notNull()
       .defaultNow(),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    eventEmittedAt: timestamp("event_emitted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     eventId: text("event_id").notNull(),
     eventName: text("event_name").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),

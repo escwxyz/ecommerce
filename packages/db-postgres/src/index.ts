@@ -1,14 +1,16 @@
 import { PgClient } from "@effect/sql-pg";
-import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as PgDrizzleMigrator from "drizzle-orm/effect-postgres/migrator";
-import { Context, Effect, Layer, Redacted } from "effect";
-import type { Effect as EffectValue, Success } from "effect/Effect";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import { Layer, Redacted } from "effect";
 import { types as pgTypes } from "pg";
 import type { CustomTypesConfig } from "pg";
 
 import { createPostgresMigrationConfig } from "./migration-config";
 import type { PostgresMigrationRunnerOptions } from "./migration-config";
+import {
+  createPostgresDrizzleLayer,
+  PostgresDrizzleService,
+} from "./postgres-drizzle";
+import type { PostgresDrizzleConfig } from "./postgres-drizzle";
 
 export { postgresAdapterTarget } from "./adapter-constants";
 
@@ -58,6 +60,25 @@ export {
   type PostgresMigrationStatusResult,
 } from "./migration-commands";
 
+export {
+  buildPostgresOutboxInsert,
+  createPostgresOutboxLayer,
+  PostgresOutboxLayer,
+  postgresOutboxClaimLockClause,
+  toEnqueuedOutboxRecord,
+  toStoredOutboxRecord,
+  type PostgresOutboxLayerOptions,
+} from "./outbox";
+
+export {
+  createPostgresDrizzleLayer,
+  PostgresDrizzleService,
+  type PostgresDrizzleConfig,
+  type PostgresDrizzleDatabase,
+  type PostgresDrizzleService as PostgresDrizzleServiceShape,
+  type PostgresDrizzleTransaction,
+} from "./postgres-drizzle";
+
 /**
  * PostgreSQL adapter package. It composes `@effect/sql-pg` with Drizzle's
  * Effect PostgreSQL driver while keeping concrete database types outside core.
@@ -69,43 +90,11 @@ export const drizzleRawTextTypeOids = [
   1184, 1114, 1082, 1186, 1231, 1115, 1185, 1187, 1182,
 ] as const;
 
-/** Drizzle Effect PostgreSQL configuration accepted by the adapter Layer. */
-export type PostgresDrizzleConfig = Parameters<
-  typeof PgDrizzle.makeWithDefaults
->[0];
-
 /** Effect SQL PostgreSQL pool configuration accepted by the adapter Layer. */
 export type PostgresPoolConfig = PgClient.PgPoolConfig;
 
 /** Effect PostgreSQL client service type exposed by the adapter package. */
 export type EffectPostgresClient = PgClient.PgClient;
-
-/** Drizzle Effect PostgreSQL database type exposed to repository adapters. */
-export type PostgresDrizzleDatabase = Awaited<
-  Success<ReturnType<typeof PgDrizzle.makeWithDefaults>>
->;
-
-/** Drizzle Effect PostgreSQL transaction type exposed to repository adapters. */
-export type PostgresDrizzleTransaction = Parameters<
-  PostgresDrizzleDatabase["transaction"]
->[0] extends (
-  transaction: infer Transaction
-) => EffectValue<unknown, unknown, unknown>
-  ? Transaction
-  : never;
-
-/** Service provided to PostgreSQL repository adapters. */
-export interface PostgresDrizzleService {
-  readonly database: PostgresDrizzleDatabase;
-  readonly withTransaction: <A, E, R>(
-    use: (transaction: PostgresDrizzleTransaction) => EffectValue<A, E, R>
-  ) => EffectValue<A, E | SqlError, R>;
-}
-
-/** Effect tag for the PostgreSQL Drizzle database service. */
-export const PostgresDrizzleService = Context.Service<PostgresDrizzleService>(
-  "@ecommerce/db-postgres/PostgresDrizzleService"
-);
 
 /**
  * Creates pg type parsers that leave date/time-ish PostgreSQL values as raw
@@ -148,21 +137,6 @@ export const createPostgresPoolConfig = ({
 /** Creates the scoped Effect SQL PostgreSQL client Layer. */
 export const createPostgresClientLayer = (config: PostgresPoolConfig) =>
   PgClient.layer(withDrizzlePgTypes(config));
-
-const createPostgresDrizzleService = (
-  database: PostgresDrizzleDatabase
-): PostgresDrizzleService =>
-  PostgresDrizzleService.of({
-    database,
-    withTransaction: (use) => database.transaction(use),
-  });
-
-/** Creates the Drizzle database Layer backed by an Effect SQL PostgreSQL client. */
-export const createPostgresDrizzleLayer = (config?: PostgresDrizzleConfig) =>
-  Layer.effect(
-    PostgresDrizzleService,
-    Effect.map(PgDrizzle.makeWithDefaults(config), createPostgresDrizzleService)
-  );
 
 /** Creates the full PostgreSQL adapter Layer used by runtime composition roots. */
 export const createPostgresDatabaseLayer = ({

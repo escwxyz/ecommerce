@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS "commerce_outbox" (
   "claim_id" text,
   "claimed_at" timestamp with time zone,
   "delivered_at" timestamp with time zone,
+  "event_emitted_at" timestamp with time zone NOT NULL DEFAULT now(),
   "last_error" text,
   "transaction_id" text NOT NULL,
   "correlation_id" text,
