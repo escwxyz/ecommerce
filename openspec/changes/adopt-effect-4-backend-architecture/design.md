@@ -43,7 +43,7 @@ Alternative considered: retain the existing frameworks and use Effect only insid
 
 ### 2. Effect 4 packages are exact-pinned and upgraded deliberately
 
-All Effect 4 packages use exact, mutually compatible versions in the root catalog and lockfile. A canary covers Schema, tagged errors, service/Layer composition, `HttpApi`, Effect SQL PostgreSQL, Drizzle Effect integration, and Cloudflare Worker startup. Effect upgrades occur only in dedicated changes that run repository-wide type, test, schema/API snapshot, SQL adapter, and Cloudflare smoke checks. The reviewed upstream version or revision is recorded in project memory.
+All Effect 4 packages use exact, mutually compatible versions in the root catalog and lockfile. The currently reviewed application cohort is `4.0.0-beta.93`. A canary covers Schema, tagged errors, service/Layer composition, `HttpApi`, Effect SQL PostgreSQL, Drizzle Effect integration, and Cloudflare Worker startup. Effect upgrades occur only in dedicated changes that run repository-wide type, test, schema/API snapshot, SQL adapter, and Cloudflare smoke checks. The reviewed upstream version or revision is recorded in project memory.
 
 Alternative considered: track `latest`, a caret range, or the `main` branch. Rejected because beta API movement would make unrelated changes nondeterministic.
 
@@ -176,7 +176,6 @@ Rollback is source-level because there is no production data. Each slice remains
 
 ## Open Questions
 
-- Which exact Effect 4 beta release/revision and package set passes the first Cloudflare canary?
 - Which Cloudflare Effect HTTP adapter approach is sufficiently maintained: upstream primitives, a minimal local adapter, or selected Backpine code?
 - Which PostgreSQL deployment and Hyperdrive configuration will be the first Cloudflare integration target?
 - Can Better Auth operate behind Effect HTTP and the new storage boundary without retaining Kysely, or does auth require a temporary isolated persistence seam?
