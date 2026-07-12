@@ -41,6 +41,9 @@
     "./testing": {
       "default": "./src/testing/index.ts"
     },
+    "./telemetry": {
+      "default": "./src/telemetry/index.ts"
+    },
     "./workflows": {
       "default": "./src/workflows/index.ts"
     }

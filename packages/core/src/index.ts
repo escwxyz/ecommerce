@@ -164,6 +164,23 @@ export {
   type WorkflowRuntimeService as WorkflowRuntimeServiceShape,
 } from "./services/index";
 export {
+  AuditPersistenceUnavailable,
+  type CommerceOperationName,
+  type CorrelationContext,
+  DurableAudit,
+  type DurableAuditEvent,
+  type OperationOutcome,
+  type OperationTelemetryOptions,
+  type TelemetryAttributes,
+  type TelemetryAttributeValue,
+  commerceOperationNames,
+  isCommerceOperationName,
+  operationOutcomeFromCause,
+  recordDurableAudit,
+  sanitizeTelemetryAttributes,
+  withOperationTelemetry,
+} from "./telemetry/index";
+export {
   defineStatefulCoordinationRequest,
   type StatefulCoordinationMetadata,
   type StatefulCoordinationRequest,
