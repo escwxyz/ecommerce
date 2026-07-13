@@ -229,6 +229,7 @@ Most formatting and common issues are automatically fixed by Oxlint + Oxfmt. Run
 - In `apps/server`, use `bun run build` for the package build, `bun run check-types` for the package typecheck, `bun run compile` to emit the standalone server binary, and `bun run test` for the credential-free golden checkout smoke test and server test suite.
 - In `packages/infra`, use `bun run dev`, `bun run deploy`, `bun run destroy`, `bun run test`, `bun run test:integration`, and `bun run check-types` for the Alchemy stack package.
 - In `packages/db-d1`, use `bun run db:push` to apply local D1 migrations, `bun run db:generate` to validate migration definitions, `bun run db:seed` to load local seed data, `bun run check-types` for the package typecheck, and `bun run test` for adapter checks.
+- In `packages/db-postgres`, use `bun run db:status`, `bun run db:migrate`, `bun run db:rollback-development`, and `bun run db:reset-development` for PostgreSQL migration workflows, plus `bun run test`, `bun run test:live`, and `bun run check-types` for package verification.
 - In `packages/auth`, use `bun run check-types` and `bun run test` for the auth package, and `bun run auth:gen` after Better Auth config changes to regenerate the D1 migration in `packages/db-d1/src/migrations/sql/0000_auth.sql`.
 - In `packages/payment-provider`, use `bun run test` and `bun run check-types` for the provider foundation package.
 - In `packages/platform-cloudflare`, use `bun run test` and `bun run check-types` for the Cloudflare platform bridge package.

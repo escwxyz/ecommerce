@@ -36,7 +36,7 @@
 ## 4. Effect HTTP and storefront SDK foundation
 
 - [x] 4.1 Define canonical admin and storefront `HttpApi` roots and module group contribution contracts
-- [ ] 4.2 Define shared pagination, request identity, success, and serialized error schemas
+- [x] 4.2 Define shared pagination, request identity, success, and serialized error schemas
 - [ ] 4.3 Implement Effect HTTP middleware for request context, auth provision, permissions, telemetry, deadlines, and sanitized defects
 - [ ] 4.4 Implement deterministic API assembly and duplicate method/path detection
 - [ ] 4.5 Implement the Cloudflare Worker Effect HTTP entrypoint and runtime Layer composition
