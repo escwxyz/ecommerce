@@ -47,3 +47,32 @@ Endpoint-specific modules still own their domain and API payload schemas. The
 shared schemas only define transport envelope, pagination, request identity, and
 sanitized error conventions that every admin/storefront `HttpApi` group can
 reuse.
+
+## Shared middleware foundation
+
+Task 4.3 adds the request middleware foundation in `@ecommerce/api`:
+
+- `CurrentEffectHttpRequestContext` carries request identity, method, path,
+  start time, and deadline as a request-scoped Effect service.
+- `EffectHttpRequestIdGenerator` is the deterministic ID-generation seam used
+  when incoming headers do not provide `x-request-id`.
+- `EffectHttpAuthService` and `EffectHttpPermissionService` are adapter seams
+  for authentication and authorization. They intentionally depend on existing
+  auth/session types only; task 5 defines the permanent auth schemas and Better
+  Auth adapter.
+- `withEffectHttpRequestContext`, `withEffectHttpAuth`,
+  `withEffectHttpPermission`, `withEffectHttpDeadline`, and
+  `withEffectHttpTelemetry` are composable wrappers for endpoint handler
+  Effects.
+- `EffectHttpRequestContextMiddleware`, `EffectHttpAuthMiddleware`, and
+  `EffectHttpExecutionMiddleware` are `HttpApiMiddleware.Service` contracts
+  with corresponding Layers for Effect HTTP assembly.
+- `serializeEffectHttpMiddlewareFailure` and
+  `serializeSanitizedEffectHttpCause` convert expected middleware failures,
+  defects, and interruptions into the shared sanitized error envelope.
+
+Request middleware must provide fresh per-request services. It must not store
+identity, auth state, permissions, deadlines, or trace data in module singletons
+or mutable globals. Defect serialization stays deliberately generic; full
+Effect Causes remain internal telemetry data and are not exposed through HTTP or
+SDK errors.
