@@ -31,7 +31,7 @@ const createGroup = ({
   readonly identifier: string;
   readonly method?: "get" | "post";
   readonly path: `/${string}`;
-}): HttpApiGroup.Any => {
+}): HttpApiGroup.AnyWithProps => {
   const endpoint =
     method === "post"
       ? HttpApiEndpoint.post(`${identifier}Post`, path, {

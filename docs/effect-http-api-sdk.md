@@ -98,3 +98,28 @@ Task 4.4 adds deterministic Effect `HttpApi` assembly in `@ecommerce/api`:
 Module and plugin registration order must not affect the assembled contract.
 If two packages need the same path, they must use different HTTP methods or
 resolve the route ownership before Worker/OpenAPI generation.
+
+## Cloudflare Worker runtime composition
+
+Task 4.5 adds the native Alchemy v2 and Effect HTTP Worker foundation in
+`apps/server/src/effect-http-worker.ts`. Alchemy owns the Worker lifecycle and
+accepts the `HttpEffect` produced by `HttpRouter.toHttpEffect`; request work is
+therefore executed by the Worker runtime rather than during Alchemy's init
+phase.
+
+`createEffectHttpWorkerApplicationLayer` assembles the admin and storefront
+contracts independently, merges their `HttpApiBuilder.group` handler Layers,
+provides isolate-scoped runtime Layers once, and registers both APIs on one
+Effect router. Missing handler Layers fail while the router Layer is built, so
+an incomplete contract cannot silently deploy as a partial API.
+
+The runtime deliberately provides a file-response stub. Canonical commerce
+HTTP endpoints are JSON or stream based; Cloudflare asset/file support must be
+introduced later through an explicit platform adapter rather than importing a
+Node filesystem into the Worker.
+
+The existing Hono Worker remains the deployed entrypoint during vertical
+migration. The Effect Worker is the canonical replacement foundation, but its
+contribution list stays empty until migrated module groups are ready. This keeps
+legacy behavior available without creating a second reusable handler or schema
+ownership boundary in `apps/server`.

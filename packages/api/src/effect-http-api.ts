@@ -5,10 +5,19 @@ import { HttpApi, OpenApi } from "effect/unstable/httpapi";
 export type EffectHttpApiSurface = "admin" | "storefront";
 export type EffectHttpApiContributionOwner = "builtin" | "module" | "plugin";
 
+/**
+ * Handler Layer accepted by dynamic API assembly. `Layer.empty` remains useful
+ * while declaring contract-only contributions, while implemented groups expose
+ * the runtime group service registered by `HttpApiBuilder.group`.
+ */
+export type EffectHttpApiHandlerLayer =
+  | Layer<HttpApiGroup.ApiGroup<string, string>, never, unknown>
+  | Layer<never, never, unknown>;
+
 export interface EffectHttpApiGroupContribution<
   TSurface extends EffectHttpApiSurface = EffectHttpApiSurface,
-  TGroup extends HttpApiGroup.Any = HttpApiGroup.Any,
-  THandlers = Layer<never, unknown, unknown>,
+  TGroup extends HttpApiGroup.AnyWithProps = HttpApiGroup.AnyWithProps,
+  THandlers extends EffectHttpApiHandlerLayer = EffectHttpApiHandlerLayer,
 > {
   readonly group: TGroup;
   readonly handlers: THandlers;

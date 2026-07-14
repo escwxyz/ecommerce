@@ -1,4 +1,3 @@
-import type { Layer } from "effect/Layer";
 import type {
   HttpApi,
   HttpApiEndpoint,
@@ -7,6 +6,7 @@ import type {
 
 import type {
   EffectHttpApiGroupContribution,
+  EffectHttpApiHandlerLayer,
   EffectHttpApiSurface,
 } from "./effect-http-api";
 
@@ -48,24 +48,24 @@ export class EffectHttpApiAssemblyError extends Error {
   }
 }
 
-export interface EffectHttpApiAssembly<TApi extends HttpApi.Any = HttpApi.Any> {
+export interface EffectHttpApiAssembly<
+  TApi extends HttpApi.AnyWithProps = HttpApi.AnyWithProps,
+> {
   readonly api: TApi;
   readonly contributions: readonly EffectHttpApiGroupContribution[];
   readonly groups: readonly HttpApiGroup.Any[];
-  readonly handlers: readonly Layer<never, unknown, unknown>[];
+  readonly handlers: readonly EffectHttpApiHandlerLayer[];
   readonly routes: readonly EffectHttpApiRouteFingerprint[];
   readonly surface: EffectHttpApiSurface;
 }
 
-export interface CreateEffectHttpApiAssemblyOptions<TApi extends HttpApi.Any> {
+export interface CreateEffectHttpApiAssemblyOptions<
+  TApi extends HttpApi.AnyWithProps,
+> {
   readonly contributions: readonly EffectHttpApiGroupContribution[];
   readonly root: TApi;
   readonly surface: EffectHttpApiSurface;
 }
-
-type HttpApiWithAdd = HttpApi.Any & {
-  readonly add: (group: HttpApiGroup.Any) => HttpApi.Any;
-};
 
 type HttpApiGroupWithEndpoints = HttpApiGroup.Any & {
   readonly endpoints: Readonly<Record<string, HttpApiEndpoint.Any>>;
@@ -211,7 +211,9 @@ const assertUniqueRoute = (
  * SDK generation, and Worker composition see the same ordering regardless of
  * package registration order.
  */
-export const createEffectHttpApiAssembly = <const TApi extends HttpApi.Any>({
+export const createEffectHttpApiAssembly = <
+  const TApi extends HttpApi.AnyWithProps,
+>({
   contributions,
   root,
   surface,
@@ -222,9 +224,9 @@ export const createEffectHttpApiAssembly = <const TApi extends HttpApi.Any>({
   const groupsByIdentifier = new Map<string, EffectHttpApiGroupContribution>();
   const routesByMethodPath = new Map<string, EffectHttpApiRouteFingerprint>();
   const groups: HttpApiGroup.Any[] = [];
-  const handlers: Layer<never, unknown, unknown>[] = [];
+  const handlers: EffectHttpApiHandlerLayer[] = [];
   const routes: EffectHttpApiRouteFingerprint[] = [];
-  let api: HttpApi.Any = root;
+  let api: HttpApi.AnyWithProps = root;
 
   for (const contribution of selectedContributions) {
     assertUniqueGroup(groupsByIdentifier, contribution);
@@ -237,7 +239,7 @@ export const createEffectHttpApiAssembly = <const TApi extends HttpApi.Any>({
 
     groups.push(contribution.group);
     handlers.push(contribution.handlers);
-    api = (api as HttpApiWithAdd).add(contribution.group);
+    api = api.add(contribution.group);
   }
 
   return {

@@ -14,6 +14,7 @@ export {
   defineStorefrontHttpApiGroupContribution,
   type EffectHttpApiContributionOwner,
   type EffectHttpApiGroupContribution,
+  type EffectHttpApiHandlerLayer,
   type EffectHttpApiModuleContribution,
   type EffectHttpApiSurface,
   storefrontHttpApi,
