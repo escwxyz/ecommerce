@@ -139,3 +139,29 @@ canonical Effect `HttpApi` contract, not a parallel API definition.
 Future SDK generation tasks should consume this derived document or the
 underlying `HttpApi` assembly. They must not introduce separate OpenAPI schemas
 that can drift from Effect Schema declarations.
+
+## Storefront public HTTP SDK transport
+
+Task 4.7 adds `@ecommerce/storefront-sdk` as the dedicated storefront client
+package. Browser and generic fullstack server consumers import
+`@ecommerce/storefront-sdk/http` or the package root to create an Effect
+`HttpApiClient` from the canonical storefront contract.
+
+- `createStorefrontHttpClient(options)` targets the canonical
+  `storefrontHttpApi` exported by `@ecommerce/api`.
+- `createStorefrontHttpClientForApi({ api, ...options })` accepts an
+  explicit assembled storefront `HttpApi` contract, preserving generated group
+  and endpoint method types for module-extended tests and future SDK assembly.
+- The transport uses `FetchHttpClient.layer` from `effect/unstable/http`, so it
+  depends only on public `fetch`, `baseUrl`, and optional `RequestInit`.
+- Tests can inject a custom `fetch` implementation without mutating
+  `globalThis.fetch`.
+- `@ecommerce/storefront-sdk/browser` remains a browser-safe compatibility
+  alias for the same public HTTP transport, while new shared fullstack code
+  should prefer the `http` export.
+
+The public HTTP export must not import Cloudflare bindings, server Worker runtime
+composition, domain services, repository Layers, SQL clients, or credentials.
+The server-only Cloudflare Service Binding transport is intentionally deferred
+to task 4.8 and must live behind a separate export so browser bundles can ban it
+explicitly in task 4.10.

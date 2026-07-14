@@ -589,6 +589,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/storefront-sdk": {
+      "name": "@ecommerce/storefront-sdk",
+      "dependencies": {
+        "@ecommerce/api": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@ecommerce/config": "workspace:*",
+        "bun-types": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/ui": {
       "name": "@ecommerce/ui",
       "version": "0.0.0",
@@ -916,6 +928,8 @@
     "@ecommerce/region-sales-channel": ["@ecommerce/region-sales-channel@workspace:packages/modules/region-sales-channel"],
 
     "@ecommerce/store": ["@ecommerce/store@workspace:packages/modules/store"],
+
+    "@ecommerce/storefront-sdk": ["@ecommerce/storefront-sdk@workspace:packages/storefront-sdk"],
 
     "@ecommerce/tax": ["@ecommerce/tax@workspace:packages/modules/tax"],
 
