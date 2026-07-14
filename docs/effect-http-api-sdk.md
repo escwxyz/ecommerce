@@ -76,3 +76,25 @@ identity, auth state, permissions, deadlines, or trace data in module singletons
 or mutable globals. Defect serialization stays deliberately generic; full
 Effect Causes remain internal telemetry data and are not exposed through HTTP or
 SDK errors.
+
+## Deterministic API assembly
+
+Task 4.4 adds deterministic Effect `HttpApi` assembly in `@ecommerce/api`:
+
+- `createEffectHttpApiAssembly` selects contributions for one surface
+  (`admin` or `storefront`), sorts them by surface, owner, key, and group
+  identifier, and adds the groups to the provided canonical root.
+- The assembly output exposes the assembled `api`, selected `contributions`,
+  ordered `groups`, handler `Layer`s, and route fingerprints used by later
+  OpenAPI, SDK, and Worker composition tasks.
+- Every endpoint contributes a route fingerprint with `method`, `path`,
+  `routeKey`, group identifier, endpoint name, owner, surface, and contribution
+  key.
+- Duplicate method/path pairs fail with `EffectHttpApiAssemblyError` before
+  deployment. Admin and storefront surfaces are checked independently.
+- Duplicate group identifiers also fail because Effect `HttpApi.add` would
+  otherwise overwrite the earlier group with the later one.
+
+Module and plugin registration order must not affect the assembled contract.
+If two packages need the same path, they must use different HTTP methods or
+resolve the route ownership before Worker/OpenAPI generation.

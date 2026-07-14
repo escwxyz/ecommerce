@@ -19,6 +19,15 @@ export {
   storefrontHttpApi,
 } from "./effect-http-api";
 export {
+  createEffectHttpApiAssembly,
+  EffectHttpApiAssemblyError,
+  type CreateEffectHttpApiAssemblyOptions,
+  type DuplicateEffectHttpApiGroup,
+  type DuplicateEffectHttpApiRoute,
+  type EffectHttpApiAssembly,
+  type EffectHttpApiRouteFingerprint,
+} from "./effect-http-api-assembly";
+export {
   CurrentEffectHttpAuthContext,
   CurrentEffectHttpRequestContext,
   EffectHttpAuthMiddleware,
