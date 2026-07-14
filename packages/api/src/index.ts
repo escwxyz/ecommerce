@@ -29,6 +29,14 @@ export {
   type EffectHttpApiRouteFingerprint,
 } from "./effect-http-api-assembly";
 export {
+  createEffectHttpApiOpenApiSnapshot,
+  stringifyEffectHttpOpenApiDocument,
+  type CreateEffectHttpApiOpenApiSnapshotOptions,
+  type EffectHttpOpenApiDocument,
+  type EffectHttpOpenApiSnapshot,
+  type EffectHttpOpenApiSurfaceSnapshot,
+} from "./effect-http-openapi";
+export {
   CurrentEffectHttpAuthContext,
   CurrentEffectHttpRequestContext,
   EffectHttpAuthMiddleware,

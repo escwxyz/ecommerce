@@ -40,7 +40,7 @@
 - [x] 4.3 Implement Effect HTTP middleware for request context, auth provision, permissions, telemetry, deadlines, and sanitized defects
 - [x] 4.4 Implement deterministic API assembly and duplicate method/path detection
 - [x] 4.5 Implement the Cloudflare Worker Effect HTTP entrypoint and runtime Layer composition
-- [ ] 4.6 Generate and snapshot OpenAPI from the canonical Effect API
+- [x] 4.6 Generate and snapshot OpenAPI from the canonical Effect API
 - [ ] 4.7 Create the storefront SDK package and browser HTTP transport
 - [ ] 4.8 Implement the server-only Cloudflare Service Binding SDK transport
 - [ ] 4.9 Add shared conformance tests proving HTTP and Service Binding transport parity

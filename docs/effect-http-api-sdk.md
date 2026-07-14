@@ -123,3 +123,19 @@ migration. The Effect Worker is the canonical replacement foundation, but its
 contribution list stays empty until migrated module groups are ready. This keeps
 legacy behavior available without creating a second reusable handler or schema
 ownership boundary in `apps/server`.
+
+## Derived OpenAPI snapshots
+
+Task 4.6 adds `createEffectHttpApiOpenApiSnapshot` in `@ecommerce/api`. The
+helper accepts the same module and plugin group contributions used by Worker
+composition, builds deterministic admin and storefront assemblies, and derives
+OpenAPI 3.1 documents through Effect's `OpenApi.fromApi`.
+
+Snapshots are serialized with stable object key ordering so contract changes
+produce reviewable diffs. The checked snapshots live beside the API tests under
+`packages/api/src/__tests__/__snapshots__/`; they are generated artifacts of the
+canonical Effect `HttpApi` contract, not a parallel API definition.
+
+Future SDK generation tasks should consume this derived document or the
+underlying `HttpApi` assembly. They must not introduce separate OpenAPI schemas
+that can drift from Effect Schema declarations.

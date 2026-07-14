@@ -1,0 +1,115 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`Effect HttpApi OpenAPI generation generates deterministic snapshots from the canonical admin and storefront APIs 1`] = `
+"{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {}
+  },
+  "info": {
+    "title": "Commerce Admin API",
+    "version": "0.0.1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/admin/health": {
+      "get": {
+        "operationId": "adminHealth.health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [],
+        "tags": [
+          "adminHealth"
+        ]
+      }
+    }
+  },
+  "security": [],
+  "tags": [
+    {
+      "name": "adminHealth"
+    }
+  ]
+}
+"
+`;
+
+exports[`Effect HttpApi OpenAPI generation generates deterministic snapshots from the canonical admin and storefront APIs 2`] = `
+"{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {}
+  },
+  "info": {
+    "title": "Commerce Storefront API",
+    "version": "0.0.1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/store/health": {
+      "get": {
+        "operationId": "storefrontHealth.health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [],
+        "tags": [
+          "storefrontHealth"
+        ]
+      }
+    }
+  },
+  "security": [],
+  "tags": [
+    {
+      "name": "storefrontHealth"
+    }
+  ]
+}
+"
+`;
