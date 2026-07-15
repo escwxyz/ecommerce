@@ -114,3 +114,43 @@ instead of legacy auth or Better Auth types:
 The covered runtime path is: Cloudflare Worker request → Effect request context
 middleware → Effect auth middleware → Better Auth adapter → provider-neutral
 auth context → permission guard → protected handler.
+
+## Task 5.6 temporary auth persistence seam
+
+Better Auth persistence remains a temporary provider-owned seam while commerce
+modules migrate away from Kysely:
+
+- `packages/auth/src/factory.ts` continues to own the Better Auth server
+  factory and persistence configuration.
+- `packages/db-d1/src/migrations/sql/0000_auth.sql` remains the generated
+  Better Auth D1 table baseline. Regenerate it only through
+  `bun run --cwd packages/auth auth:gen` after Better Auth configuration
+  changes.
+- `apps/server/src/effect-http-worker-runtime.ts` may keep passing
+  `database.authDatabase` to the Better Auth factory for Cloudflare-first
+  runtime composition.
+- Business modules must not import Better Auth database tables, Better Auth
+  inferred types, D1 auth bindings, or Kysely auth types. They should use
+  `EffectAuthServiceTag`, `AuthUserId`, `AuthSession`, and
+  `AuthPermissionKey` from the Effect auth boundary instead.
+- Module persistence may store auth references such as `AuthUserId`, but auth
+  session, account, verification, and provider tables stay outside module
+  repositories.
+- Do not migrate Better Auth-owned tables to the Effect SQL/Drizzle commerce
+  schema during module migration tasks. That belongs to a follow-up auth
+  provider decision.
+
+This seam is intentionally narrow: Better Auth may own its private storage, but
+it may not become a shared persistence abstraction for commerce modules.
+
+Deletion criteria:
+
+1. the follow-up auth-provider research change chooses direct wrapping,
+   `effectify`, official support, or a replacement provider path;
+2. Cloudflare Worker tests cover session cookie reads, rejected/expired
+   sessions, permission checks, and sanitized adapter failures for the chosen
+   path;
+3. the selected path provides an Effect boundary equivalent to
+   `EffectAuthServiceTag`;
+4. the legacy Better Auth D1/Kysely migration seam and `auth:gen` workflow are
+   removed or explicitly retained as provider-private infrastructure.

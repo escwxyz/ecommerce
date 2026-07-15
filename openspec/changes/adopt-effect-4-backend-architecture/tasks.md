@@ -53,9 +53,9 @@
 - [x] 5.3 Wrap existing Better Auth behavior in a private Effect adapter Layer
 - [x] 5.4 Translate Better Auth requests, results, and failures without leaking Better Auth types
 - [x] 5.5 Integrate the auth adapter with Effect HTTP middleware and protected API groups
-- [ ] 5.6 Determine and document the temporary auth persistence seam needed during Kysely removal
-- [ ] 5.7 Add auth boundary, session, cookie, permission, and sanitized-error tests on Cloudflare
-- [ ] 5.8 Create a follow-up research change comparing direct wrapping, `effectify`, and future official support
+- [x] 5.6 Determine and document the temporary auth persistence seam needed during Kysely removal
+- [x] 5.7 Add auth boundary, session, cookie, permission, and sanitized-error tests on Cloudflare
+- [x] 5.8 Create a follow-up research change comparing direct wrapping, `effectify`, and future official support
 
 ## 6. Store tracer vertical slice
 

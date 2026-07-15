@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import {
   CurrentEffectHttpAuthContext,
   EffectHttpAuthMiddleware,
+  EffectHttpForbidden,
   adminHttpApi,
   defineAdminHttpApiGroupContribution,
   defineStorefrontHttpApiGroupContribution,
@@ -93,12 +94,29 @@ const createBetterAuthSession = () => ({
   },
 });
 
+const createBetterAuthSessionWithoutProductRead = () => ({
+  ...createBetterAuthSession(),
+  user: {
+    ...createBetterAuthSession().user,
+    permissions: [],
+  },
+});
+
+const createExpiredBetterAuthSession = () => ({
+  ...createBetterAuthSession(),
+  session: {
+    ...createBetterAuthSession().session,
+    expiresAt: new Date("2026-01-02T00:00:00.000Z"),
+  },
+});
+
 const createProtectedAdminContribution = () => {
   const groupIdentifier = "adminProtectedRuntime";
   const endpointName = "adminProtectedGreeting";
   const group = HttpApiGroup.make(groupIdentifier)
     .add(
       HttpApiEndpoint.get(endpointName, "/admin/protected-runtime", {
+        error: EffectHttpForbidden,
         success: ProtectedResponse,
       })
     )
@@ -125,6 +143,38 @@ const createProtectedAdminContribution = () => {
     key: "test:admin-protected",
     owner: "builtin",
   });
+};
+
+const fetchProtectedRuntime = async ({
+  auth,
+  headers,
+}: {
+  readonly auth?: Parameters<typeof createEffectHttpWorkerRuntime>[0]["auth"];
+  readonly headers?: HeadersInit;
+}) => {
+  const runtime = createEffectHttpWorkerRuntime({
+    adminRoot: adminHttpApi,
+    auth,
+    contributions: [createProtectedAdminContribution()],
+    storefrontRoot: storefrontHttpApi,
+  });
+
+  try {
+    const response = await runtime.fetch(
+      new Request("https://commerce.example/admin/protected-runtime", {
+        headers,
+      })
+    );
+    const text = await response.text();
+
+    return {
+      body: text.length > 0 ? JSON.parse(text) : null,
+      status: response.status,
+      text,
+    };
+  } finally {
+    await runtime.dispose();
+  }
 };
 
 describe("Cloudflare Effect HTTP Worker runtime", () => {
@@ -205,6 +255,76 @@ describe("Cloudflare Effect HTTP Worker runtime", () => {
     } finally {
       await runtime.dispose();
     }
+  });
+
+  it("rejects protected API groups when the session cookie is missing", async () => {
+    const result = await fetchProtectedRuntime({});
+
+    expect(result.status).toBe(401);
+    expect(result.body).toMatchObject({
+      _tag: "EffectHttpUnauthorized",
+      message: "Authentication required.",
+    });
+    expect(result.text).not.toContain("better-auth");
+  });
+
+  it("rejects expired Better Auth sessions without exposing provider details", async () => {
+    const result = await fetchProtectedRuntime({
+      auth: {
+        api: {
+          getSession: () => Promise.resolve(createExpiredBetterAuthSession()),
+        },
+      },
+      headers: { cookie: "better-auth.session=expired" },
+    });
+
+    expect(result.status).toBe(401);
+    expect(result.body).toMatchObject({
+      _tag: "EffectHttpUnauthorized",
+      message: "Authentication required.",
+    });
+    expect(result.text).not.toContain("session-token");
+    expect(result.text).not.toContain("better-auth");
+  });
+
+  it("rejects protected API groups when the session lacks permission", async () => {
+    const result = await fetchProtectedRuntime({
+      auth: {
+        api: {
+          getSession: () =>
+            Promise.resolve(createBetterAuthSessionWithoutProductRead()),
+        },
+      },
+      headers: { cookie: "better-auth.session=token" },
+    });
+
+    expect(result.status).toBe(403);
+    expect(result.body).toMatchObject({
+      _tag: "EffectHttpForbidden",
+      message: "Missing required permission.",
+      permission: "product:read",
+    });
+    expect(result.text).not.toContain("better-auth");
+  });
+
+  it("sanitizes rejected Better Auth adapter failures at the protected Worker boundary", async () => {
+    const result = await fetchProtectedRuntime({
+      auth: {
+        api: {
+          getSession: () =>
+            Promise.reject(new Error("database password leaked")),
+        },
+      },
+      headers: { cookie: "better-auth.session=token" },
+    });
+
+    expect(result.status).toBe(401);
+    expect(result.body).toMatchObject({
+      _tag: "EffectHttpUnauthorized",
+      message: "Authentication required.",
+    });
+    expect(result.text).not.toContain("database password");
+    expect(result.text).not.toContain("provider-rejected");
   });
 
   it("fails closed when a declared API group has no handler Layer", async () => {

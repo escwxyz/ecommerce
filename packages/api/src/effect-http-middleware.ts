@@ -90,7 +90,8 @@ export class EffectHttpUnauthorized extends Schema.TaggedErrorClass<EffectHttpUn
   {
     message: Schema.NonEmptyString,
     requestId: Schema.NonEmptyString,
-  }
+  },
+  { httpApiStatus: 401 }
 ) {}
 
 /** Expected failure when an authenticated actor lacks a required permission. */
@@ -100,7 +101,8 @@ export class EffectHttpForbidden extends Schema.TaggedErrorClass<EffectHttpForbi
     message: Schema.NonEmptyString,
     permission: Schema.NonEmptyString,
     requestId: Schema.NonEmptyString,
-  }
+  },
+  { httpApiStatus: 403 }
 ) {}
 
 /** Expected failure when request execution exceeds its request-scoped deadline. */
@@ -110,7 +112,8 @@ export class EffectHttpDeadlineExceeded extends Schema.TaggedErrorClass<EffectHt
     deadlineAtEpochMillis: Schema.Int,
     message: Schema.NonEmptyString,
     requestId: Schema.NonEmptyString,
-  }
+  },
+  { httpApiStatus: 408 }
 ) {}
 
 export type EffectHttpMiddlewareFailure =
