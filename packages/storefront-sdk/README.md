@@ -24,13 +24,43 @@ const program = Effect.gen(function* () {
 
 The HTTP transport is backed by Effect's `HttpApiClient` and
 `FetchHttpClient.layer`. It may accept a custom `fetch` for tests or alternate
-fetch-compatible runtimes, but it must not import Cloudflare bindings, server runtime
-composition, repository Layers, SQL clients, or credentials.
+fetch-compatible runtimes, but it must not import Cloudflare bindings, server
+runtime composition, repository Layers, SQL clients, or credentials.
 
 `@ecommerce/storefront-sdk/browser` remains a browser-safe compatibility alias
 for callers that want an explicitly browser-named import. New shared fullstack
 code should prefer `@ecommerce/storefront-sdk/http` to avoid implying that the
 transport cannot run on the server.
 
-The Cloudflare Service Binding transport is server-only and will be added under
-a separate export in task 4.8.
+## Cloudflare Service Binding transport
+
+Use `@ecommerce/storefront-sdk/cloudflare` only from Cloudflare Worker or SSR
+code that receives a backend Worker Service Binding:
+
+```ts
+import { Effect } from "effect";
+import { createStorefrontServiceBindingClient } from "@ecommerce/storefront-sdk/cloudflare";
+
+interface Env {
+  readonly BACKEND_API: {
+    fetch(
+      input: Parameters<typeof globalThis.fetch>[0],
+      init?: RequestInit
+    ): Promise<Response>;
+  };
+}
+
+const program = (env: Env) =>
+  Effect.gen(function* () {
+    const client = yield* createStorefrontServiceBindingClient({
+      binding: env.BACKEND_API,
+    });
+
+    return client;
+  });
+```
+
+The Service Binding transport still crosses the same Effect HTTP contract via
+the binding's `fetch` method. It does not call domain services directly and is
+not exported from the package root, so browser and generic fullstack code keep
+using the public `http` export.

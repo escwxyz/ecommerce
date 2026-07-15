@@ -10,6 +10,9 @@
     },
     "./browser": {
       "default": "./src/browser.ts"
+    },
+    "./cloudflare": {
+      "default": "./src/cloudflare.ts"
     }
   },
   "scripts": {

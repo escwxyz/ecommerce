@@ -42,9 +42,9 @@
 - [x] 4.5 Implement the Cloudflare Worker Effect HTTP entrypoint and runtime Layer composition
 - [x] 4.6 Generate and snapshot OpenAPI from the canonical Effect API
 - [x] 4.7 Create the storefront SDK package and browser HTTP transport
-- [ ] 4.8 Implement the server-only Cloudflare Service Binding SDK transport
-- [ ] 4.9 Add shared conformance tests proving HTTP and Service Binding transport parity
-- [ ] 4.10 Add browser-bundle boundary tests that prohibit server runtime and Cloudflare binding exports
+- [x] 4.8 Implement the server-only Cloudflare Service Binding SDK transport
+- [x] 4.9 Add shared conformance tests proving HTTP and Service Binding transport parity
+- [x] 4.10 Add browser-bundle boundary tests that prohibit server runtime and Cloudflare binding exports
 
 ## 5. Authentication boundary
 

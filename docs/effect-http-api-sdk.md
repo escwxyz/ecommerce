@@ -162,6 +162,64 @@ package. Browser and generic fullstack server consumers import
 
 The public HTTP export must not import Cloudflare bindings, server Worker runtime
 composition, domain services, repository Layers, SQL clients, or credentials.
-The server-only Cloudflare Service Binding transport is intentionally deferred
-to task 4.8 and must live behind a separate export so browser bundles can ban it
-explicitly in task 4.10.
+
+## Storefront Cloudflare Service Binding SDK transport
+
+Task 4.8 adds `@ecommerce/storefront-sdk/cloudflare` as the server-only
+Cloudflare transport for Worker and SSR code that receives a backend Worker
+Service Binding.
+
+- `createStorefrontServiceBindingClient(options)` targets the canonical
+  `storefrontHttpApi` exported by `@ecommerce/api`.
+- `createStorefrontServiceBindingClientForApi({ api, ...options })` accepts an
+  explicit assembled storefront `HttpApi` contract and preserves the same
+  generated group and endpoint method types as the public HTTP transport.
+- `StorefrontServiceBinding` is a minimal structural interface for a binding
+  with a `fetch` method. The SDK does not import Cloudflare runtime bindings in
+  its package root.
+- The transport adapts the binding `fetch` to Effect's `FetchHttpClient.layer`
+  and uses `https://storefront.service-binding` as the default internal base
+  URL for path construction.
+
+The Service Binding transport must remain behind the `cloudflare` export and
+must not be re-exported from the package root.
+
+## Storefront SDK transport conformance
+
+Task 4.9 adds a shared conformance suite in
+`packages/storefront-sdk/src/__tests__/transport-conformance-suite.ts`.
+Transport-specific tests register the public HTTP and Cloudflare Service Binding
+client factories against one test `HttpApi` contract and assert that both:
+
+- return the same decoded Effect Schema response shape;
+- preserve the same generated `HttpApiClient` group and endpoint method
+  surface;
+- issue the same HTTP method and relative storefront route;
+- differ only by transport origin: public `baseUrl` versus the internal
+  Service Binding base URL.
+
+Future storefront SDK transports must join this shared suite before they are
+accepted as equivalent to the canonical SDK contract.
+
+## Storefront SDK browser-bundle boundary
+
+Task 4.10 adds executable browser-bundle boundaries for both frontend consumers
+and the SDK package itself:
+
+- `apps/web/src/__tests__/no-effect-imports.test.ts` rejects static,
+  side-effect, and dynamic imports of `@ecommerce/storefront-sdk/cloudflare`
+  from browser source, alongside the existing backend runtime bans.
+- `packages/storefront-sdk/src/__tests__/browser-bundle-boundary.test.ts`
+  asserts that the package root, `http`, and `browser` entries do not re-export
+  the server-only Cloudflare transport.
+- The SDK boundary test also rejects server runtime imports such as
+  `cloudflare:workers`, `@cloudflare/workers-types`, and
+  `@ecommerce/platform-cloudflare` from browser-safe SDK entries.
+
+The intended import split is therefore:
+
+- browser and generic fullstack code: `@ecommerce/storefront-sdk/http` or the
+  package root;
+- explicit browser alias: `@ecommerce/storefront-sdk/browser`;
+- Cloudflare Worker or SSR code with a backend Service Binding:
+  `@ecommerce/storefront-sdk/cloudflare`.
