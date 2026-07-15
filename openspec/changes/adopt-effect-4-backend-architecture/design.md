@@ -103,6 +103,31 @@ A later research change compares a direct wrapper, the community `effectify` Bet
 
 Alternative considered: immediately replace Better Auth with custom auth. Rejected as unrealistic and unnecessarily risky without official ecosystem support.
 
+### 9.1 Identity organizations are not commerce stores
+
+Better Auth's organization plugin is a candidate for multi-tenant identity:
+organizations, members, invitations, teams, active organization/team state, and
+auth-scoped roles. Those records remain auth-provider-owned and must be
+translated through the Effect auth boundary before module logic sees them.
+
+Commerce stores, merchants, vendors, markets, marketplaces, products, orders,
+sales channels, fulfillment, settlement, and workflows remain commerce domain
+concepts. A commerce store is not an auth organization. A future marketplace
+can link vendors or merchants to Better Auth organizations through
+provider-neutral IDs, but modules cannot import Better Auth organization
+schemas, tables, migrations, client types, or server API types.
+
+The store tracer slice should therefore preserve the store module as a commerce
+settings/defaults module. It may reserve explicit owner/link points for future
+merchant, vendor, market, or organization associations, but it must not encode
+`store = tenant` or `store = Better Auth organization` as a permanent
+invariant.
+
+Alternative considered: model Better Auth organization as the store tenant
+directly. Rejected because it couples commerce persistence to a temporary auth
+provider and makes normal store, multi-store, and marketplace models harder to
+extend independently.
+
 ### 10. Cloudflare is first; portability is proven by contracts and Layers
 
 Core, modules, schemas, repositories, API contracts, and workflows cannot import Cloudflare APIs. Cloudflare-specific bindings and implementations live in platform/runtime packages and application composition. Every runtime-neutral service has a deterministic test or in-memory Layer.

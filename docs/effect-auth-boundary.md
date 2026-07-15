@@ -154,3 +154,30 @@ Deletion criteria:
    `EffectAuthServiceTag`;
 4. the legacy Better Auth D1/Kysely migration seam and `auth:gen` workflow are
    removed or explicitly retained as provider-private infrastructure.
+
+## Better Auth organization plugin and commerce tenancy
+
+The Better Auth organization plugin is a useful candidate for multi-tenant
+identity, but it must remain behind the auth boundary:
+
+- Organization, member, invitation, team, active organization, active team, and
+  organization-role persistence are auth-provider-owned records.
+- Commerce modules may receive a decoded active organization or organization
+  membership through `EffectAuthServiceTag` or a future provider-neutral
+  `CommerceActorContext`.
+- Commerce modules must not import Better Auth organization plugin schemas,
+  tables, generated migrations, client types, or server API types.
+- A Better Auth organization can be linked to a commerce merchant, vendor,
+  business account, market operator, or platform admin context, but it is not
+  itself a `Store`.
+- A commerce `Store` remains a domain record for store settings and defaults.
+  Future marketplace or multi-store behavior should link stores to merchants,
+  vendors, markets, or organizations through module-owned references.
+
+This preserves two extension paths:
+
+1. normal single-store or multi-store commerce, where one authenticated
+   organization can manage one or more commerce stores;
+2. marketplace commerce, where a marketplace module or plugin links vendors,
+   products, orders, stores, workflows, settlement policies, and admin/vendor
+   surfaces without coupling domain records to Better Auth internals.
