@@ -1,13 +1,30 @@
 import {
   adminHttpApi,
   createEffectHttpApiAssembly,
+  effectHttpAuthMiddlewareLayer,
+  effectHttpAuthServiceFromEffectAuthLayer,
+  effectHttpExecutionMiddlewareLayer,
+  effectHttpPermissionServiceLayer,
+  effectHttpRequestContextMiddlewareLayer,
+  effectHttpRequestIdGeneratorLayer,
   storefrontHttpApi,
 } from "@ecommerce/api";
 import type {
   EffectHttpApiAssembly,
+  EffectHttpApiRouteFingerprint,
   EffectHttpApiGroupContribution,
   EffectHttpApiHandlerLayer,
 } from "@ecommerce/api";
+import {
+  AuthPermissionDenied,
+  AuthPermissionKeySchema,
+  AuthUnauthenticated,
+  EffectAuthServiceTag,
+  effectAuthServiceLayer,
+  makeAnonymousAuthRequestContext,
+} from "@ecommerce/auth";
+import { betterAuthEffectAuthLayer } from "@ecommerce/auth/better-auth-effect-adapter";
+import type { BetterAuthCompatibleService } from "@ecommerce/auth/better-auth-effect-adapter";
 import { Context, Effect, Layer, Path } from "effect";
 import type { Layer as EffectLayer } from "effect/Layer";
 import { Etag, HttpPlatform, HttpRouter } from "effect/unstable/http";
@@ -16,8 +33,9 @@ import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 export interface CreateEffectHttpWorkerRuntimeOptions {
   readonly adminRoot?: HttpApi.AnyWithProps;
+  readonly auth?: BetterAuthCompatibleService;
   readonly contributions: readonly EffectHttpApiGroupContribution[];
-  readonly runtimeLayers?: readonly EffectLayer<unknown, never, never>[];
+  readonly runtimeLayers?: readonly EffectLayer<never, never, never>[];
   readonly storefrontRoot?: HttpApi.AnyWithProps;
 }
 
@@ -26,6 +44,24 @@ export interface EffectHttpWorkerRuntime {
   readonly dispose: () => Promise<void>;
   readonly fetch: (request: Request) => Promise<Response>;
   readonly storefront: EffectHttpApiAssembly;
+}
+
+export interface DuplicateEffectHttpWorkerRoute {
+  readonly admin: EffectHttpApiRouteFingerprint;
+  readonly routeKey: string;
+  readonly storefront: EffectHttpApiRouteFingerprint;
+}
+
+export class EffectHttpWorkerRuntimeError extends Error {
+  readonly detail: DuplicateEffectHttpWorkerRoute;
+
+  constructor(detail: DuplicateEffectHttpWorkerRoute) {
+    super(
+      `Duplicate Effect Worker route "${detail.routeKey}" is contributed by both the admin and storefront HttpApi surfaces.`
+    );
+    this.name = "EffectHttpWorkerRuntimeError";
+    this.detail = detail;
+  }
 }
 
 /**
@@ -46,12 +82,71 @@ const workerHttpSupportLayer = Layer.mergeAll(
   Path.layer
 );
 
+const failClosedEffectAuthLayer = effectAuthServiceLayer(
+  EffectAuthServiceTag.of({
+    getRequestContext: () => Effect.succeed(makeAnonymousAuthRequestContext()),
+    requireAuthenticated: () =>
+      Effect.fail(new AuthUnauthenticated({ reason: "missing-session" })),
+    requirePermission: () =>
+      Effect.fail(
+        new AuthPermissionDenied({
+          permission: AuthPermissionKeySchema.make("system:authenticated"),
+          reason: "missing-permission",
+        })
+      ),
+  })
+);
+
 const mergeHandlerLayers = (handlers: readonly EffectHttpApiHandlerLayer[]) =>
   Layer.mergeAll(Layer.empty, ...handlers);
 
-const mergeRuntimeLayers = (
-  runtimeLayers: readonly EffectLayer<unknown, never, never>[]
-) => Layer.mergeAll(Layer.empty, ...runtimeLayers);
+const createRuntimeSupportLayer = ({
+  auth,
+  runtimeLayers,
+}: {
+  readonly auth?: BetterAuthCompatibleService;
+  readonly runtimeLayers: readonly EffectLayer<never, never, never>[];
+}): EffectLayer<never, never, never> => {
+  const authBoundaryLayer = auth
+    ? betterAuthEffectAuthLayer(auth)
+    : failClosedEffectAuthLayer;
+  const httpAuthServiceLayer = effectHttpAuthServiceFromEffectAuthLayer.pipe(
+    Layer.provide(authBoundaryLayer)
+  );
+  const baseLayer = Layer.mergeAll(
+    effectHttpRequestIdGeneratorLayer,
+    effectHttpRequestContextMiddlewareLayer,
+    effectHttpAuthMiddlewareLayer,
+    effectHttpExecutionMiddlewareLayer,
+    httpAuthServiceLayer,
+    effectHttpPermissionServiceLayer,
+    ...runtimeLayers
+  );
+
+  return baseLayer as EffectLayer<never, never, never>;
+};
+
+const assertNoCrossSurfaceRouteConflicts = (
+  adminRoutes: readonly EffectHttpApiRouteFingerprint[],
+  storefrontRoutes: readonly EffectHttpApiRouteFingerprint[]
+): void => {
+  const adminRoutesByKey = new Map(
+    adminRoutes.map((route) => [route.routeKey, route] as const)
+  );
+
+  for (const storefrontRoute of storefrontRoutes) {
+    const adminRoute = adminRoutesByKey.get(storefrontRoute.routeKey);
+    if (!adminRoute) {
+      continue;
+    }
+
+    throw new EffectHttpWorkerRuntimeError({
+      admin: adminRoute,
+      routeKey: storefrontRoute.routeKey,
+      storefront: storefrontRoute,
+    });
+  }
+};
 
 /**
  * Composes both canonical API surfaces into the single router Layer served by
@@ -61,6 +156,7 @@ const mergeRuntimeLayers = (
  */
 export const createEffectHttpWorkerApplicationLayer = ({
   adminRoot = adminHttpApi,
+  auth,
   contributions,
   runtimeLayers = [],
   storefrontRoot = storefrontHttpApi,
@@ -75,6 +171,7 @@ export const createEffectHttpWorkerApplicationLayer = ({
     root: storefrontRoot,
     surface: "storefront",
   });
+  assertNoCrossSurfaceRouteConflicts(admin.routes, storefront.routes);
   const handlers = mergeHandlerLayers([
     ...admin.handlers,
     ...storefront.handlers,
@@ -82,11 +179,16 @@ export const createEffectHttpWorkerApplicationLayer = ({
   const application = Layer.mergeAll(
     HttpApiBuilder.layer(admin.api),
     HttpApiBuilder.layer(storefront.api)
-  ).pipe(
-    Layer.provide(handlers),
-    Layer.provide(mergeRuntimeLayers(runtimeLayers)),
-    Layer.provide(workerHttpSupportLayer)
-  );
+  )
+    .pipe(
+      Layer.provide(handlers),
+      Layer.provide(createRuntimeSupportLayer({ auth, runtimeLayers })),
+      Layer.provide(workerHttpSupportLayer)
+    )
+    .pipe(
+      (layer): EffectLayer<never, never, never> =>
+        layer as EffectLayer<never, never, never>
+    );
 
   return { admin, application, storefront };
 };

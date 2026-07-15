@@ -1,12 +1,18 @@
 import { describe, expect, it } from "bun:test";
 
-import type { AuthActor } from "@ecommerce/auth";
+import {
+  AuthPermissionKeySchema,
+  AuthSessionId,
+  AuthUserId,
+  type EffectAuthSession,
+} from "@ecommerce/auth";
 import { Effect, Exit, Schema } from "effect";
 
 import {
   CurrentEffectHttpAuthContext,
   CurrentEffectHttpRequestContext,
   EffectHttpAuthService,
+  type EffectHttpAuthContext,
   EffectHttpDeadlineExceeded,
   EffectHttpForbidden,
   EffectHttpPermissionService,
@@ -28,6 +34,7 @@ const provideRequestIdGenerator = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 
 const requestContext = {
   deadlineAtEpochMillis: Number.MAX_SAFE_INTEGER,
+  headers: new Headers({ cookie: "better-auth.session=token" }),
   identity: {
     correlationId: "corr_1",
     requestId: "req_1",
@@ -38,11 +45,36 @@ const requestContext = {
   startedAtEpochMillis: 0,
 };
 
-const actor: AuthActor = {
-  kind: "store-admin",
-  permissionKeys: ["product:read"],
-  session: null,
-  userId: "user_1",
+const session: EffectAuthSession = {
+  expiresAt: new Date("2027-01-02T00:00:00.000Z"),
+  id: AuthSessionId.make("session_1"),
+  identity: {
+    email: "admin@example.com",
+    emailVerified: true,
+    id: AuthUserId.make("user_1"),
+    name: "Admin",
+    role: "store-admin",
+  },
+  issuedAt: new Date("2026-01-01T00:00:00.000Z"),
+  permissionKeys: [AuthPermissionKeySchema.make("product:read")],
+};
+
+const authRequestContext = {
+  identity: session.identity,
+  isAuthenticated: true,
+  permissionKeys: session.permissionKeys,
+  session,
+};
+
+const resolvedAuthContext: EffectHttpAuthContext = {
+  actor: {
+    kind: session.identity.role,
+    permissionKeys: session.permissionKeys,
+    session,
+    userId: session.identity.id,
+  },
+  requestContext: authRequestContext,
+  session,
 };
 
 describe("Effect HTTP middleware foundation", () => {
@@ -83,10 +115,7 @@ describe("Effect HTTP middleware foundation", () => {
     ).pipe(
       Effect.provideService(EffectHttpAuthService, {
         authenticate: (context) =>
-          Effect.succeed({
-            actor,
-            session: actor.session,
-          }).pipe(
+          Effect.succeed(resolvedAuthContext).pipe(
             Effect.tap(() =>
               Effect.sync(() => {
                 expect(context.identity.requestId).toBe("req_1");
@@ -96,9 +125,9 @@ describe("Effect HTTP middleware foundation", () => {
       })
     );
 
-    const authContext = await Effect.runPromise(program);
+    const currentAuthContext = await Effect.runPromise(program);
 
-    expect(authContext.actor.userId).toBe("user_1");
+    expect(currentAuthContext.actor.userId).toBe("user_1");
   });
 
   it("checks permissions before endpoint work runs", async () => {
@@ -111,8 +140,7 @@ describe("Effect HTTP middleware foundation", () => {
     ).pipe(
       Effect.provideService(CurrentEffectHttpRequestContext, requestContext),
       Effect.provideService(CurrentEffectHttpAuthContext, {
-        actor,
-        session: actor.session,
+        ...resolvedAuthContext,
       }),
       Effect.provideService(EffectHttpPermissionService, {
         requirePermission: ({ context, permission }) =>

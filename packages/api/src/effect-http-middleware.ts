@@ -1,7 +1,14 @@
 /* eslint-disable max-classes-per-file -- middleware expected failures and contract services are one shared HTTP vocabulary */
 
-import type { AuthActor, AuthSession } from "@ecommerce/auth";
+import { EffectAuthServiceTag } from "@ecommerce/auth";
+import type {
+  AuthRequestContext,
+  EffectAuthIdentity,
+  EffectAuthSession,
+} from "@ecommerce/auth";
+import { AuthPermissionKey as EffectAuthPermissionKey } from "@ecommerce/auth/auth-contracts";
 import type { CommercePermissionInput } from "@ecommerce/core/permissions";
+import { normalizeCommercePermission } from "@ecommerce/core/permissions";
 import type {
   CorrelationContext,
   OperationTelemetryOptions,
@@ -44,6 +51,7 @@ export const EffectHttpRequestIdGenerator =
 /** Request-scoped values installed before endpoint handlers run. */
 export interface EffectHttpRequestContext {
   readonly deadlineAtEpochMillis: number;
+  readonly headers: Headers;
   readonly identity: EffectHttpRequestIdentity;
   readonly method: string;
   readonly path: string;
@@ -57,9 +65,17 @@ export const CurrentEffectHttpRequestContext =
   );
 
 /** Auth context installed after the auth adapter validates the current request. */
+export interface EffectHttpAuthActor {
+  readonly kind: EffectAuthIdentity["role"];
+  readonly permissionKeys: readonly string[];
+  readonly session: EffectAuthSession | null;
+  readonly userId: string;
+}
+
 export interface EffectHttpAuthContext {
-  readonly actor: AuthActor;
-  readonly session: AuthSession;
+  readonly actor: EffectHttpAuthActor;
+  readonly requestContext: AuthRequestContext;
+  readonly session: EffectAuthSession | null;
 }
 
 /** Effect service containing the current authenticated actor/session context. */
@@ -162,6 +178,74 @@ const getRequestPath = (request: HttpServerRequest): string => {
   return url.pathname;
 };
 
+const createHeaders = (
+  headers: Readonly<Record<string, string | undefined>>
+): Headers => {
+  const output = new Headers();
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (value !== undefined) {
+      output.set(key, value);
+    }
+  }
+
+  return output;
+};
+
+const toEffectHttpUnauthorized =
+  (context: EffectHttpRequestContext) => (): EffectHttpUnauthorized =>
+    new EffectHttpUnauthorized({
+      message: "Authentication required.",
+      requestId: context.identity.requestId,
+    });
+
+const toEffectHttpForbidden = (
+  context: EffectHttpRequestContext,
+  permission: CommercePermissionInput
+): EffectHttpForbidden =>
+  new EffectHttpForbidden({
+    message: "Missing required permission.",
+    permission: normalizeCommercePermission(permission).key,
+    requestId: context.identity.requestId,
+  });
+
+const toEffectAuthPermissionKey = (
+  context: EffectHttpRequestContext,
+  permission: CommercePermissionInput
+): EffectValue<typeof EffectAuthPermissionKey.Type, EffectHttpForbidden> =>
+  Schema.decodeUnknownEffect(EffectAuthPermissionKey)(
+    normalizeCommercePermission(permission).key
+  ).pipe(
+    Effect.mapError(
+      () =>
+        new EffectHttpForbidden({
+          message: "Unsupported permission.",
+          permission: normalizeCommercePermission(permission).key,
+          requestId: context.identity.requestId,
+        })
+    )
+  );
+
+const toEffectHttpAuthContext = (
+  context: EffectHttpRequestContext,
+  authContext: AuthRequestContext
+): EffectValue<EffectHttpAuthContext, EffectHttpUnauthorized> => {
+  if (!authContext.identity || !authContext.session) {
+    return Effect.fail(toEffectHttpUnauthorized(context)());
+  }
+
+  return Effect.succeed({
+    actor: {
+      kind: authContext.identity.role,
+      permissionKeys: authContext.permissionKeys,
+      session: authContext.session,
+      userId: authContext.identity.id,
+    },
+    requestContext: authContext,
+    session: authContext.session,
+  });
+};
+
 /** Creates a validated request context from serialized HTTP request metadata. */
 export const createEffectHttpRequestContext = ({
   defaultDeadlineMillis = DEFAULT_DEADLINE_MILLIS,
@@ -182,6 +266,7 @@ export const createEffectHttpRequestContext = ({
 
     return {
       deadlineAtEpochMillis: startedAtEpochMillis + defaultDeadlineMillis,
+      headers: createHeaders(headers),
       identity: {
         correlationId,
         requestId,
@@ -277,6 +362,65 @@ export const withEffectHttpPermission = <A, E, R>(
     yield* permissions.requirePermission({ auth, context, permission });
     return yield* effect;
   });
+
+/** Request identifier generator for Worker runtime composition. */
+export const effectHttpRequestIdGeneratorLayer = Layer.succeed(
+  EffectHttpRequestIdGenerator,
+  {
+    nextId: () =>
+      Effect.sync(
+        () =>
+          `req_${Date.now().toString(36)}_${Math.random()
+            .toString(36)
+            .slice(2)}`
+      ),
+  }
+);
+
+/**
+ * Bridges the provider-independent auth service into Effect HTTP auth
+ * middleware. Concrete providers such as Better Auth stay behind
+ * `EffectAuthServiceTag` and never leak into API contracts.
+ */
+export const effectHttpAuthServiceFromEffectAuthLayer = Layer.effect(
+  EffectHttpAuthService,
+  EffectAuthServiceTag.pipe(
+    Effect.map((auth) =>
+      EffectHttpAuthService.of({
+        authenticate: (context) =>
+          Effect.gen(function* authenticateWithEffectAuth() {
+            const authContext = yield* auth
+              .requireAuthenticated({ headers: context.headers })
+              .pipe(Effect.mapError(toEffectHttpUnauthorized(context)));
+            return yield* toEffectHttpAuthContext(context, authContext);
+          }),
+      })
+    )
+  )
+);
+
+/**
+ * Default protected-route permission checker for Effect HTTP groups. Auth runs
+ * once in middleware; authorization then checks the resolved Effect auth
+ * context so handlers do not re-read provider state.
+ */
+export const effectHttpPermissionServiceLayer = Layer.succeed(
+  EffectHttpPermissionService,
+  EffectHttpPermissionService.of({
+    requirePermission: ({ auth, context, permission }) =>
+      Effect.gen(function* requireEffectAuthPermission() {
+        const authPermission = yield* toEffectAuthPermissionKey(
+          context,
+          permission
+        ).pipe(
+          Effect.mapError(() => toEffectHttpForbidden(context, permission))
+        );
+        if (!auth.requestContext.permissionKeys.includes(authPermission)) {
+          return yield* Effect.fail(toEffectHttpForbidden(context, permission));
+        }
+      }),
+  })
+);
 
 const deadlineExceeded = (
   context: EffectHttpRequestContext
