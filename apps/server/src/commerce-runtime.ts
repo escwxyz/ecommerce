@@ -69,7 +69,10 @@ import {
   createSalesChannelService,
 } from "@ecommerce/region-sales-channel";
 import type { RegionSalesChannelD1Database } from "@ecommerce/region-sales-channel";
-import { createD1StoreRepository, createStoreService } from "@ecommerce/store";
+import {
+  createD1StoreRepository,
+  createStorePromiseService,
+} from "@ecommerce/store";
 import type { StoreD1Database } from "@ecommerce/store";
 import { createD1TaxRepository, createTaxService } from "@ecommerce/tax";
 import type { TaxD1Database } from "@ecommerce/tax";
@@ -258,7 +261,7 @@ export const createServerCommerceRuntime = ({
       ...sharedServiceOptions,
       repository: repositories.regionSalesChannel,
     }),
-    store: createStoreService({
+    store: createStorePromiseService({
       ...sharedServiceOptions,
       repository: repositories.store,
     }),

@@ -59,9 +59,11 @@ describe("store schema-backed expected errors", () => {
       reason: "no-supported-currencies",
     });
     await expect(
-      service.updateStoreSettings({
-        supportedCurrencyCodes: [" ", ""],
-      })
+      Effect.runPromise(
+        service.updateStoreSettings({
+          supportedCurrencyCodes: [" ", ""],
+        })
+      )
     ).rejects.toMatchObject({
       _tag: "StoreCurrencyListEmpty",
       reason: "no-supported-currencies",

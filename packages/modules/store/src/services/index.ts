@@ -1,10 +1,17 @@
 export {
   STORE_SETTINGS_UPDATED_EVENT,
   StoreService,
+  createStorePromiseService,
+  createStoreRepositoryLayer,
+  createStoreServiceFromDependenciesLayer,
   createStoreService,
   createStoreServiceLayer,
+  defaultStorePromiseService,
   defaultStoreService,
+  type CreateStorePromiseServiceOptions,
   type CreateStoreServiceOptions,
+  type StorePromiseServiceShape,
+  type StoreServiceFailure,
   type StoreServiceShape,
   type StoreSettingsUpdatedEventPayload,
 } from "./store.service";

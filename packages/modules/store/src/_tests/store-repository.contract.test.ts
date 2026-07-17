@@ -11,10 +11,13 @@ import {
   storeSchema,
   storeTableName,
   type StoreDatabase,
-  type StoreRepository,
+  type StoreLegacyRepository,
   type StoreSettings,
 } from "../domain";
-import { createInMemoryStoreRepository } from "../repositories";
+import {
+  createInMemoryStoreRepository,
+  createStoreLegacyRepositoryFromRepository,
+} from "../repositories";
 
 const createStoreSettings = (name: string): StoreSettings => ({
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -32,7 +35,7 @@ const createStoreSettings = (name: string): StoreSettings => ({
 
 interface RepositoryTestContext {
   readonly cleanup?: () => void;
-  readonly repository: StoreRepository;
+  readonly repository: StoreLegacyRepository;
 }
 
 const runStoreRepositoryContract = (
@@ -143,7 +146,9 @@ class FakeD1PreparedStatement {
 }
 
 runStoreRepositoryContract("in-memory store repository", () => ({
-  repository: createInMemoryStoreRepository(),
+  repository: createStoreLegacyRepositoryFromRepository(
+    createInMemoryStoreRepository()
+  ),
 }));
 
 runStoreRepositoryContract("D1 store repository", async () => {

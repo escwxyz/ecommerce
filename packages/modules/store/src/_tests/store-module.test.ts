@@ -6,10 +6,14 @@ import {
   createStaticClock,
 } from "@ecommerce/core/testing";
 import { call } from "@orpc/server";
+import { Effect } from "effect";
 
 import { storeContractRouter } from "../contracts";
 import { storeModule } from "../module";
-import { createInMemoryStoreRepository } from "../repositories";
+import {
+  createInMemoryStoreRepository,
+  createStoreLegacyRepositoryFromRepository,
+} from "../repositories";
 import { createStoreRouteFragment } from "../router";
 import { STORE_SETTINGS_UPDATED_EVENT, createStoreService } from "../services";
 
@@ -45,7 +49,9 @@ describe("store module foundation", () => {
       repository: createInMemoryStoreRepository(),
     });
 
-    await expect(service.getStoreDefaults()).resolves.toMatchObject({
+    await expect(
+      Effect.runPromise(service.getStoreDefaults)
+    ).resolves.toMatchObject({
       defaultCurrencyCode: "USD",
       defaultLocale: "en-US",
       supportedCurrencyCodes: ["USD"],
@@ -53,12 +59,14 @@ describe("store module foundation", () => {
     });
 
     await expect(
-      service.updateStoreSettings({
-        defaultCurrencyCode: "EUR",
-        name: "EU Store",
-        supportedCurrencyCodes: ["usd", "eur"],
-        timezone: "Europe/Berlin",
-      })
+      Effect.runPromise(
+        service.updateStoreSettings({
+          defaultCurrencyCode: "EUR",
+          name: "EU Store",
+          supportedCurrencyCodes: ["usd", "eur"],
+          timezone: "Europe/Berlin",
+        })
+      )
     ).resolves.toMatchObject({
       defaultCurrencyCode: "EUR",
       name: "EU Store",
@@ -85,10 +93,12 @@ describe("store module foundation", () => {
     });
 
     await expect(
-      service.updateStoreSettings({
-        defaultCurrencyCode: "EUR",
-        supportedCurrencyCodes: ["USD"],
-      })
+      Effect.runPromise(
+        service.updateStoreSettings({
+          defaultCurrencyCode: "EUR",
+          supportedCurrencyCodes: ["USD"],
+        })
+      )
     ).rejects.toMatchObject({
       _tag: "StoreDefaultCurrencyUnsupported",
       defaultCurrencyCode: "EUR",
@@ -124,7 +134,9 @@ describe("store module foundation", () => {
     const fragment = createStoreRouteFragment({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["store_7", "evt_7"]),
-      repository: createInMemoryStoreRepository(),
+      repository: createStoreLegacyRepositoryFromRepository(
+        createInMemoryStoreRepository()
+      ),
     });
 
     const settings = await call(

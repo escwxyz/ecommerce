@@ -3,7 +3,7 @@ import type { Kysely } from "kysely";
 import type {
   StoreDatabase,
   StoreInsert,
-  StoreRepository,
+  StoreLegacyRepository,
   StoreRow,
   StoreSettings,
 } from "../../domain";
@@ -48,7 +48,7 @@ const toStoreInsert = (settings: StoreSettings): StoreInsert => ({
 
 export const createD1StoreRepository = ({
   db,
-}: CreateD1StoreRepositoryOptions): StoreRepository => ({
+}: CreateD1StoreRepositoryOptions): StoreLegacyRepository => ({
   getStoreSettings: async () => {
     const row = await db
       .selectFrom("store")

@@ -17,11 +17,13 @@ export {
   StoreIdentifierSchema,
   StoreInvalidIdentifier,
   StoreMetadataSchema,
+  StoreRepositoryService,
   StoreSerializedIdSchema,
   StoreSettingsSchema,
   StoreTrimmedStringSchema,
   UpdateStoreSettingsInputSchema,
   createStoreId,
+  createStoreIdEffect,
   serializeStoreId,
   storeMigration,
   storeSchema,
@@ -36,6 +38,7 @@ export type {
   StoreDefaultsApiRecord,
   StoreId,
   StoreIdentifierInput,
+  StoreLegacyRepository,
   StoreInsert,
   StoreRepository,
   StoreRow,
@@ -47,9 +50,13 @@ export { storeExtensionPoints, storeModule } from "./module";
 export { storePermissionList, storePermissions } from "./permissions";
 export {
   InMemoryStoreRepository,
+  createInMemoryStoreRepositoryLayer,
   createInMemoryStoreRepository,
   createResettableInMemoryStoreRepository,
+  createStoreLegacyRepositoryFromRepository,
+  createStoreRepositoryFromLegacyRepository,
   defaultStoreRepository,
+  defaultStoreRepositoryLegacy,
   type ResettableStoreRepository,
 } from "./repositories";
 export {
@@ -62,10 +69,17 @@ export {
 export {
   STORE_SETTINGS_UPDATED_EVENT,
   StoreService,
+  createStorePromiseService,
+  createStoreRepositoryLayer,
+  createStoreServiceFromDependenciesLayer,
   createStoreService,
   createStoreServiceLayer,
+  defaultStorePromiseService,
   defaultStoreService,
+  type CreateStorePromiseServiceOptions,
   type CreateStoreServiceOptions,
+  type StorePromiseServiceShape,
+  type StoreServiceFailure,
   type StoreServiceShape,
   type StoreSettingsUpdatedEventPayload,
 } from "./services";

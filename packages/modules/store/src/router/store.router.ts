@@ -11,8 +11,11 @@ import type {
 } from "../domain";
 import { serializeStoreId } from "../domain";
 import { storePermissions } from "../permissions";
-import { createStoreService, defaultStoreService } from "../services";
-import type { CreateStoreServiceOptions } from "../services";
+import {
+  createStorePromiseService,
+  defaultStorePromiseService,
+} from "../services";
+import type { CreateStorePromiseServiceOptions } from "../services";
 
 export interface StoreModuleContext {
   readonly auth: unknown;
@@ -82,7 +85,7 @@ const serializeDefaults = (
   timezone: settings.timezone,
 });
 
-export interface CreateStoreRouteFragmentOptions extends CreateStoreServiceOptions {
+export interface CreateStoreRouteFragmentOptions extends CreateStorePromiseServiceOptions {
   readonly key?: string;
 }
 
@@ -96,8 +99,8 @@ export const createStoreRouteFragment = ({
     options.idGenerator ||
     options.initialSettings ||
     options.eventPublisher
-      ? createStoreService(options)
-      : defaultStoreService;
+      ? createStorePromiseService(options)
+      : defaultStorePromiseService;
 
   const baseImplementation =
     implement(storeContractRouter).$context<StoreModuleContext>();

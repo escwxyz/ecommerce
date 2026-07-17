@@ -4,7 +4,12 @@ export {
   StoreInvalidIdentifier,
   type StoreExpectedError,
 } from "./store.errors";
-export { STORE_ID_PREFIX, createStoreId, serializeStoreId } from "./store-id";
+export {
+  STORE_ID_PREFIX,
+  createStoreId,
+  createStoreIdEffect,
+  serializeStoreId,
+} from "./store-id";
 export {
   StoreApiRecordSchema,
   StoreCurrencyCodeSchema,
@@ -35,7 +40,9 @@ export type {
   StoreDefaultsApiRecord,
   StoreId,
   StoreIdentifierInput,
+  StoreLegacyRepository,
   StoreRepository,
   StoreSettings,
   UpdateStoreSettingsInput,
 } from "./store.types";
+export { StoreRepositoryService } from "./store.types";

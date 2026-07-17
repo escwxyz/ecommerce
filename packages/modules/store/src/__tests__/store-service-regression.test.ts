@@ -5,6 +5,7 @@ import {
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
+import { Effect } from "effect";
 
 import { createInMemoryStoreRepository } from "../repositories";
 import { STORE_SETTINGS_UPDATED_EVENT, createStoreService } from "../services";
@@ -42,9 +43,9 @@ describe("store service regression behavior", () => {
       ids: ["store_primary"],
     });
 
-    const settings = await service.getStoreSettings();
-    const defaults = await service.getStoreDefaults();
-    const loadedAgain = await service.getStoreSettings();
+    const settings = await Effect.runPromise(service.getStoreSettings);
+    const defaults = await Effect.runPromise(service.getStoreDefaults);
+    const loadedAgain = await Effect.runPromise(service.getStoreSettings);
 
     expect(settings).toMatchObject({
       createdAt,
@@ -76,16 +77,18 @@ describe("store service regression behavior", () => {
       ids: ["store_update", "event_update"],
     });
 
-    const updated = await service.updateStoreSettings({
-      defaultCurrencyCode: "eur",
-      defaultLocale: " de-DE ",
-      defaultRegionId: "region_eu",
-      defaultSalesChannelId: "sc_web",
-      metadata: { organizationHint: "org_demo" },
-      name: " EU Store ",
-      supportedCurrencyCodes: ["usd", "eur", "USD", " "],
-      timezone: " Europe/Berlin ",
-    });
+    const updated = await Effect.runPromise(
+      service.updateStoreSettings({
+        defaultCurrencyCode: "eur",
+        defaultLocale: " de-DE ",
+        defaultRegionId: "region_eu",
+        defaultSalesChannelId: "sc_web",
+        metadata: { organizationHint: "org_demo" },
+        name: " EU Store ",
+        supportedCurrencyCodes: ["usd", "eur", "USD", " "],
+        timezone: " Europe/Berlin ",
+      })
+    );
 
     expect(updated).toMatchObject({
       defaultCurrencyCode: "EUR",
@@ -130,14 +133,16 @@ describe("store service regression behavior", () => {
       ids: ["store_noop", "event_noop"],
     });
 
-    await service.getStoreSettings();
-    const unchanged = await service.updateStoreSettings({
-      defaultCurrencyCode: "usd",
-      defaultLocale: " en-US ",
-      name: " Default store ",
-      supportedCurrencyCodes: ["USD"],
-      timezone: " UTC ",
-    });
+    await Effect.runPromise(service.getStoreSettings);
+    const unchanged = await Effect.runPromise(
+      service.updateStoreSettings({
+        defaultCurrencyCode: "usd",
+        defaultLocale: " en-US ",
+        name: " Default store ",
+        supportedCurrencyCodes: ["USD"],
+        timezone: " UTC ",
+      })
+    );
 
     expect(unchanged).toMatchObject({
       defaultCurrencyCode: "USD",
@@ -157,10 +162,12 @@ describe("store service regression behavior", () => {
     });
 
     await expect(
-      service.updateStoreSettings({
-        defaultCurrencyCode: "EUR",
-        supportedCurrencyCodes: ["USD"],
-      })
+      Effect.runPromise(
+        service.updateStoreSettings({
+          defaultCurrencyCode: "EUR",
+          supportedCurrencyCodes: ["USD"],
+        })
+      )
     ).rejects.toMatchObject({
       _tag: "StoreDefaultCurrencyUnsupported",
       defaultCurrencyCode: "EUR",
