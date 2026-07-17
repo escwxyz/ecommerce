@@ -1,28 +1,21 @@
-import type { Brand } from "@ecommerce/core/brand";
-import type { z } from "zod";
-
 import type {
   StoreApiRecordSchema,
   StoreDefaultsApiRecordSchema,
   StoreDefaultsSchema,
+  StoreIdSchema,
   StoreIdentifierSchema,
   StoreSettingsSchema,
   UpdateStoreSettingsInputSchema,
 } from "./store.schema";
 
-export type StoreId = Brand<string, "store">;
-export type StoreIdentifierInput = z.infer<typeof StoreIdentifierSchema>;
-export type StoreSettings = Omit<z.infer<typeof StoreSettingsSchema>, "id"> & {
-  readonly id: StoreId;
-};
-export type StoreDefaults = z.infer<typeof StoreDefaultsSchema>;
-export type StoreApiRecord = z.infer<typeof StoreApiRecordSchema>;
-export type StoreDefaultsApiRecord = z.infer<
-  typeof StoreDefaultsApiRecordSchema
->;
-export type UpdateStoreSettingsInput = z.infer<
-  typeof UpdateStoreSettingsInputSchema
->;
+export type StoreId = typeof StoreIdSchema.Type;
+export type StoreIdentifierInput = typeof StoreIdentifierSchema.Type;
+export type StoreSettings = typeof StoreSettingsSchema.Type;
+export type StoreDefaults = typeof StoreDefaultsSchema.Type;
+export type StoreApiRecord = typeof StoreApiRecordSchema.Type;
+export type StoreDefaultsApiRecord = typeof StoreDefaultsApiRecordSchema.Type;
+export type UpdateStoreSettingsInput =
+  typeof UpdateStoreSettingsInputSchema.Type;
 
 export interface StoreRepository {
   getStoreSettings(): Promise<StoreSettings | null>;

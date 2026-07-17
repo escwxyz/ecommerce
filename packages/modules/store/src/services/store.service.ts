@@ -13,7 +13,12 @@ import type {
   StoreSettings,
   UpdateStoreSettingsInput,
 } from "../domain";
-import { STORE_ID_PREFIX, createStoreId } from "../domain";
+import {
+  STORE_ID_PREFIX,
+  StoreCurrencyListEmpty,
+  StoreDefaultCurrencyUnsupported,
+  createStoreId,
+} from "../domain";
 import { defaultStoreRepository } from "../repositories";
 
 export const STORE_SETTINGS_UPDATED_EVENT = "store.settings.updated" as const;
@@ -78,7 +83,9 @@ const normalizeCurrencyCodes = (
   }
 
   if (normalized.length === 0) {
-    throw new Error("Store must support at least one currency.");
+    throw new StoreCurrencyListEmpty({
+      reason: "no-supported-currencies",
+    });
   }
 
   return normalized;
@@ -89,9 +96,10 @@ const assertDefaultCurrencySupported = (
   supportedCurrencyCodes: readonly string[]
 ): void => {
   if (!supportedCurrencyCodes.includes(defaultCurrencyCode)) {
-    throw new Error(
-      `Default currency "${defaultCurrencyCode}" must be included in supported currencies.`
-    );
+    throw new StoreDefaultCurrencyUnsupported({
+      defaultCurrencyCode,
+      supportedCurrencyCodes,
+    });
   }
 };
 

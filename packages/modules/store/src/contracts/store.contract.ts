@@ -2,10 +2,10 @@ import { defineApiContractRoute } from "@ecommerce/module-contracts";
 import { z } from "zod";
 
 import {
-  StoreApiRecordSchema,
-  StoreDefaultsApiRecordSchema,
-  UpdateStoreSettingsInputSchema,
-} from "../domain";
+  StoreApiRecordContractSchema,
+  StoreDefaultsApiRecordContractSchema,
+  UpdateStoreSettingsInputContractSchema,
+} from "./legacy-zod-contract-schemas";
 
 export const storeContractRouter = {
   storeDefaultsGet: defineApiContractRoute({
@@ -18,7 +18,7 @@ export const storeContractRouter = {
     tags: ["Store"],
   })
     .input(z.unknown())
-    .output(StoreDefaultsApiRecordSchema),
+    .output(StoreDefaultsApiRecordContractSchema),
   storeSettingsGet: defineApiContractRoute({
     description: "Load administrative store settings.",
     method: "GET",
@@ -29,7 +29,7 @@ export const storeContractRouter = {
     tags: ["Store"],
   })
     .input(z.unknown())
-    .output(StoreApiRecordSchema),
+    .output(StoreApiRecordContractSchema),
   storeSettingsUpdate: defineApiContractRoute({
     description:
       "Update store identity, defaults, locale, timezone, and metadata.",
@@ -40,6 +40,6 @@ export const storeContractRouter = {
     summary: "Update store settings",
     tags: ["Store"],
   })
-    .input(UpdateStoreSettingsInputSchema)
-    .output(StoreApiRecordSchema),
+    .input(UpdateStoreSettingsInputContractSchema)
+    .output(StoreApiRecordContractSchema),
 } as const;

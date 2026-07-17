@@ -6,17 +6,27 @@ export {
 export { storeAdminMetadata, storeAdminSurfaces } from "./admin";
 export { defineApiContractRoute, storeContractRouter } from "./contracts";
 export {
+  StoreCurrencyListEmpty,
   StoreApiRecordSchema,
+  StoreCurrencyCodeSchema,
+  StoreCurrencyCodeListSchema,
+  StoreDefaultCurrencyUnsupported,
   StoreDefaultsApiRecordSchema,
   StoreDefaultsSchema,
+  StoreIdSchema,
   StoreIdentifierSchema,
+  StoreInvalidIdentifier,
+  StoreMetadataSchema,
+  StoreSerializedIdSchema,
   StoreSettingsSchema,
+  StoreTrimmedStringSchema,
   UpdateStoreSettingsInputSchema,
   createStoreId,
   serializeStoreId,
   storeMigration,
   storeSchema,
   storeTableName,
+  type StoreExpectedError,
 } from "./domain";
 export type {
   StoreApiRecord,

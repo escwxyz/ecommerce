@@ -89,7 +89,11 @@ describe("store module foundation", () => {
         defaultCurrencyCode: "EUR",
         supportedCurrencyCodes: ["USD"],
       })
-    ).rejects.toThrow(/must be included in supported currencies/);
+    ).rejects.toMatchObject({
+      _tag: "StoreDefaultCurrencyUnsupported",
+      defaultCurrencyCode: "EUR",
+      supportedCurrencyCodes: ["USD"],
+    });
   });
 
   it("declares contract-first store route metadata", () => {
