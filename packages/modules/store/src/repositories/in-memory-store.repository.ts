@@ -68,6 +68,12 @@ const toLegacyRepositoryFailure =
           repository: storeRepositoryName,
         });
 
+/**
+ * Temporary migration bridge from legacy Promise repositories into the
+ * Effect-native store repository contract. Keep this adapter narrow: legacy
+ * callers may still reject Promises, but those rejections must become supported
+ * typed repository/domain failures before entering store service logic.
+ */
 export const createStoreRepositoryFromLegacyRepository = (
   repository: StoreLegacyRepository
 ): StoreRepository => ({
@@ -82,6 +88,12 @@ export const createStoreRepositoryFromLegacyRepository = (
     }),
 });
 
+/**
+ * Temporary migration bridge from the Effect-native store repository back to
+ * the legacy Promise shape used by older D1 and route code. Compatibility
+ * depends on preserving the legacy method signatures while ensuring all writes
+ * still execute through the Effect repository implementation.
+ */
 export const createStoreLegacyRepositoryFromRepository = (
   repository: StoreRepository
 ): StoreLegacyRepository => ({

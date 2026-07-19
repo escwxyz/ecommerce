@@ -70,6 +70,12 @@ export interface CreateStoreServiceOptions {
   readonly repository?: StoreRepository;
 }
 
+/**
+ * Temporary Promise-facade construction options for legacy oRPC and D1 callers
+ * during the Effect migration. The compatibility invariant is that injected
+ * repositories keep the legacy Promise shape at this boundary only; the factory
+ * immediately adapts them back into the Effect-native repository contract.
+ */
 export interface CreateStorePromiseServiceOptions extends Omit<
   CreateStoreServiceOptions,
   "repository"
@@ -304,6 +310,13 @@ export const createStoreService = ({
   };
 };
 
+/**
+ * Creates the temporary Promise facade for store consumers that have not moved
+ * to Effect services yet. Keep this facade behaviorally aligned with
+ * `createStoreService`: Promise callers may keep their existing API while all
+ * domain normalization, typed failures, and repository bridging remain owned by
+ * the Effect implementation.
+ */
 export const createStorePromiseService = (
   options: CreateStorePromiseServiceOptions = {}
 ): StorePromiseServiceShape => {
