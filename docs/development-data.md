@@ -10,14 +10,15 @@ bun run db:seed
 
 `db:seed` targets only Wrangler's local `Database` binding. It creates stable
 checkout prerequisites for region, sales channel, product, pricing, inventory,
-tax, customer, and fulfillment data. It does not create store records, auth
-users, carts, orders, payments, fulfillments, or notification history.
+tax, and fulfillment data. It does not create store records, customer records,
+auth users, carts, orders, payments, fulfillments, or notification history.
 
-The store tracer slice has migrated off the legacy D1/Kysely path. Local
-checkout smoke tests still need store defaults while checkout and its dependent
-modules remain on the legacy runtime, so the server composition provides a
-temporary in-memory store defaults facade for that compatibility path. Do not
-reintroduce a D1 `store` table or seed row for migrated store behavior.
+The store tracer slice and customer foundational slice have migrated off the
+legacy D1/Kysely path. Local checkout smoke tests still need store defaults and
+a customer payment-identity lookup while checkout and its dependent modules
+remain on the legacy runtime, so the server composition provides temporary
+in-memory compatibility facades for that path. Do not reintroduce D1 `store` or
+`customer` tables or seed rows for migrated behavior.
 
 The command is idempotent. Rerunning it converges records under reserved
 development IDs without duplicating entities or relationship rows.

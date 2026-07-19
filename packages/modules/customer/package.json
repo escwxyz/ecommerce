@@ -10,12 +10,6 @@
     "./admin": {
       "default": "./src/admin/index.ts"
     },
-    "./adapters/d1": {
-      "default": "./src/adapters/d1/index.ts"
-    },
-    "./contracts": {
-      "default": "./src/contracts/index.ts"
-    },
     "./domain": {
       "default": "./src/domain/index.ts"
     },
@@ -24,9 +18,6 @@
     },
     "./repository": {
       "default": "./src/repositories/index.ts"
-    },
-    "./router": {
-      "default": "./src/router/index.ts"
     },
     "./schema": {
       "default": "./src/domain/index.ts"
@@ -40,22 +31,17 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "test": "bun test ./src/_tests"
+    "test": "bun test ./src/__tests__"
   },
   "dependencies": {
     "@ecommerce/auth": "workspace:*",
     "@ecommerce/core": "workspace:*",
-    "@ecommerce/module-contracts": "workspace:*",
-    "@orpc/server": "catalog:",
     "effect": "catalog:",
-    "kysely": "catalog:",
-    "nanoid": "^5.1.6",
-    "zod": "catalog:"
+    "nanoid": "^5.1.6"
   },
   "devDependencies": {
     "@ecommerce/config": "workspace:*",
     "bun-types": "catalog:",
-    "kysely-d1": "catalog:",
     "typescript": "catalog:"
   }
 }

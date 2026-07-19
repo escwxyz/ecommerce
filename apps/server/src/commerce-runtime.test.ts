@@ -15,7 +15,7 @@ describe("server commerce runtime", () => {
     const routeKeys = Object.keys(runtime.apiAssembly.router);
 
     expect(runtime.checkoutConfigured).toBe(false);
-    expect(routeKeys).toContain("customerGet");
+    expect(routeKeys).not.toContain("customerGet");
     expect(routeKeys).toContain("taxCalculate");
     expect(routeKeys).toContain("paymentCollectionCreate");
     expect(routeKeys).toContain("fulfillmentCreate");

@@ -3,8 +3,6 @@ import { createCartRouteFragment } from "@ecommerce/cart/router";
 import type { CreateCheckoutRouteFragmentOptions } from "@ecommerce/checkout/router";
 import { createCheckoutRouteFragment } from "@ecommerce/checkout/router";
 import type { AdminMetadataModel } from "@ecommerce/core/admin";
-import type { CreateCustomerRouteFragmentOptions } from "@ecommerce/customer/router";
-import { createCustomerRouteFragment } from "@ecommerce/customer/router";
 import type { CreateFulfillmentRouteFragmentOptions } from "@ecommerce/fulfillment/router";
 import { createFulfillmentRouteFragment } from "@ecommerce/fulfillment/router";
 import type { CreateInventoryRouteFragmentOptions } from "@ecommerce/inventory/router";
@@ -139,7 +137,6 @@ export const coreRouteFragment = createApiRouteFragment({
 export interface CreateBuiltinRouteFragmentsOptions {
   readonly cart?: CreateCartRouteFragmentOptions;
   readonly checkout?: CreateCheckoutRouteFragmentOptions;
-  readonly customer?: CreateCustomerRouteFragmentOptions;
   readonly fulfillment?: CreateFulfillmentRouteFragmentOptions;
   readonly inventory?: CreateInventoryRouteFragmentOptions;
   readonly notificationEvent?: CreateNotificationEventRouteFragmentOptions;
@@ -155,7 +152,6 @@ export interface CreateBuiltinRouteFragmentsOptions {
 export const createBuiltinRouteFragments = ({
   cart,
   checkout,
-  customer,
   fulfillment,
   inventory,
   notificationEvent,
@@ -169,10 +165,6 @@ export const createBuiltinRouteFragments = ({
 }: CreateBuiltinRouteFragmentsOptions = {}) =>
   [
     coreRouteFragment,
-    createApiRouteFragment({
-      ...createCustomerRouteFragment(customer),
-      owner: "module",
-    }),
     createApiRouteFragment({
       ...createProductRouteFragment(product),
       owner: "module",

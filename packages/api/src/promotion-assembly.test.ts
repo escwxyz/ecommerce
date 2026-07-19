@@ -10,7 +10,6 @@ describe("promotion API and admin assembly", () => {
       createBuiltinRouteFragments().map((fragment) => fragment.key)
     ).toEqual([
       "builtin:core",
-      "module:customer",
       "module:product",
       "module:region-sales-channel",
       "module:inventory",
@@ -24,16 +23,6 @@ describe("promotion API and admin assembly", () => {
       "module:order",
       "module:checkout",
     ]);
-  });
-
-  it("includes customer route fragments before downstream transactional modules", () => {
-    const fragmentKeys = createBuiltinRouteFragments().map(
-      (fragment) => fragment.key
-    );
-
-    expect(fragmentKeys.indexOf("module:customer")).toBeLessThan(
-      fragmentKeys.indexOf("module:product")
-    );
   });
 
   it("exposes promotion admin metadata through shared module contracts", () => {

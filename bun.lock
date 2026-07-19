@@ -181,7 +181,6 @@
       "name": "@ecommerce/db",
       "dependencies": {
         "@ecommerce/cart": "workspace:*",
-        "@ecommerce/customer": "workspace:*",
         "@ecommerce/fulfillment": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
         "@ecommerce/notification-event": "workspace:*",
@@ -220,6 +219,7 @@
       "name": "@ecommerce/db-postgres",
       "dependencies": {
         "@ecommerce/core": "workspace:*",
+        "@ecommerce/customer": "workspace:*",
         "@ecommerce/store": "workspace:*",
         "@effect/sql-pg": "catalog:",
         "drizzle-orm": "catalog:",
@@ -330,17 +330,12 @@
       "dependencies": {
         "@ecommerce/auth": "workspace:*",
         "@ecommerce/core": "workspace:*",
-        "@ecommerce/module-contracts": "workspace:*",
-        "@orpc/server": "catalog:",
         "effect": "catalog:",
-        "kysely": "catalog:",
         "nanoid": "^5.1.6",
-        "zod": "catalog:",
       },
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
-        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },

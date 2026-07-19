@@ -189,16 +189,6 @@ describe("deterministic development seed", () => {
       tax_region_name: "United States",
     });
 
-    const customerCountry = database
-      .query<{ country_code: string; customer_id: string }, []>(
-        "SELECT country_code, customer_id FROM customer_address WHERE is_default_shipping = 1"
-      )
-      .get();
-    expect(customerCountry).toEqual({
-      country_code: "US",
-      customer_id: seedModule.developmentSeedIds.customer,
-    });
-
     database.close();
   });
 
@@ -214,7 +204,6 @@ describe("deterministic development seed", () => {
     database.exec(seedSql);
 
     const seededCounts = {
-      customer: countRows(database, "customer"),
       inventoryLevel: countRows(database, "inventory_level"),
       moneyAmount: countRows(database, "pricing_money_amount"),
       product: countRows(database, "product"),
@@ -225,7 +214,6 @@ describe("deterministic development seed", () => {
     database.exec(seedSql);
 
     expect({
-      customer: countRows(database, "customer"),
       inventoryLevel: countRows(database, "inventory_level"),
       moneyAmount: countRows(database, "pricing_money_amount"),
       product: countRows(database, "product"),

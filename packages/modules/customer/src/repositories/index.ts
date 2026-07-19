@@ -1,5 +1,6 @@
 export {
   InMemoryCustomerRepository,
+  createInMemoryCustomerRepositoryLayer,
   createInMemoryCustomerRepository,
   createResettableInMemoryCustomerRepository,
   defaultCustomerRepository,

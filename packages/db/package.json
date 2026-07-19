@@ -14,9 +14,6 @@
     "./schema/auth": {
       "default": "./src/schema/auth.ts"
     },
-    "./schema/customer": {
-      "default": "./src/schema/customer.ts"
-    },
     "./schema/fulfillment": {
       "default": "./src/schema/fulfillment.ts"
     },
@@ -54,7 +51,6 @@
   },
   "dependencies": {
     "@ecommerce/cart": "workspace:*",
-    "@ecommerce/customer": "workspace:*",
     "@ecommerce/fulfillment": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
     "@ecommerce/notification-event": "workspace:*",

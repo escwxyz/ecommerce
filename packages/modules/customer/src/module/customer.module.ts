@@ -3,7 +3,6 @@ import { Effect } from "effect";
 
 import { customerAdminSurfaces } from "../admin";
 import { customerPermissionList } from "../permissions";
-import { customerApiFragment } from "../router";
 import {
   CUSTOMER_AUTH_LINKED_EVENT,
   CUSTOMER_CREATED_EVENT,
@@ -19,7 +18,7 @@ export const customerExtensionPoints = {
 export const customerModule = defineCommerceModule({
   contributions: {
     adminSurfaces: customerAdminSurfaces,
-    apiFragments: [customerApiFragment],
+    apiFragments: [],
     eventTypes: [
       CUSTOMER_CREATED_EVENT,
       CUSTOMER_UPDATED_EVENT,

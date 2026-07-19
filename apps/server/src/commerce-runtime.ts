@@ -12,10 +12,9 @@ import type {
 } from "@ecommerce/core";
 import type { StatefulCoordinator } from "@ecommerce/core/stateful";
 import {
+  createCustomerIdEffect,
   createCustomerService,
-  createD1CustomerRepository,
 } from "@ecommerce/customer";
-import type { CustomerD1Database } from "@ecommerce/customer";
 import {
   createFakeFulfillmentProvider,
   createFulfillmentProviderRegistry,
@@ -146,9 +145,6 @@ export const createServerCommerceRuntime = ({
       createD1CartRepository({
         db: narrowDatabase<CartD1Database>(db),
       }),
-    customer: createD1CustomerRepository({
-      db: narrowDatabase<CustomerD1Database>(db),
-    }),
     fulfillment: createD1FulfillmentRepository({
       db: narrowDatabase<FulfillmentD1Database>(db),
     }),
@@ -206,6 +202,18 @@ export const createServerCommerceRuntime = ({
   const checkoutStoreService = {
     getStoreDefaults: () => Effect.runPromise(storeService.getStoreDefaults),
   };
+  const customerService = createCustomerService({
+    clock,
+    idGenerator,
+  });
+  const checkoutCustomerService = {
+    getPaymentIdentity: (customerId: string) =>
+      Effect.runPromise(
+        createCustomerIdEffect(customerId).pipe(
+          Effect.flatMap(customerService.getPaymentIdentity)
+        )
+      ),
+  };
   const services = {
     cart: createCartService({
       clock,
@@ -214,11 +222,7 @@ export const createServerCommerceRuntime = ({
       idGenerator,
       repository: repositories.cart,
     }),
-    customer: createCustomerService({
-      clock,
-      idGenerator,
-      repository: repositories.customer,
-    }),
+    customer: checkoutCustomerService,
     fulfillment: createFulfillmentService({
       clock,
       idGenerator,
@@ -329,11 +333,6 @@ export const createServerCommerceRuntime = ({
         repository: repositories.cart,
       },
       ...(checkout ? { checkout } : {}),
-      customer: {
-        clock,
-        idGenerator,
-        repository: repositories.customer,
-      },
       fulfillment: {
         clock,
         idGenerator,

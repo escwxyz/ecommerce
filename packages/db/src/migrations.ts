@@ -2,7 +2,6 @@ import type { Migration, MigrationProvider } from "kysely";
 
 import { authMigration } from "./schema/auth";
 import { cartMigration } from "./schema/cart";
-import { customerMigration } from "./schema/customer";
 import { fulfillmentMigration } from "./schema/fulfillment";
 import { inventoryMigration } from "./schema/inventory";
 import { notificationEventMigration } from "./schema/notification-event";
@@ -41,7 +40,6 @@ export const commerceMigrations = defineCommerceMigrations({
   "003_region_sales_channel": regionSalesChannelMigration,
   "004_pricing": pricingMigration,
   "005_promotion": promotionMigration,
-  "006_customer": customerMigration,
   "007_inventory": inventoryMigration,
   "008_tax": taxMigration,
   "009_payment": paymentMigration,

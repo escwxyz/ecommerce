@@ -122,6 +122,20 @@ export {
   type CreateApiRootAssemblyOptions,
 } from "./root-router";
 export {
+  CustomerApiGroupSuccessSchema,
+  CustomerApiListSuccessSchema,
+  CustomerApiNullableProfileSuccessSchema,
+  CustomerApiProfileSuccessSchema,
+  CustomerPaymentIdentitySuccessSchema,
+  customerAdminHttpApiGroup,
+  customerReadErrors,
+  customerWriteErrors,
+} from "./customer-effect-http-contract";
+export {
+  customerAdminHttpApiHandlers,
+  customerEffectHttpApiContribution,
+} from "./customer-effect-http-api";
+export {
   StoreApiRecordSuccessSchema,
   StoreDefaultsApiRecordSuccessSchema,
   storeAdminHttpApiGroup,

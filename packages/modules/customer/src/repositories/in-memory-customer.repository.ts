@@ -1,10 +1,18 @@
+import { Effect, Layer } from "effect";
+
 import type {
   CustomerAddress,
+  CustomerExpectedError,
   CustomerGroup,
   CustomerGroupId,
   CustomerId,
   CustomerProfile,
   CustomerRepository,
+} from "../domain";
+import {
+  CustomerGroupNotFound,
+  CustomerNotFound,
+  CustomerRepositoryService,
 } from "../domain";
 
 export interface ResettableCustomerRepository extends CustomerRepository {
@@ -75,14 +83,16 @@ export class InMemoryCustomerRepository implements ResettableCustomerRepository 
     this.#groups.clear();
   }
 
-  #requireCustomer(customerId: CustomerId): CustomerProfile {
+  #requireCustomer(
+    customerId: CustomerId
+  ): Effect.Effect<CustomerProfile, CustomerExpectedError> {
     const customer = this.#customers.get(customerId);
 
     if (!customer) {
-      throw new Error(`Customer "${customerId}" was not found.`);
+      return Effect.fail(new CustomerNotFound({ customerId }));
     }
 
-    return customer;
+    return Effect.succeed(customer);
   }
 
   addCustomerAddress({
@@ -91,15 +101,18 @@ export class InMemoryCustomerRepository implements ResettableCustomerRepository 
   }: {
     readonly address: CustomerAddress;
     readonly customerId: CustomerId;
-  }): Promise<CustomerProfile> {
-    const customer = this.#requireCustomer(customerId);
-    const updated = {
-      ...customer,
-      addresses: [...customer.addresses, address],
-    };
+  }) {
+    return this.#requireCustomer(customerId).pipe(
+      Effect.map((customer) => {
+        const updated = {
+          ...customer,
+          addresses: [...customer.addresses, address],
+        };
 
-    this.#customers.set(customerId, updated);
-    return Promise.resolve(updated);
+        this.#customers.set(customerId, updated);
+        return updated;
+      })
+    );
   }
 
   assignCustomerGroup({
@@ -108,65 +121,65 @@ export class InMemoryCustomerRepository implements ResettableCustomerRepository 
   }: {
     readonly customerId: CustomerId;
     readonly groupId: CustomerGroupId;
-  }): Promise<CustomerProfile> {
-    const customer = this.#requireCustomer(customerId);
+  }) {
+    return this.#requireCustomer(customerId).pipe(
+      Effect.flatMap((customer) => {
+        if (!this.#groups.has(groupId)) {
+          return Effect.fail(new CustomerGroupNotFound({ groupId }));
+        }
 
-    if (!this.#groups.has(groupId)) {
-      throw new Error(`Customer group "${groupId}" was not found.`);
-    }
+        if (customer.groupIds.includes(groupId)) {
+          return Effect.succeed(customer);
+        }
 
-    if (customer.groupIds.includes(groupId)) {
-      return Promise.resolve(customer);
-    }
+        const updated = {
+          ...customer,
+          groupIds: [...customer.groupIds, groupId],
+        };
 
-    const updated = {
-      ...customer,
-      groupIds: [...customer.groupIds, groupId],
-    };
-
-    this.#customers.set(customerId, updated);
-    return Promise.resolve(updated);
+        this.#customers.set(customerId, updated);
+        return Effect.succeed(updated);
+      })
+    );
   }
 
-  findCustomerByAuthUserId(
-    authUserId: string
-  ): Promise<CustomerProfile | null> {
+  findCustomerByAuthUserId(authUserId: string) {
     for (const customer of this.#customers.values()) {
       if (customer.authUserId === authUserId) {
-        return Promise.resolve(customer);
+        return Effect.succeed(customer);
       }
     }
 
-    return Promise.resolve(null);
+    return Effect.succeed(null);
   }
 
-  findCustomerByEmail(email: string): Promise<CustomerProfile | null> {
+  findCustomerByEmail(email: string) {
     const normalizedEmail = email.toLowerCase();
 
     for (const customer of this.#customers.values()) {
       if (customer.email.toLowerCase() === normalizedEmail) {
-        return Promise.resolve(customer);
+        return Effect.succeed(customer);
       }
     }
 
-    return Promise.resolve(null);
+    return Effect.succeed(null);
   }
 
-  findCustomerById(id: CustomerId): Promise<CustomerProfile | null> {
-    return Promise.resolve(this.#customers.get(id) ?? null);
+  findCustomerById(id: CustomerId) {
+    return Effect.succeed(this.#customers.get(id) ?? null);
   }
 
-  findCustomerGroupById(id: CustomerGroupId): Promise<CustomerGroup | null> {
-    return Promise.resolve(this.#groups.get(id) ?? null);
+  findCustomerGroupById(id: CustomerGroupId) {
+    return Effect.succeed(this.#groups.get(id) ?? null);
   }
 
-  listCustomerGroups(): Promise<readonly CustomerGroup[]> {
-    return Promise.resolve(sortGroups(this.#groups.values()));
-  }
+  readonly listCustomerGroups = Effect.sync(() =>
+    sortGroups(this.#groups.values())
+  );
 
-  listCustomers(): Promise<readonly CustomerProfile[]> {
-    return Promise.resolve(sortCustomers(this.#customers.values()));
-  }
+  readonly listCustomers = Effect.sync(() =>
+    sortCustomers(this.#customers.values())
+  );
 
   linkCustomerAuth({
     authUserId,
@@ -174,30 +187,39 @@ export class InMemoryCustomerRepository implements ResettableCustomerRepository 
   }: {
     readonly authUserId: string;
     readonly customerId: CustomerId;
-  }): Promise<CustomerProfile> {
-    const customer = this.#requireCustomer(customerId);
-    const updated = {
-      ...customer,
-      authUserId,
-    };
+  }) {
+    return this.#requireCustomer(customerId).pipe(
+      Effect.map((customer) => {
+        const updated = {
+          ...customer,
+          authUserId,
+        };
 
-    this.#customers.set(customerId, updated);
-    return Promise.resolve(updated);
+        this.#customers.set(customerId, updated);
+        return updated;
+      })
+    );
   }
 
-  saveCustomer(customer: CustomerProfile): Promise<CustomerProfile> {
-    this.#customers.set(customer.id, customer);
-    return Promise.resolve(customer);
+  saveCustomer(customer: CustomerProfile) {
+    return Effect.sync(() => {
+      this.#customers.set(customer.id, customer);
+      return customer;
+    });
   }
 
-  saveCustomerGroup(group: CustomerGroup): Promise<CustomerGroup> {
-    this.#groups.set(group.id, group);
-    return Promise.resolve(group);
+  saveCustomerGroup(group: CustomerGroup) {
+    return Effect.sync(() => {
+      this.#groups.set(group.id, group);
+      return group;
+    });
   }
 
-  updateCustomer(customer: CustomerProfile): Promise<CustomerProfile> {
-    this.#customers.set(customer.id, customer);
-    return Promise.resolve(customer);
+  updateCustomer(customer: CustomerProfile) {
+    return Effect.sync(() => {
+      this.#customers.set(customer.id, customer);
+      return customer;
+    });
   }
 }
 
@@ -208,3 +230,9 @@ export const createInMemoryCustomerRepository = (): CustomerRepository =>
 
 export const createResettableInMemoryCustomerRepository =
   (): ResettableCustomerRepository => new InMemoryCustomerRepository();
+
+export const createInMemoryCustomerRepositoryLayer = () =>
+  Layer.effect(
+    CustomerRepositoryService,
+    Effect.sync(() => new InMemoryCustomerRepository() as CustomerRepository)
+  );

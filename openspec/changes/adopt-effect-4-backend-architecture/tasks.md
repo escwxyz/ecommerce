@@ -72,7 +72,7 @@
 
 ## 7. Foundational module migration
 
-- [ ] 7.1 Migrate customer end-to-end and delete its legacy schema, repository, migration, and router path
+- [x] 7.1 Migrate customer end-to-end and delete its legacy schema, repository, migration, and router path
 - [ ] 7.2 Migrate product end-to-end and delete its legacy schema, repository, migration, and router path
 - [ ] 7.3 Migrate region and sales-channel end-to-end and delete their legacy paths
 - [ ] 7.4 Migrate pricing end-to-end and delete its legacy path

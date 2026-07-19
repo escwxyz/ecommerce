@@ -15,7 +15,6 @@ const emptyJson = JSON.stringify({});
 export const developmentSeedIds = {
   currency: "cur_dev_usd",
   customer: "cust_dev_ada",
-  customerAddress: "caddr_dev_ada_home",
   fulfillmentOption: "shipopt_dev_ground",
   fulfillmentProvider: "fulprov_dev_manual",
   fulfillmentSet: "fset_dev_us",
@@ -363,45 +362,6 @@ const inventoryLevel = defineSeedWrite(
   ["id"]
 );
 
-const customer = defineSeedWrite(
-  "customer",
-  {
-    auth_user_id: null,
-    created_at: seedTimestamp,
-    email: "ada.dev@example.com",
-    first_name: "Ada",
-    id: developmentSeedIds.customer,
-    last_name: "Lovelace",
-    metadata: emptyJson,
-    phone: null,
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const customerAddress = defineSeedWrite(
-  "customer_address",
-  {
-    address1: "1 Development Way",
-    address2: null,
-    city: "New York",
-    company: null,
-    country_code: "US",
-    customer_id: developmentSeedIds.customer,
-    first_name: "Ada",
-    id: developmentSeedIds.customerAddress,
-    is_default_billing: 1,
-    is_default_shipping: 1,
-    kind: "shipping",
-    last_name: "Lovelace",
-    metadata: emptyJson,
-    phone: null,
-    postal_code: "10001",
-    province: "NY",
-  },
-  ["id"]
-);
-
 export const developmentSeedWrites: readonly DevelopmentSeedWrite[] = [
   fulfillmentProvider,
   fulfillmentSet,
@@ -425,6 +385,4 @@ export const developmentSeedWrites: readonly DevelopmentSeedWrite[] = [
   inventoryItem,
   stockLocation,
   inventoryLevel,
-  customer,
-  customerAddress,
 ];

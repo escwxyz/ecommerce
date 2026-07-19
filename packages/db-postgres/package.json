@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@ecommerce/core": "workspace:*",
+    "@ecommerce/customer": "workspace:*",
     "@ecommerce/store": "workspace:*",
     "@effect/sql-pg": "catalog:",
     "drizzle-orm": "catalog:",
