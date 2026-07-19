@@ -2,6 +2,11 @@ import { Schema } from "effect";
 
 const currencyCodePattern = /^[A-Z]{3}$/u;
 
+const isCanonicalIsoDateTime = (value: string): boolean => {
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+};
+
 /** Stable commerce store identifier owned by the store module. */
 export const StoreIdSchema = Schema.NonEmptyString.pipe(
   Schema.check(Schema.isStartsWith("store_")),
@@ -25,6 +30,11 @@ export const StoreCurrencyCodeListSchema = Schema.Array(
 /** Non-empty string that has already been trimmed at the input boundary. */
 export const StoreTrimmedStringSchema = Schema.Trimmed.pipe(
   Schema.check(Schema.isMinLength(1))
+);
+
+/** Canonical UTC ISO datetime string emitted by store API serializers. */
+export const StoreIsoDateTimeStringSchema = StoreTrimmedStringSchema.pipe(
+  Schema.check(Schema.makeFilter(isCanonicalIsoDateTime))
 );
 
 /** JSON-like metadata bag owned by the store module. */
@@ -52,12 +62,12 @@ export const UpdateStoreSettingsInputSchema = Schema.Struct({
   defaultCurrencyCode: Schema.optional(StoreCurrencyCodeSchema),
   defaultLocale: Schema.optional(StoreTrimmedStringSchema),
   defaultRegionId: Schema.optional(Schema.NullOr(StoreTrimmedStringSchema)),
-  defaultSalesChannelId: Schema.optional(Schema.NullOr(StoreTrimmedStringSchema)),
+  defaultSalesChannelId: Schema.optional(
+    Schema.NullOr(StoreTrimmedStringSchema)
+  ),
   metadata: Schema.optional(StoreMetadataSchema),
   name: Schema.optional(StoreTrimmedStringSchema),
-  supportedCurrencyCodes: Schema.optional(
-    StoreCurrencyCodeListSchema
-  ),
+  supportedCurrencyCodes: Schema.optional(StoreCurrencyCodeListSchema),
   timezone: Schema.optional(StoreTrimmedStringSchema),
 });
 
@@ -71,7 +81,7 @@ export const StoreDefaultsSchema = Schema.Struct({
 });
 
 export const StoreApiRecordSchema = Schema.Struct({
-  createdAt: StoreTrimmedStringSchema,
+  createdAt: StoreIsoDateTimeStringSchema,
   defaultCurrencyCode: StoreCurrencyCodeSchema,
   defaultLocale: StoreTrimmedStringSchema,
   defaultRegionId: Schema.NullOr(StoreTrimmedStringSchema),
@@ -79,9 +89,9 @@ export const StoreApiRecordSchema = Schema.Struct({
   id: StoreSerializedIdSchema,
   metadata: StoreMetadataSchema,
   name: StoreTrimmedStringSchema,
-  supportedCurrencyCodes: Schema.Array(StoreCurrencyCodeSchema),
+  supportedCurrencyCodes: StoreCurrencyCodeListSchema,
   timezone: StoreTrimmedStringSchema,
-  updatedAt: StoreTrimmedStringSchema,
+  updatedAt: StoreIsoDateTimeStringSchema,
 });
 
 export const StoreDefaultsApiRecordSchema = Schema.Struct({
@@ -89,6 +99,6 @@ export const StoreDefaultsApiRecordSchema = Schema.Struct({
   defaultLocale: StoreTrimmedStringSchema,
   defaultRegionId: Schema.NullOr(StoreTrimmedStringSchema),
   defaultSalesChannelId: Schema.NullOr(StoreTrimmedStringSchema),
-  supportedCurrencyCodes: Schema.Array(StoreCurrencyCodeSchema),
+  supportedCurrencyCodes: StoreCurrencyCodeListSchema,
   timezone: StoreTrimmedStringSchema,
 });

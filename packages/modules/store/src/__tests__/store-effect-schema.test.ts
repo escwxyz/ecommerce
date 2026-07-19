@@ -1,12 +1,13 @@
+import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "bun:test";
 import { Schema } from "effect";
 
 import {
   StoreApiRecordSchema,
+  StoreDefaultsApiRecordSchema,
   StoreSettingsSchema,
   UpdateStoreSettingsInputSchema,
   createStoreId,
@@ -40,19 +41,53 @@ describe("store Effect schemas", () => {
   });
 
   it("keeps API and update schemas strict about serialized store invariants", () => {
+    const validApiRecord = {
+      createdAt: "2026-01-01T00:00:00.000Z",
+      defaultCurrencyCode: "USD",
+      defaultLocale: "en-US",
+      defaultRegionId: null,
+      defaultSalesChannelId: null,
+      id: "store_api",
+      metadata: {},
+      name: "API Store",
+      supportedCurrencyCodes: ["USD"],
+      timezone: "UTC",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    };
+
+    expect(
+      Schema.decodeUnknownSync(StoreApiRecordSchema)(validApiRecord)
+    ).toEqual(validApiRecord);
+
     expect(() =>
       Schema.decodeUnknownSync(StoreApiRecordSchema)({
-        createdAt: "2026-01-01T00:00:00.000Z",
+        ...validApiRecord,
         defaultCurrencyCode: "usd",
+      })
+    ).toThrow();
+
+    expect(() =>
+      Schema.decodeUnknownSync(StoreApiRecordSchema)({
+        ...validApiRecord,
+        createdAt: "not-a-date",
+      })
+    ).toThrow();
+
+    expect(() =>
+      Schema.decodeUnknownSync(StoreApiRecordSchema)({
+        ...validApiRecord,
+        supportedCurrencyCodes: [],
+      })
+    ).toThrow();
+
+    expect(() =>
+      Schema.decodeUnknownSync(StoreDefaultsApiRecordSchema)({
+        defaultCurrencyCode: "USD",
         defaultLocale: "en-US",
         defaultRegionId: null,
         defaultSalesChannelId: null,
-        id: "store_api",
-        metadata: {},
-        name: "API Store",
-        supportedCurrencyCodes: ["USD"],
+        supportedCurrencyCodes: [],
         timezone: "UTC",
-        updatedAt: "2026-01-02T00:00:00.000Z",
       })
     ).toThrow();
 
