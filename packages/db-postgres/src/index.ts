@@ -71,6 +71,7 @@ export {
 } from "./outbox";
 
 export {
+  CurrentPostgresTransactionService,
   createPostgresDrizzleLayer,
   PostgresDrizzleService,
   type PostgresDrizzleConfig,

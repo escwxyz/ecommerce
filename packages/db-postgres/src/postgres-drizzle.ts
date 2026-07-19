@@ -22,6 +22,17 @@ export type PostgresDrizzleTransaction = Parameters<
   ? Transaction
   : never;
 
+/**
+ * Adapter-local transaction handle made available inside
+ * `PostgresDrizzleService.withTransaction`. Core transaction metadata remains
+ * runtime-neutral; PostgreSQL repositories and the transactional outbox use
+ * this tag to execute SQL against the active Drizzle transaction.
+ */
+export const CurrentPostgresTransactionService =
+  Context.Service<PostgresDrizzleTransaction>(
+    "@ecommerce/db-postgres/CurrentPostgresTransactionService"
+  );
+
 /** Service provided to PostgreSQL repository adapters. */
 export interface PostgresDrizzleService {
   readonly database: PostgresDrizzleDatabase;
@@ -40,7 +51,12 @@ const createPostgresDrizzleService = (
 ): PostgresDrizzleService =>
   PostgresDrizzleService.of({
     database,
-    withTransaction: (use) => database.transaction(use),
+    withTransaction: (use) =>
+      database.transaction((transaction) =>
+        use(transaction).pipe(
+          Effect.provideService(CurrentPostgresTransactionService, transaction)
+        )
+      ),
   });
 
 /** Creates the Drizzle database Layer backed by an Effect SQL PostgreSQL client. */

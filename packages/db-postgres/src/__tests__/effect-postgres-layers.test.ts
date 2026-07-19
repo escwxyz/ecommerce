@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { Effect, Layer, Redacted } from "effect";
 
 import {
+  CurrentPostgresTransactionService,
   PostgresDrizzleService,
   createDrizzlePgTypes,
   createPostgresClientLayer,
@@ -65,6 +66,18 @@ describe("Effect PostgreSQL and Drizzle Layers", () => {
           adapter: postgresAdapterTarget,
           hasTransaction: Boolean(transaction),
         })
+      )
+    );
+
+    expect(Effect.isEffect(program)).toBe(true);
+  });
+
+  it("exposes the active Drizzle transaction through an adapter-local service", () => {
+    const program = PostgresDrizzleService.use((service) =>
+      service.withTransaction((transaction) =>
+        CurrentPostgresTransactionService.use((currentTransaction) =>
+          Effect.succeed(currentTransaction === transaction)
+        )
       )
     );
 

@@ -12,10 +12,17 @@ import type {
   OutboxStatus,
 } from "@ecommerce/core/persistence";
 import { and, eq, sql } from "drizzle-orm";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option } from "effect";
 
-import { PostgresDrizzleService } from "./postgres-drizzle";
-import type { PostgresDrizzleService as PostgresDrizzleServiceShape } from "./postgres-drizzle";
+import {
+  CurrentPostgresTransactionService,
+  PostgresDrizzleService,
+} from "./postgres-drizzle";
+import type {
+  PostgresDrizzleDatabase,
+  PostgresDrizzleService as PostgresDrizzleServiceShape,
+  PostgresDrizzleTransaction,
+} from "./postgres-drizzle";
 import { commerceOutbox, commerceOutboxDeadLetter } from "./schema/index";
 import type { CommerceOutboxRow } from "./schema/index";
 
@@ -53,6 +60,10 @@ interface PostgresOutboxClaimRow extends Record<string, unknown> {
   readonly transactionId: string;
   readonly workflowRunId: string | null;
 }
+
+type PostgresOutboxExecutor =
+  | PostgresDrizzleDatabase
+  | PostgresDrizzleTransaction;
 
 const hasQueryRows = <TRow>(
   value: unknown
@@ -190,20 +201,30 @@ export const buildPostgresOutboxInsert = <EventName extends string, Payload>({
   workflowRunId: message.event.workflowRunId,
 });
 
-const findOutboxByIdempotency = <EventName extends string, Payload>(
-  message: OutboxMessage<EventName, Payload>
-) =>
-  PostgresDrizzleService.use((service) =>
-    service.database
-      .select()
-      .from(commerceOutbox)
-      .where(
-        and(
-          eq(commerceOutbox.topic, message.topic),
-          eq(commerceOutbox.idempotencyKey, message.idempotencyKey)
-        )
-      )
+const getOutboxWriteExecutor = (
+  service: PostgresDrizzleServiceShape
+): Effect.Effect<PostgresOutboxExecutor> =>
+  Effect.map(
+    Effect.serviceOption(CurrentPostgresTransactionService),
+    Option.getOrElse(() => service.database)
   );
+
+const findOutboxByIdempotency = <EventName extends string, Payload>({
+  executor,
+  message,
+}: {
+  readonly executor: PostgresOutboxExecutor;
+  readonly message: OutboxMessage<EventName, Payload>;
+}) =>
+  executor
+    .select()
+    .from(commerceOutbox)
+    .where(
+      and(
+        eq(commerceOutbox.topic, message.topic),
+        eq(commerceOutbox.idempotencyKey, message.idempotencyKey)
+      )
+    );
 
 const enqueueOutboxMessage = <EventName extends string, Payload>({
   message,
@@ -222,9 +243,10 @@ const enqueueOutboxMessage = <EventName extends string, Payload>({
 > =>
   Effect.gen(function* enqueueOutboxMessageGenerator() {
     const currentTransaction = yield* CurrentTransactionService;
+    const executor = yield* getOutboxWriteExecutor(service);
     const createdAt = yield* now;
     const recordId = yield* nextRecordId;
-    const insertedRows = yield* service.database
+    const insertedRows = yield* executor
       .insert(commerceOutbox)
       .values(
         buildPostgresOutboxInsert({
@@ -250,9 +272,10 @@ const enqueueOutboxMessage = <EventName extends string, Payload>({
       };
     }
 
-    const existingRows = yield* findOutboxByIdempotency(message).pipe(
-      Effect.provideService(PostgresDrizzleService, service)
-    );
+    const existingRows = yield* findOutboxByIdempotency({
+      executor,
+      message,
+    });
     const [existing] = existingRows;
 
     if (!existing) {
