@@ -25,6 +25,7 @@ import {
   STORE_ID_PREFIX,
   StoreCurrencyListEmpty,
   StoreDefaultCurrencyUnsupported,
+  StoreEventPublishFailure,
   StoreRepositoryService,
   createStoreIdEffect,
 } from "../domain";
@@ -201,6 +202,15 @@ const getUpdatedFields = (
   return fields;
 };
 
+const toStoreEventPublishFailure = (
+  settings: StoreSettings
+): StoreEventPublishFailure =>
+  new StoreEventPublishFailure({
+    eventName: STORE_SETTINGS_UPDATED_EVENT,
+    reason: "publisher-rejected",
+    storeId: settings.id,
+  });
+
 const pickDefaults = (settings: StoreSettings): StoreDefaults => ({
   defaultCurrencyCode: settings.defaultCurrencyCode,
   defaultLocale: settings.defaultLocale,
@@ -278,25 +288,24 @@ export const createStoreService = ({
       const updatedFields = getUpdatedFields(current, saved);
 
       if (updatedFields.length > 0) {
-        yield* Effect.promise(() =>
-          Promise.resolve(
-            eventPublisher.publish(
-              createEventEnvelope({
-                id: idGenerator.nextId(),
-                name: STORE_SETTINGS_UPDATED_EVENT,
-                payload: {
-                  id: saved.id,
-                  updatedFields,
-                } satisfies StoreSettingsUpdatedEventPayload,
-                sourceModule: "store",
-                subject: {
-                  id: saved.id,
-                  type: "store",
-                },
-              })
-            )
-          )
-        );
+        const event = createEventEnvelope({
+          id: idGenerator.nextId(),
+          name: STORE_SETTINGS_UPDATED_EVENT,
+          payload: {
+            id: saved.id,
+            updatedFields,
+          } satisfies StoreSettingsUpdatedEventPayload,
+          sourceModule: "store",
+          subject: {
+            id: saved.id,
+            type: "store",
+          },
+        });
+
+        yield* Effect.tryPromise({
+          catch: () => toStoreEventPublishFailure(saved),
+          try: () => Promise.resolve(eventPublisher.publish(event)),
+        });
       }
 
       return saved;

@@ -10,6 +10,7 @@ import type {
 import {
   StoreCurrencyListEmpty,
   StoreDefaultCurrencyUnsupported,
+  StoreEventPublishFailure,
   StoreInvalidIdentifier,
   StoreRepositoryService,
 } from "../domain";
@@ -55,6 +56,7 @@ const isStoreExpectedError = (cause: unknown): cause is StoreExpectedError =>
   cause instanceof RepositoryUnavailable ||
   cause instanceof StoreCurrencyListEmpty ||
   cause instanceof StoreDefaultCurrencyUnsupported ||
+  cause instanceof StoreEventPublishFailure ||
   cause instanceof StoreInvalidIdentifier;
 
 const toLegacyRepositoryFailure =

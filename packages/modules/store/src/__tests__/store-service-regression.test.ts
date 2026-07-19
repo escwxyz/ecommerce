@@ -5,7 +5,7 @@ import {
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
-import { Effect } from "effect";
+import { Cause, Effect, Exit } from "effect";
 
 import { createInMemoryStoreRepository } from "../repositories";
 import { STORE_SETTINGS_UPDATED_EVENT, createStoreService } from "../services";
@@ -154,6 +154,44 @@ describe("store service regression behavior", () => {
       updatedAt,
     });
     expect(collector.events).toEqual([]);
+  });
+
+  it("maps update event publish failures to typed store failures", async () => {
+    const { service } = createStoreTestService({
+      clock: createStaticClock(updatedAt),
+      eventPublisher: {
+        publish: () => Promise.reject(new Error("publisher unavailable")),
+      },
+      ids: ["store_publish_failure", "event_publish_failure"],
+    });
+
+    const updateExit = await Effect.runPromiseExit(
+      service.updateStoreSettings({
+        defaultCurrencyCode: "EUR",
+        supportedCurrencyCodes: ["USD", "EUR"],
+      })
+    );
+
+    expect(Exit.isFailure(updateExit)).toBe(true);
+
+    if (Exit.isFailure(updateExit)) {
+      const failure = updateExit.cause.reasons.find(Cause.isFailReason);
+      expect(failure?.error).toMatchObject({
+        _tag: "StoreEventPublishFailure",
+        eventName: STORE_SETTINGS_UPDATED_EVENT,
+        reason: "publisher-rejected",
+        storeId: "store_publish_failure",
+      });
+      expect(updateExit.cause.reasons.some(Cause.isDieReason)).toBe(false);
+    }
+
+    await expect(
+      Effect.runPromise(service.getStoreSettings)
+    ).resolves.toMatchObject({
+      defaultCurrencyCode: "EUR",
+      id: "store_publish_failure",
+      supportedCurrencyCodes: ["USD", "EUR"],
+    });
   });
 
   it("rejects updates whose default currency is not supported", async () => {

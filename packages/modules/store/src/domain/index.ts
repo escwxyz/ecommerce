@@ -1,6 +1,7 @@
 export {
   StoreCurrencyListEmpty,
   StoreDefaultCurrencyUnsupported,
+  StoreEventPublishFailure,
   StoreInvalidIdentifier,
   type StoreExpectedError,
 } from "./store.errors";

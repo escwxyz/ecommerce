@@ -2,7 +2,7 @@ import type { RepositoryFailure } from "@ecommerce/core";
 /* eslint-disable max-classes-per-file -- store expected failures form one schema-backed domain vocabulary */
 import { Schema } from "effect";
 
-import { StoreCurrencyCodeSchema } from "./store.schema";
+import { StoreCurrencyCodeSchema, StoreIdSchema } from "./store.schema";
 
 /** Store identifier failed the module-owned prefix invariant. */
 export class StoreInvalidIdentifier extends Schema.TaggedErrorClass<StoreInvalidIdentifier>()(
@@ -30,8 +30,19 @@ export class StoreDefaultCurrencyUnsupported extends Schema.TaggedErrorClass<Sto
   }
 ) {}
 
+/** Store update event publication failed after settings were saved. */
+export class StoreEventPublishFailure extends Schema.TaggedErrorClass<StoreEventPublishFailure>()(
+  "StoreEventPublishFailure",
+  {
+    eventName: Schema.NonEmptyString,
+    reason: Schema.Literals(["publisher-rejected"]),
+    storeId: StoreIdSchema,
+  }
+) {}
+
 export type StoreExpectedError =
   | StoreCurrencyListEmpty
   | StoreDefaultCurrencyUnsupported
+  | StoreEventPublishFailure
   | StoreInvalidIdentifier
   | RepositoryFailure;
