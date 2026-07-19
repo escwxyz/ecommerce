@@ -58,9 +58,9 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
-As of 2026-07-19, tasks 1.1 through 7.4 of
+As of 2026-07-19, tasks 1.1 through 7.5 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
-customer/product/region-sales-channel/pricing foundational slices have migrated to the
+customer/product/region-sales-channel/pricing/inventory foundational slices have migrated to the
 Effect backend architecture:
 
 - `@ecommerce/store` owns Effect Schema domain/API contracts, schema-backed
@@ -100,13 +100,21 @@ Effect backend architecture:
   exports have been removed.
 - `@ecommerce/api` exposes pricing admin operations through an Effect
   `HttpApi` group instead of the legacy pricing oRPC router.
+- `@ecommerce/inventory` owns Effect Schema domain/API contracts,
+  schema-backed tagged errors, Effect services, repository contracts,
+  in-memory test Layers, and PostgreSQL Drizzle persistence. Its legacy Zod,
+  Kysely/D1 repository, shared-D1 migration, oRPC router, and related public
+  exports have been removed.
+- `@ecommerce/api` exposes inventory admin operations through an Effect
+  `HttpApi` group instead of the legacy inventory oRPC router.
 - The legacy D1 seed no longer creates `store`, `customer`, `product`,
   `product_variant`, `region`, `region_country`, `sales_channel`, or
-  `sales_channel_product`, or pricing records. Checkout smoke tests still run
+  `sales_channel_product`, pricing records, or inventory records. Checkout smoke tests still run
   against the remaining legacy D1 modules by using temporary server-owned store
   defaults, customer payment-identity, deterministic product-variant
   validation, deterministic region/sales-channel validation, and deterministic
-  pricing calculation facades until checkout itself migrates.
+  pricing calculation and inventory availability/reservation facades until
+  checkout itself migrates.
 - The checkout compatibility facades are intentionally not new module adapters:
   they preserve only the development golden-path invariants formerly supplied
   by deleted D1 seed rows. Task 8.6 owns their removal when checkout
@@ -115,11 +123,11 @@ Effect backend architecture:
 
 ## Current Gaps
 
-- Live PostgreSQL store/customer/product/region-sales-channel/pricing contract
+- Live PostgreSQL store/customer/product/region-sales-channel/pricing/inventory contract
   verification is opt-in and still requires `POSTGRES_URL`. Credential-free
   suites validate the in-memory contract, package type shape, migrations as
   checked-in files, API contracts, SDK transports, and Worker composition.
-- Inventory, cart, promotion, tax, fulfillment, payment, checkout, order, and
+- Cart, promotion, tax, fulfillment, payment, checkout, order, and
   notification-event still have legacy D1/Kysely/oRPC paths until their
   vertical-slice tasks run.
 - The server-owned checkout compatibility facades remain a known temporary

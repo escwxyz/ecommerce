@@ -1,5 +1,6 @@
 export {
   InMemoryInventoryRepository,
+  createInMemoryInventoryRepositoryLayer,
   createInMemoryInventoryRepository,
   createResettableInMemoryInventoryRepository,
   defaultInventoryRepository,

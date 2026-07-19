@@ -235,43 +235,10 @@ describe("db d1 adapter", () => {
     sqlite.close();
   });
 
-  it("ships SQL migrations for inventory tables", () => {
-    const sqlite = new Database(":memory:");
+  it("does not ship a legacy D1 inventory migration after the Effect slice migration", () => {
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
-    sqlite.exec(
-      readFileSync(join(migrationsDir, "0008_inventory.sql"), "utf8")
-    );
-
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'table'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "inventory_item",
-        "inventory_stock_location",
-        "inventory_level",
-        "inventory_reservation",
-        "inventory_adjustment_event",
-      ])
-    );
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'index'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "inventory_item_sku_idx",
-        "inventory_level_scope_idx",
-        "inventory_reservation_idempotency_idx",
-        "inventory_reservation_level_idx",
-      ])
-    );
-
-    sqlite.close();
+    expect(readdirSync(migrationsDir)).not.toContain("0008_inventory.sql");
   });
 
   it("ships SQL migrations for tax tables", () => {
@@ -529,9 +496,6 @@ describe("db d1 adapter", () => {
         .map((row) => (row as { name: string }).name)
     ).toEqual(
       expect.arrayContaining([
-        "inventory_item",
-        "inventory_level",
-        "inventory_reservation",
         "tax_category",
         "tax_provider_config",
         "tax_region",
@@ -566,6 +530,18 @@ describe("db d1 adapter", () => {
         "order_transaction",
         "order_state_transition",
         "order_post_purchase_operation",
+      ])
+    );
+    expect(
+      sqlite
+        .query("select name from sqlite_master where type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name)
+    ).not.toEqual(
+      expect.arrayContaining([
+        "inventory_item",
+        "inventory_level",
+        "inventory_reservation",
       ])
     );
 

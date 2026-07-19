@@ -18,6 +18,11 @@ import {
   postgresCustomerGroupCustomerTableName,
   postgresCustomerGroupTableName,
   postgresCustomerTableName,
+  postgresInventoryAdjustmentEventTableName,
+  postgresInventoryItemTableName,
+  postgresInventoryLevelTableName,
+  postgresInventoryReservationTableName,
+  postgresInventoryStockLocationTableName,
   postgresPricingCurrencyTableName,
   postgresPricingMoneyAmountTableName,
   postgresPricingPriceListTableName,
@@ -303,6 +308,21 @@ export const createPostgresDevelopmentResetPlan = (
     command,
     requiresConfirmation: true,
     statements: [
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresInventoryAdjustmentEventTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresInventoryReservationTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresInventoryLevelTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresInventoryStockLocationTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresInventoryItemTableName
+      )} CASCADE`,
       `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
         postgresSalesChannelProductTableName
       )} CASCADE`,

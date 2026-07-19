@@ -1,5 +1,14 @@
-import { brand } from "@ecommerce/core/brand";
+import { Effect, Schema } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 
+import { InventoryInvalidIdentifier } from "./inventory.errors";
+import {
+  InventoryAdjustmentEventIdSchema,
+  InventoryItemIdSchema,
+  InventoryLevelIdSchema,
+  InventoryReservationIdSchema,
+  StockLocationIdSchema,
+} from "./inventory.schema";
 import type {
   InventoryAdjustmentEventId,
   InventoryItemId,
@@ -14,59 +23,68 @@ export const INVENTORY_LEVEL_ID_PREFIX = "ilvl_" as const;
 export const INVENTORY_RESERVATION_ID_PREFIX = "ires_" as const;
 export const INVENTORY_ADJUSTMENT_EVENT_ID_PREFIX = "iadj_" as const;
 
-const assertPrefixedId = (
-  value: string,
-  prefix: string,
-  label: string
-): void => {
-  if (!value.startsWith(prefix)) {
-    throw new Error(`${label} must start with "${prefix}".`);
-  }
-};
+const toInvalidIdentifier = (
+  expectedPrefix: string,
+  value: string
+): InventoryInvalidIdentifier =>
+  new InventoryInvalidIdentifier({ expectedPrefix, value });
 
-export const createInventoryItemId = (value: string): InventoryItemId => {
-  assertPrefixedId(value, INVENTORY_ITEM_ID_PREFIX, "Inventory item ID");
-  return brand<"inventory-item", string>(value);
-};
+export const createInventoryItemId = (value: string): InventoryItemId =>
+  value as InventoryItemId;
+export const createInventoryItemIdEffect = (
+  value: string
+): EffectValue<InventoryItemId, InventoryInvalidIdentifier> =>
+  Schema.decodeUnknownEffect(InventoryItemIdSchema)(value).pipe(
+    Effect.mapError(() => toInvalidIdentifier(INVENTORY_ITEM_ID_PREFIX, value))
+  );
+export const serializeInventoryItemId = (id: InventoryItemId): string => id;
 
-export const createStockLocationId = (value: string): StockLocationId => {
-  assertPrefixedId(value, STOCK_LOCATION_ID_PREFIX, "Stock location ID");
-  return brand<"stock-location", string>(value);
-};
+export const createStockLocationId = (value: string): StockLocationId =>
+  value as StockLocationId;
+export const createStockLocationIdEffect = (
+  value: string
+): EffectValue<StockLocationId, InventoryInvalidIdentifier> =>
+  Schema.decodeUnknownEffect(StockLocationIdSchema)(value).pipe(
+    Effect.mapError(() => toInvalidIdentifier(STOCK_LOCATION_ID_PREFIX, value))
+  );
+export const serializeStockLocationId = (id: StockLocationId): string => id;
 
-export const createInventoryLevelId = (value: string): InventoryLevelId => {
-  assertPrefixedId(value, INVENTORY_LEVEL_ID_PREFIX, "Inventory level ID");
-  return brand<"inventory-level", string>(value);
-};
+export const createInventoryLevelId = (value: string): InventoryLevelId =>
+  value as InventoryLevelId;
+export const createInventoryLevelIdEffect = (
+  value: string
+): EffectValue<InventoryLevelId, InventoryInvalidIdentifier> =>
+  Schema.decodeUnknownEffect(InventoryLevelIdSchema)(value).pipe(
+    Effect.mapError(() => toInvalidIdentifier(INVENTORY_LEVEL_ID_PREFIX, value))
+  );
+export const serializeInventoryLevelId = (id: InventoryLevelId): string => id;
 
 export const createInventoryReservationId = (
   value: string
-): InventoryReservationId => {
-  assertPrefixedId(
-    value,
-    INVENTORY_RESERVATION_ID_PREFIX,
-    "Inventory reservation ID"
-  );
-  return brand<"inventory-reservation", string>(value);
-};
-
-export const createInventoryAdjustmentEventId = (
+): InventoryReservationId => value as InventoryReservationId;
+export const createInventoryReservationIdEffect = (
   value: string
-): InventoryAdjustmentEventId => {
-  assertPrefixedId(
-    value,
-    INVENTORY_ADJUSTMENT_EVENT_ID_PREFIX,
-    "Inventory adjustment event ID"
+): EffectValue<InventoryReservationId, InventoryInvalidIdentifier> =>
+  Schema.decodeUnknownEffect(InventoryReservationIdSchema)(value).pipe(
+    Effect.mapError(() =>
+      toInvalidIdentifier(INVENTORY_RESERVATION_ID_PREFIX, value)
+    )
   );
-  return brand<"inventory-adjustment-event", string>(value);
-};
-
-export const serializeInventoryItemId = (id: InventoryItemId): string => id;
-export const serializeStockLocationId = (id: StockLocationId): string => id;
-export const serializeInventoryLevelId = (id: InventoryLevelId): string => id;
 export const serializeInventoryReservationId = (
   id: InventoryReservationId
 ): string => id;
+
+export const createInventoryAdjustmentEventId = (
+  value: string
+): InventoryAdjustmentEventId => value as InventoryAdjustmentEventId;
+export const createInventoryAdjustmentEventIdEffect = (
+  value: string
+): EffectValue<InventoryAdjustmentEventId, InventoryInvalidIdentifier> =>
+  Schema.decodeUnknownEffect(InventoryAdjustmentEventIdSchema)(value).pipe(
+    Effect.mapError(() =>
+      toInvalidIdentifier(INVENTORY_ADJUSTMENT_EVENT_ID_PREFIX, value)
+    )
+  );
 export const serializeInventoryAdjustmentEventId = (
   id: InventoryAdjustmentEventId
 ): string => id;

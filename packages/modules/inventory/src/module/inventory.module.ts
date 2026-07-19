@@ -3,7 +3,6 @@ import { Effect } from "effect";
 
 import { inventoryAdminSurfaces } from "../admin";
 import { inventoryPermissionList } from "../permissions";
-import { inventoryApiFragment } from "../router";
 import {
   INVENTORY_ADJUSTED_EVENT,
   INVENTORY_RESERVED_EVENT,
@@ -19,7 +18,7 @@ export const inventoryExtensionPoints = {
 export const inventoryModule = defineCommerceModule({
   contributions: {
     adminSurfaces: inventoryAdminSurfaces,
-    apiFragments: [inventoryApiFragment],
+    apiFragments: [],
     eventTypes: [INVENTORY_RESERVED_EVENT, INVENTORY_ADJUSTED_EVENT],
     permissions: inventoryPermissionList,
     workflowSteps: [
@@ -46,13 +45,4 @@ export const inventoryModule = defineCommerceModule({
   dependencies: [],
   key: "inventory",
   providedServices: [{ key: "inventory-service", service: InventoryService }],
-  schema: {
-    tables: [
-      "inventory_item",
-      "inventory_stock_location",
-      "inventory_level",
-      "inventory_reservation",
-      "inventory_adjustment_event",
-    ],
-  },
 });

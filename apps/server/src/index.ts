@@ -12,7 +12,6 @@ import { env } from "@ecommerce/env/server";
 import {
   createCloudflareCartCacheRepository,
   createCloudflareQueuedNotificationProvider,
-  createCloudflareStatefulCoordinator,
   createNotificationEventQueuePublisher,
   createNotificationEventRealtimePublisher,
   processNotificationEventQueueBatch,
@@ -120,10 +119,6 @@ const runtime = createServerCommerceRuntime({
       scope: createCartScope(context),
     }),
   db: database.db,
-  inventoryCoordinator: createCloudflareStatefulCoordinator({
-    clock,
-    namespace: serverEnv.STATEFUL_COORDINATOR,
-  }),
   notificationProviders: queuedNotificationProviders,
   notificationRuntime: notificationEventQueuePublisher,
 });

@@ -17,9 +17,6 @@
     "./schema/fulfillment": {
       "default": "./src/schema/fulfillment.ts"
     },
-    "./schema/inventory": {
-      "default": "./src/schema/inventory.ts"
-    },
     "./schema/notification-event": {
       "default": "./src/schema/notification-event.ts"
     },
@@ -43,7 +40,6 @@
   "dependencies": {
     "@ecommerce/cart": "workspace:*",
     "@ecommerce/fulfillment": "workspace:*",
-    "@ecommerce/inventory": "workspace:*",
     "@ecommerce/notification-event": "workspace:*",
     "@ecommerce/order": "workspace:*",
     "@ecommerce/payment": "workspace:*",

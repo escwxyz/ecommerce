@@ -1,5 +1,9 @@
+import { Effect, Layer } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
+
 import type {
   InventoryAdjustmentEventRecord,
+  InventoryExpectedError,
   InventoryItemId,
   InventoryItemRecord,
   InventoryLevelRecord,
@@ -9,9 +13,10 @@ import type {
   StockLocationId,
   StockLocationRecord,
 } from "../domain";
+import { InventoryRepositoryService, InventoryValidationFailure } from "../domain";
 
 export interface ResettableInventoryRepository extends InventoryRepository {
-  clear(): void;
+  readonly clear: EffectValue<void, never>;
 }
 
 const sortByCreatedAtDescending = <
@@ -49,7 +54,9 @@ const toLevelKey = (
   stockLocationId: StockLocationId
 ): string => `${inventoryItemId}:${stockLocationId}`;
 
-export class InMemoryInventoryRepository implements ResettableInventoryRepository {
+export class InMemoryInventoryRepository
+  implements ResettableInventoryRepository
+{
   readonly #adjustmentEvents = new Map<
     string,
     InventoryAdjustmentEventRecord
@@ -67,7 +74,7 @@ export class InMemoryInventoryRepository implements ResettableInventoryRepositor
   >();
   readonly #stockLocations = new Map<string, StockLocationRecord>();
 
-  clear(): void {
+  readonly clear = Effect.sync(() => {
     this.#adjustmentEvents.clear();
     this.#adjustmentEventIdempotency.clear();
     this.#items.clear();
@@ -75,175 +82,196 @@ export class InMemoryInventoryRepository implements ResettableInventoryRepositor
     this.#reservations.clear();
     this.#reservationIdempotency.clear();
     this.#stockLocations.clear();
-  }
+  });
 
-  findAdjustmentEvents(
+  readonly findAdjustmentEvents = (
     inventoryItemId: InventoryItemId
-  ): Promise<readonly InventoryAdjustmentEventRecord[]> {
-    const events: InventoryAdjustmentEventRecord[] = [];
+  ): EffectValue<
+    readonly InventoryAdjustmentEventRecord[],
+    InventoryExpectedError
+  > =>
+    Effect.sync(() => {
+      const events: InventoryAdjustmentEventRecord[] = [];
 
-    for (const event of this.#adjustmentEvents.values()) {
-      if (event.inventoryItemId === inventoryItemId) {
-        events.push(event);
+      for (const event of this.#adjustmentEvents.values()) {
+        if (event.inventoryItemId === inventoryItemId) {
+          events.push(event);
+        }
       }
-    }
 
-    return Promise.resolve(sortByCreatedAtDescending(events));
-  }
+      return sortByCreatedAtDescending(events);
+    });
 
-  findAdjustmentEventByIdempotencyKey(
+  readonly findAdjustmentEventByIdempotencyKey = (
     idempotencyKey: string
-  ): Promise<InventoryAdjustmentEventRecord | null> {
-    return Promise.resolve(
-      this.#adjustmentEventIdempotency.get(idempotencyKey) ?? null
+  ): EffectValue<
+    InventoryAdjustmentEventRecord | null,
+    InventoryExpectedError
+  > =>
+    Effect.sync(
+      () => this.#adjustmentEventIdempotency.get(idempotencyKey) ?? null
     );
-  }
 
-  findInventoryItemById(
+  readonly findInventoryItemById = (
     id: InventoryItemId
-  ): Promise<InventoryItemRecord | null> {
-    return Promise.resolve(this.#items.get(id) ?? null);
-  }
+  ): EffectValue<InventoryItemRecord | null, InventoryExpectedError> =>
+    Effect.sync(() => this.#items.get(id) ?? null);
 
-  findLevel(
+  readonly findLevel = (
     inventoryItemId: InventoryItemId,
     stockLocationId: StockLocationId
-  ): Promise<InventoryLevelRecord | null> {
-    return Promise.resolve(
-      this.#levels.get(toLevelKey(inventoryItemId, stockLocationId)) ?? null
+  ): EffectValue<InventoryLevelRecord | null, InventoryExpectedError> =>
+    Effect.sync(
+      () => this.#levels.get(toLevelKey(inventoryItemId, stockLocationId)) ?? null
     );
-  }
 
-  findReservationByIdempotencyKey(
+  readonly findReservationByIdempotencyKey = (
     idempotencyKey: string
-  ): Promise<InventoryReservationRecord | null> {
-    return Promise.resolve(
-      this.#reservationIdempotency.get(idempotencyKey) ?? null
-    );
-  }
+  ): EffectValue<
+    InventoryReservationRecord | null,
+    InventoryExpectedError
+  > =>
+    Effect.sync(() => this.#reservationIdempotency.get(idempotencyKey) ?? null);
 
-  findReservationsForLevel(
+  readonly findReservationsForLevel = (
     inventoryItemId: InventoryItemId,
     stockLocationId: StockLocationId
-  ): Promise<readonly InventoryReservationRecord[]> {
-    const reservations: InventoryReservationRecord[] = [];
+  ): EffectValue<
+    readonly InventoryReservationRecord[],
+    InventoryExpectedError
+  > =>
+    Effect.sync(() => {
+      const reservations: InventoryReservationRecord[] = [];
 
-    for (const reservation of this.#reservations.values()) {
-      if (
-        reservation.inventoryItemId === inventoryItemId &&
-        reservation.stockLocationId === stockLocationId &&
-        reservation.status === "active"
-      ) {
-        reservations.push(reservation);
+      for (const reservation of this.#reservations.values()) {
+        if (
+          reservation.inventoryItemId === inventoryItemId &&
+          reservation.stockLocationId === stockLocationId &&
+          reservation.status === "active"
+        ) {
+          reservations.push(reservation);
+        }
       }
-    }
 
-    return Promise.resolve(sortByCreatedAtDescending(reservations));
-  }
+      return sortByCreatedAtDescending(reservations);
+    });
 
-  findStockLocationById(
+  readonly findStockLocationById = (
     id: StockLocationId
-  ): Promise<StockLocationRecord | null> {
-    return Promise.resolve(this.#stockLocations.get(id) ?? null);
-  }
+  ): EffectValue<StockLocationRecord | null, InventoryExpectedError> =>
+    Effect.sync(() => this.#stockLocations.get(id) ?? null);
 
-  listStockLocationsForSalesChannel(
+  readonly listStockLocationsForSalesChannel = (
     salesChannelId: string
-  ): Promise<readonly StockLocationRecord[]> {
-    const locations: StockLocationRecord[] = [];
+  ): EffectValue<readonly StockLocationRecord[], InventoryExpectedError> =>
+    Effect.sync(() => {
+      const locations: StockLocationRecord[] = [];
 
-    for (const location of this.#stockLocations.values()) {
-      if (location.salesChannelIds.includes(salesChannelId)) {
-        locations.push(location);
+      for (const location of this.#stockLocations.values()) {
+        if (location.salesChannelIds.includes(salesChannelId)) {
+          locations.push(location);
+        }
       }
-    }
 
-    return Promise.resolve(sortByCreatedAtDescending(locations));
-  }
+      return sortByCreatedAtDescending(locations);
+    });
 
-  saveAdjustmentEvent(
+  readonly saveAdjustmentEvent = (
     event: InventoryAdjustmentEventRecord
-  ): Promise<InventoryAdjustmentEventRecord> {
-    this.#adjustmentEvents.set(event.id, event);
-    this.#adjustmentEventIdempotency.set(event.idempotencyKey, event);
-    return Promise.resolve(event);
-  }
-
-  saveInventoryItem(item: InventoryItemRecord): Promise<InventoryItemRecord> {
-    this.#items.set(item.id, item);
-    return Promise.resolve(item);
-  }
-
-  saveLevel(level: InventoryLevelRecord): Promise<InventoryLevelRecord> {
-    this.#levels.set(
-      toLevelKey(level.inventoryItemId, level.stockLocationId),
-      level
-    );
-    return Promise.resolve(level);
-  }
-
-  saveReservationIfAvailable(
-    reservation: InventoryReservationRecord
-  ): Promise<InventoryReservationSaveResult> {
-    const duplicate = this.#reservationIdempotency.get(
-      reservation.idempotencyKey
-    );
-
-    if (duplicate) {
-      return Promise.resolve({
-        reservation: duplicate,
-        status: "duplicate",
-      });
-    }
-
-    const levelKey = toLevelKey(
-      reservation.inventoryItemId,
-      reservation.stockLocationId
-    );
-    const level = this.#levels.get(levelKey);
-
-    if (!level) {
-      return Promise.resolve({ status: "insufficient-stock" });
-    }
-
-    const availableQuantity = level.stockedQuantity - level.reservedQuantity;
-
-    if (availableQuantity < reservation.quantity) {
-      return Promise.resolve({ status: "insufficient-stock" });
-    }
-
-    this.#levels.set(levelKey, {
-      ...level,
-      reservedQuantity: level.reservedQuantity + reservation.quantity,
-      updatedAt: reservation.updatedAt,
+  ): EffectValue<InventoryAdjustmentEventRecord, InventoryExpectedError> =>
+    Effect.sync(() => {
+      this.#adjustmentEvents.set(event.id, event);
+      this.#adjustmentEventIdempotency.set(event.idempotencyKey, event);
+      return event;
     });
-    this.#reservations.set(reservation.id, reservation);
-    this.#reservationIdempotency.set(reservation.idempotencyKey, reservation);
 
-    return Promise.resolve({
-      reservation,
-      status: "reserved",
+  readonly saveInventoryItem = (
+    item: InventoryItemRecord
+  ): EffectValue<InventoryItemRecord, InventoryExpectedError> =>
+    Effect.sync(() => {
+      this.#items.set(item.id, item);
+      return item;
     });
-  }
 
-  saveReservation(
+  readonly saveLevel = (
+    level: InventoryLevelRecord
+  ): EffectValue<InventoryLevelRecord, InventoryExpectedError> =>
+    Effect.sync(() => {
+      this.#levels.set(
+        toLevelKey(level.inventoryItemId, level.stockLocationId),
+        level
+      );
+      return level;
+    });
+
+  readonly saveReservationIfAvailable = (
     reservation: InventoryReservationRecord
-  ): Promise<InventoryReservationRecord> {
-    return this.saveReservationIfAvailable(reservation).then((result) => {
-      if (result.status !== "reserved") {
-        throw new Error("Inventory reservation could not be saved.");
+  ): EffectValue<InventoryReservationSaveResult, InventoryExpectedError> =>
+    Effect.sync(() => {
+      const duplicate = this.#reservationIdempotency.get(
+        reservation.idempotencyKey
+      );
+
+      if (duplicate) {
+        return {
+          reservation: duplicate,
+          status: "duplicate" as const,
+        };
       }
 
-      return result.reservation;
-    });
-  }
+      const levelKey = toLevelKey(
+        reservation.inventoryItemId,
+        reservation.stockLocationId
+      );
+      const level = this.#levels.get(levelKey);
 
-  saveStockLocation(
+      if (!level) {
+        return { status: "insufficient-stock" as const };
+      }
+
+      const availableQuantity = level.stockedQuantity - level.reservedQuantity;
+
+      if (availableQuantity < reservation.quantity) {
+        return { status: "insufficient-stock" as const };
+      }
+
+      this.#levels.set(levelKey, {
+        ...level,
+        reservedQuantity: level.reservedQuantity + reservation.quantity,
+        updatedAt: reservation.updatedAt,
+      });
+      this.#reservations.set(reservation.id, reservation);
+      this.#reservationIdempotency.set(
+        reservation.idempotencyKey,
+        reservation
+      );
+
+      return {
+        reservation,
+        status: "reserved" as const,
+      };
+    });
+
+  readonly saveReservation = (
+    reservation: InventoryReservationRecord
+  ): EffectValue<InventoryReservationRecord, InventoryExpectedError> =>
+    this.saveReservationIfAvailable(reservation).pipe(
+      Effect.flatMap((result) =>
+        result.status === "reserved"
+          ? Effect.succeed(result.reservation)
+          : new InventoryValidationFailure({
+              message: "Inventory reservation could not be saved.",
+            })
+      )
+    );
+
+  readonly saveStockLocation = (
     location: StockLocationRecord
-  ): Promise<StockLocationRecord> {
-    this.#stockLocations.set(location.id, location);
-    return Promise.resolve(location);
-  }
+  ): EffectValue<StockLocationRecord, InventoryExpectedError> =>
+    Effect.sync(() => {
+      this.#stockLocations.set(location.id, location);
+      return location;
+    });
 }
 
 export const defaultInventoryRepository = new InMemoryInventoryRepository();
@@ -253,3 +281,9 @@ export const createInMemoryInventoryRepository = (): InventoryRepository =>
 
 export const createResettableInMemoryInventoryRepository =
   (): ResettableInventoryRepository => new InMemoryInventoryRepository();
+
+export const createInMemoryInventoryRepositoryLayer = () =>
+  Layer.succeed(
+    InventoryRepositoryService,
+    createInMemoryInventoryRepository()
+  );

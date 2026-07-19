@@ -119,30 +119,19 @@ describe("deterministic development seed", () => {
     const checkoutFixture = database
       .query<
         {
-          inventory_item_id: string;
           shipping_option_id: string;
-          stock_location_id: string;
-          variant_id: string;
         },
         []
       >(
         `SELECT
-          ii.id AS inventory_item_id,
-          il.stock_location_id,
-          so.id AS shipping_option_id,
-          json_extract(ii.metadata_json, '$.variantId') AS variant_id
-        FROM inventory_item ii
-        JOIN inventory_level il ON il.inventory_item_id = ii.id
-        JOIN shipping_option so ON so.id = 'shipopt_dev_ground'
-        WHERE json_extract(ii.metadata_json, '$.variantId') = 'variant_dev_tshirt_black'`
+          so.id AS shipping_option_id
+        FROM shipping_option so
+        WHERE so.id = 'shipopt_dev_ground'`
       )
       .get();
 
     expect(checkoutFixture).toEqual({
-      inventory_item_id: seedModule.developmentSeedIds.inventoryItem,
       shipping_option_id: seedModule.developmentSeedIds.fulfillmentOption,
-      stock_location_id: seedModule.developmentSeedIds.stockLocation,
-      variant_id: seedModule.developmentSeedIds.productVariant,
     });
 
     const taxFixture = database
@@ -185,14 +174,12 @@ describe("deterministic development seed", () => {
     database.exec(seedSql);
 
     const seededCounts = {
-      inventoryLevel: countRows(database, "inventory_level"),
       shippingOption: countRows(database, "shipping_option"),
     };
 
     database.exec(seedSql);
 
     expect({
-      inventoryLevel: countRows(database, "inventory_level"),
       shippingOption: countRows(database, "shipping_option"),
     }).toEqual(seededCounts);
 

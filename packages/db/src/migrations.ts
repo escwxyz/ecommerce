@@ -3,7 +3,6 @@ import type { Migration, MigrationProvider } from "kysely";
 import { authMigration } from "./schema/auth";
 import { cartMigration } from "./schema/cart";
 import { fulfillmentMigration } from "./schema/fulfillment";
-import { inventoryMigration } from "./schema/inventory";
 import { notificationEventMigration } from "./schema/notification-event";
 import { orderMigration } from "./schema/order";
 import { paymentMigration } from "./schema/payment";
@@ -34,7 +33,6 @@ export const defineCommerceMigrations = <
 export const commerceMigrations = defineCommerceMigrations({
   "000_auth": authMigration,
   "005_promotion": promotionMigration,
-  "007_inventory": inventoryMigration,
   "008_tax": taxMigration,
   "009_payment": paymentMigration,
   "010_fulfillment": fulfillmentMigration,

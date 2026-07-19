@@ -192,48 +192,6 @@ const taxPolicy = defineSeedWrite(
   ["id"]
 );
 
-const inventoryItem = defineSeedWrite(
-  "inventory_item",
-  {
-    created_at: seedTimestamp,
-    id: developmentSeedIds.inventoryItem,
-    metadata_json: JSON.stringify({
-      variantId: developmentSeedIds.productVariant,
-    }),
-    sku: "DEV-TSHIRT-BLACK",
-    title: "Development T-Shirt - Black",
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const stockLocation = defineSeedWrite(
-  "inventory_stock_location",
-  {
-    created_at: seedTimestamp,
-    id: developmentSeedIds.stockLocation,
-    metadata_json: emptyJson,
-    name: "Development warehouse",
-    sales_channel_ids_json: JSON.stringify([developmentSeedIds.salesChannel]),
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const inventoryLevel = defineSeedWrite(
-  "inventory_level",
-  {
-    created_at: seedTimestamp,
-    id: developmentSeedIds.inventoryLevel,
-    inventory_item_id: developmentSeedIds.inventoryItem,
-    reserved_quantity: 0,
-    stock_location_id: developmentSeedIds.stockLocation,
-    stocked_quantity: 100,
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
 export const developmentSeedWrites: readonly DevelopmentSeedWrite[] = [
   fulfillmentProvider,
   fulfillmentSet,
@@ -245,7 +203,4 @@ export const developmentSeedWrites: readonly DevelopmentSeedWrite[] = [
   taxRegion,
   taxRate,
   taxPolicy,
-  inventoryItem,
-  stockLocation,
-  inventoryLevel,
 ];

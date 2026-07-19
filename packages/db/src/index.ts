@@ -1,7 +1,6 @@
 import type { AuthDatabase } from "./schema/auth";
 import type { CartDatabase } from "./schema/cart";
 import type { FulfillmentDatabase } from "./schema/fulfillment";
-import type { InventoryDatabase } from "./schema/inventory";
 import type { NotificationEventDatabase } from "./schema/notification-event";
 import type { OrderDatabase } from "./schema/order";
 import type { PaymentDatabase } from "./schema/payment";
@@ -14,8 +13,6 @@ export * as authSchema from "./schema/auth";
 export * as cartSchema from "./schema/cart";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as fulfillmentSchema from "./schema/fulfillment";
-// oxlint-disable-next-line oxc/no-barrel-file
-export * as inventorySchema from "./schema/inventory";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as notificationEventSchema from "./schema/notification-event";
 // oxlint-disable-next-line oxc/no-barrel-file
@@ -38,7 +35,6 @@ export interface CommerceDatabase
     AuthDatabase,
     CartDatabase,
     FulfillmentDatabase,
-    InventoryDatabase,
     NotificationEventDatabase,
     OrderDatabase,
     PaymentDatabase,

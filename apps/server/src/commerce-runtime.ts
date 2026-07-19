@@ -25,11 +25,6 @@ import type { FulfillmentProviderRegistry } from "@ecommerce/fulfillment";
 import { createD1FulfillmentRepository } from "@ecommerce/fulfillment/adapters/d1";
 import type { FulfillmentD1Database } from "@ecommerce/fulfillment/adapters/d1";
 import {
-  createD1InventoryRepository,
-  createInventoryService,
-} from "@ecommerce/inventory";
-import type { InventoryD1Database } from "@ecommerce/inventory";
-import {
   createD1NotificationEventRepository,
   createNotificationEventService,
 } from "@ecommerce/notification-event";
@@ -77,7 +72,6 @@ export interface ServerCommerceRuntimeOptions {
   readonly db: ServerCommerceDatabase;
   readonly fulfillmentProviderRegistry?: FulfillmentProviderRegistry;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly inventoryCoordinator?: StatefulCoordinator;
   readonly notificationProviders?: readonly NotificationProvider[];
   readonly notificationRuntime?: NotificationEventRuntimeHooks;
   readonly paymentProviderRegistry?: PaymentProviderRegistry;
@@ -111,7 +105,6 @@ export const createServerCommerceRuntime = ({
   db,
   fulfillmentProviderRegistry,
   idGenerator,
-  inventoryCoordinator,
   notificationProviders,
   notificationRuntime,
   paymentProviderRegistry,
@@ -133,9 +126,6 @@ export const createServerCommerceRuntime = ({
       }),
     fulfillment: createD1FulfillmentRepository({
       db: narrowDatabase<FulfillmentD1Database>(db),
-    }),
-    inventory: createD1InventoryRepository({
-      db: narrowDatabase<InventoryD1Database>(db),
     }),
     notificationEvent: createD1NotificationEventRepository({
       db: narrowDatabase<NotificationEventD1Database>(db),
@@ -258,6 +248,68 @@ export const createServerCommerceRuntime = ({
   /*
    * Temporary checkout compatibility bridge.
    *
+   * Task 7.5 removes the inventory D1 repository, Kysely schema, seed rows, and
+   * legacy oRPC route after migrating inventory to Effect HTTP + PostgreSQL.
+   * Checkout remains a section-8 legacy Promise orchestrator, so this facade
+   * preserves only the development golden-path availability and reservation
+   * semantics that were previously supplied by D1 seed rows. It is not a module
+   * adapter and must be deleted in task 8.6 when checkout moves to Effect and
+   * consumes migrated module service Layers directly.
+   */
+  const checkoutInventoryService = {
+    adjustInventory: () => Promise.resolve({}),
+    checkAvailability: (input: Record<string, unknown>) => {
+      const inventoryItemId = String(input.inventoryItemId ?? "");
+      const stockLocationId = String(
+        input.stockLocationId ?? developmentSeedIds.stockLocation
+      );
+
+      if (
+        inventoryItemId !== developmentSeedIds.inventoryItem ||
+        stockLocationId !== developmentSeedIds.stockLocation
+      ) {
+        return Promise.resolve({
+          availableQuantity: 0,
+          scopedBy: { stockLocationId },
+        });
+      }
+
+      return Promise.resolve({
+        availableQuantity: 100,
+        scopedBy: { stockLocationId },
+      });
+    },
+    reserveInventory: (input: Record<string, unknown>) => {
+      const inventoryItemId = String(input.inventoryItemId ?? "");
+      const quantity =
+        typeof input.quantity === "number" && Number.isInteger(input.quantity)
+          ? input.quantity
+          : 0;
+      const stockLocationId = String(
+        input.stockLocationId ?? developmentSeedIds.stockLocation
+      );
+
+      if (
+        inventoryItemId !== developmentSeedIds.inventoryItem ||
+        stockLocationId !== developmentSeedIds.stockLocation ||
+        quantity <= 0 ||
+        quantity > 100
+      ) {
+        return Promise.resolve({ reservations: [] });
+      }
+
+      return Promise.resolve({
+        reservation: {
+          inventoryItemId,
+          quantity,
+          stockLocationId,
+        },
+      });
+    },
+  };
+  /*
+   * Temporary checkout compatibility bridge.
+   *
    * Task 7.3 removed the region/sales-channel D1 repository and legacy oRPC
    * routes after moving that module to Effect HTTP + PostgreSQL. Checkout is
    * still a section-8 legacy Promise orchestrator, so it cannot consume the new
@@ -355,13 +407,7 @@ export const createServerCommerceRuntime = ({
       providerRegistry: fulfillmentProviderRegistry,
       repository: repositories.fulfillment,
     }),
-    inventory: createInventoryService({
-      clock,
-      coordinator: inventoryCoordinator,
-      eventPublisher,
-      idGenerator,
-      repository: repositories.inventory,
-    }),
+    inventory: checkoutInventoryService,
     notificationEvent,
     order: createOrderService({
       ...sharedServiceOptions,
@@ -452,13 +498,6 @@ export const createServerCommerceRuntime = ({
         idGenerator,
         providerRegistry: fulfillmentProviderRegistry,
         repository: repositories.fulfillment,
-      },
-      inventory: {
-        clock,
-        coordinator: inventoryCoordinator,
-        eventPublisher,
-        idGenerator,
-        repository: repositories.inventory,
       },
       notificationEvent: {
         clock,

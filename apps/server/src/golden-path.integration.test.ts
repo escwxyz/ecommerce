@@ -309,9 +309,6 @@ describe("server golden checkout path", () => {
             payment_id: string;
             payment_session_status: string;
             payment_status: string;
-            reservation_inventory_item_id: string;
-            reservation_status: string;
-            reservation_stock_location_id: string;
           },
           [string]
         >(
@@ -331,9 +328,6 @@ describe("server golden checkout path", () => {
             p.id AS payment_id,
             p.status AS payment_status,
             pc.status AS capture_status,
-            ir.inventory_item_id AS reservation_inventory_item_id,
-            ir.status AS reservation_status,
-            ir.stock_location_id AS reservation_stock_location_id,
             f.id AS fulfillment_id,
             f.order_id AS fulfillment_order_id,
             f.shipping_option_id AS fulfillment_shipping_option_id,
@@ -346,7 +340,6 @@ describe("server golden checkout path", () => {
           JOIN payment_session ps ON ps.collection_id = pcl.id
           JOIN payment p ON p.collection_id = pcl.id AND p.session_id = ps.id
           JOIN payment_capture pc ON pc.payment_id = p.id
-          JOIN inventory_reservation ir ON ir.workflow_run_id = 'golden-checkout'
           JOIN fulfillment f ON f.order_id = o.id
           JOIN event_outbox eo ON eo.workflow_run_id = 'golden-checkout'
             AND eo.event_name = 'checkout.completed'
@@ -375,9 +368,6 @@ describe("server golden checkout path", () => {
         payment_id: checkout.paymentId,
         payment_session_status: "authorized",
         payment_status: "captured",
-        reservation_inventory_item_id: developmentSeedIds.inventoryItem,
-        reservation_status: "active",
-        reservation_stock_location_id: developmentSeedIds.stockLocation,
       });
 
       const totals = sqlite
