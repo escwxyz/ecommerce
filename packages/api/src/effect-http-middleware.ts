@@ -3,6 +3,7 @@
 import { EffectAuthServiceTag } from "@ecommerce/auth";
 import type {
   AuthRequestContext,
+  AuthRequestFailure,
   EffectAuthIdentity,
   EffectAuthSession,
 } from "@ecommerce/auth";
@@ -202,6 +203,20 @@ const toEffectHttpUnauthorized =
       requestId: context.identity.requestId,
     });
 
+const recoverEffectHttpAuthFailure =
+  (context: EffectHttpRequestContext) =>
+  <A, R>(
+    effect: EffectValue<A, AuthRequestFailure, R>
+  ): EffectValue<A, EffectHttpUnauthorized, R> =>
+    effect.pipe(
+      Effect.catchTags({
+        AuthAdapterFailure: (error) => Effect.die(error),
+        AuthSessionExpired: (error) => Effect.die(error),
+        AuthUnauthenticated: () =>
+          Effect.fail(toEffectHttpUnauthorized(context)()),
+      })
+    );
+
 const toEffectHttpForbidden = (
   context: EffectHttpRequestContext,
   permission: CommercePermissionInput
@@ -394,7 +409,7 @@ export const effectHttpAuthServiceFromEffectAuthLayer = Layer.effect(
           Effect.gen(function* authenticateWithEffectAuth() {
             const authContext = yield* auth
               .requireAuthenticated({ headers: context.headers })
-              .pipe(Effect.mapError(toEffectHttpUnauthorized(context)));
+              .pipe(recoverEffectHttpAuthFailure(context));
             return yield* toEffectHttpAuthContext(context, authContext);
           }),
       })

@@ -1,12 +1,18 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  AuthAdapterFailure,
   AuthPermissionKeySchema,
   AuthSessionId,
+  AuthSessionExpired,
+  AuthUnauthenticated,
   AuthUserId,
+  EffectAuthServiceTag,
+  effectAuthServiceLayer,
+  type AuthRequestFailure,
   type EffectAuthSession,
 } from "@ecommerce/auth";
-import { Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Layer, Schema } from "effect";
 
 import {
   CurrentEffectHttpAuthContext,
@@ -15,9 +21,11 @@ import {
   type EffectHttpAuthContext,
   EffectHttpDeadlineExceeded,
   EffectHttpForbidden,
+  EffectHttpUnauthorized,
   EffectHttpPermissionService,
   EffectHttpRequestIdGenerator,
   createEffectHttpRequestContext,
+  effectHttpAuthServiceFromEffectAuthLayer,
   serializeEffectHttpMiddlewareFailure,
   serializeSanitizedEffectHttpCause,
   withEffectHttpAuth,
@@ -77,6 +85,31 @@ const resolvedAuthContext: EffectHttpAuthContext = {
   session,
 };
 
+const runEffectAuthBridgeExit = (failure: AuthRequestFailure) => {
+  const authLayer = effectAuthServiceLayer(
+    EffectAuthServiceTag.of({
+      getRequestContext: () =>
+        Effect.fail(
+          new AuthAdapterFailure({
+            adapter: "test-auth",
+            operation: "get-request-context",
+            reason: "provider-rejected",
+          })
+        ),
+      requireAuthenticated: () => Effect.fail(failure),
+      requirePermission: () => Effect.fail(failure),
+    })
+  );
+  const authBridgeLayer = effectHttpAuthServiceFromEffectAuthLayer.pipe(
+    Layer.provide(authLayer)
+  );
+  const program = EffectHttpAuthService.use((service) =>
+    service.authenticate(requestContext)
+  );
+
+  return Effect.runPromiseExit(program.pipe(Effect.provide(authBridgeLayer)));
+};
+
 describe("Effect HTTP middleware foundation", () => {
   it("derives request identity from headers and falls back to generated ids", async () => {
     const fromHeaders = await Effect.runPromise(
@@ -128,6 +161,44 @@ describe("Effect HTTP middleware foundation", () => {
     const currentAuthContext = await Effect.runPromise(program);
 
     expect(currentAuthContext.actor.userId).toBe("user_1");
+  });
+
+  it("maps only unauthenticated auth failures to HTTP unauthorized", async () => {
+    const unauthorizedExit = await runEffectAuthBridgeExit(
+      new AuthUnauthenticated({ reason: "missing-session" })
+    );
+    const adapterFailure = new AuthAdapterFailure({
+      adapter: "better-auth",
+      operation: "get-session",
+      reason: "provider-rejected",
+    });
+    const expiredFailure = new AuthSessionExpired({
+      expiredAt: new Date("2026-01-01T00:00:00.000Z"),
+      sessionId: AuthSessionId.make("session_expired"),
+    });
+
+    const adapterExit = await runEffectAuthBridgeExit(adapterFailure);
+    const expiredExit = await runEffectAuthBridgeExit(expiredFailure);
+
+    expect(Exit.isFailure(unauthorizedExit)).toBe(true);
+    expect(Exit.isFailure(adapterExit)).toBe(true);
+    expect(Exit.isFailure(expiredExit)).toBe(true);
+
+    if (Exit.isFailure(unauthorizedExit)) {
+      const expectedFailure = unauthorizedExit.cause.reasons.find(
+        Cause.isFailReason
+      );
+      expect(expectedFailure?.error).toBeInstanceOf(EffectHttpUnauthorized);
+      expect(expectedFailure?.error._tag).toBe("EffectHttpUnauthorized");
+    }
+    if (Exit.isFailure(adapterExit)) {
+      const defect = adapterExit.cause.reasons.find(Cause.isDieReason);
+      expect(defect?.defect).toBe(adapterFailure);
+    }
+    if (Exit.isFailure(expiredExit)) {
+      const defect = expiredExit.cause.reasons.find(Cause.isDieReason);
+      expect(defect?.defect).toBe(expiredFailure);
+    }
   });
 
   it("checks permissions before endpoint work runs", async () => {
