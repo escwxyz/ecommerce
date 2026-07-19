@@ -1,14 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import type { AuthService, AuthSession } from "@ecommerce/auth";
-import { createStoreAdminAuthSession } from "@ecommerce/auth/testing";
-import {
-  createSequenceIdGenerator,
-  createStaticClock,
-} from "@ecommerce/core/testing";
-import { createInMemoryPricingRepository } from "@ecommerce/pricing";
 import { OpenAPIGenerator } from "@orpc/openapi";
-import { call, ORPCError } from "@orpc/server";
+import { ORPCError } from "@orpc/server";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import { z } from "zod";
 
@@ -17,7 +11,6 @@ import {
   apiAssembly,
   builtinRouteFragments,
   createApiAssembly,
-  createApiRootAssembly,
   createApiRouteFragment,
   definePublicApiProcedure,
   publicProcedure,
@@ -49,7 +42,7 @@ describe("api assembly", () => {
     expect(assembly.router).not.toHaveProperty("productVariantValidate");
     expect(assembly.router).not.toHaveProperty("regionList");
     expect(assembly.router).not.toHaveProperty("salesChannelList");
-    expect(assembly.router).toHaveProperty("pricingCalculate");
+    expect(assembly.router).not.toHaveProperty("pricingCalculate");
 
     const healthCheck = assembly.router.healthCheck.callable({
       context: createTestContext(),
@@ -57,7 +50,7 @@ describe("api assembly", () => {
 
     await expect(healthCheck()).resolves.toBe("OK");
 
-    expect(assembly.fragments.map((fragment) => fragment.key)).toContain(
+    expect(assembly.fragments.map((fragment) => fragment.key)).not.toContain(
       "module:pricing"
     );
   });
@@ -172,80 +165,8 @@ describe("api assembly", () => {
     expect(apiAssembly.router).not.toHaveProperty("productVariantValidate");
     expect(apiAssembly.router).not.toHaveProperty("regionCreate");
     expect(apiAssembly.router).not.toHaveProperty("salesChannelCreate");
-    expect(apiAssembly.router).toHaveProperty("pricingPriceSetCreate");
-    expect(apiAssembly.router).toHaveProperty("pricingCalculate");
-  });
-
-  it("creates root assemblies with injected module dependencies", async () => {
-    const pricingRepository = createInMemoryPricingRepository();
-    const assembly = createApiRootAssembly({
-      routes: {
-        pricing: {
-          clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-          idGenerator: createSequenceIdGenerator([
-            "pset_api_injected",
-            "evt_price_set",
-            "amt_api_injected",
-            "evt_calculated",
-          ]),
-          repository: pricingRepository,
-        },
-      },
-    });
-    const moduleContext = {
-      context: {
-        auth,
-        authorization: authorizationEvaluator,
-        session: createStoreAdminAuthSession({
-          permissions: [
-            "store:read",
-            "store:write",
-            "product:read",
-            "product:write",
-            "region:read",
-            "region:write",
-            "sales-channel:read",
-            "sales-channel:write",
-            "pricing:read",
-            "pricing:write",
-          ],
-        }),
-      },
-    } as const;
-
-    const priceSet = await call(
-      assembly.router.pricingPriceSetCreate,
-      {
-        title: "API injected prices",
-      },
-      moduleContext
-    );
-
-    await call(
-      assembly.router.pricingMoneyAmountCreate,
-      {
-        amount: 4200,
-        currencyCode: "USD",
-        priceSetId: priceSet.id,
-      },
-      moduleContext
-    );
-
-    await expect(
-      call(
-        assembly.router.pricingCalculate,
-        {
-          currencyCode: "USD",
-          priceSetId: priceSet.id,
-        },
-        moduleContext
-      )
-    ).resolves.toMatchObject({
-      amount: 4200,
-      trace: {
-        source: "base",
-      },
-    });
+    expect(apiAssembly.router).not.toHaveProperty("pricingPriceSetCreate");
+    expect(apiAssembly.router).not.toHaveProperty("pricingCalculate");
   });
 
   it("rejects invalid input before procedure business logic runs", async () => {
@@ -297,9 +218,7 @@ describe("api assembly", () => {
     expect(spec.paths?.["/products"]).toBeUndefined();
     expect(spec.paths?.["/regions"]).toBeUndefined();
     expect(spec.paths?.["/sales-channels"]).toBeUndefined();
-    expect(spec.paths?.["/pricing/calculate"]?.post?.requestBody).toBeDefined();
-    expect(spec.paths?.["/pricing/price-sets"]?.post?.responses).toHaveProperty(
-      "200"
-    );
+    expect(spec.paths?.["/pricing/calculate"]).toBeUndefined();
+    expect(spec.paths?.["/pricing/price-sets"]).toBeUndefined();
   });
 });

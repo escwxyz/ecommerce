@@ -48,11 +48,6 @@ import {
 import type { PaymentProviderRegistry } from "@ecommerce/payment";
 import { createD1PaymentRepository } from "@ecommerce/payment/adapters/d1";
 import type { PaymentD1Database } from "@ecommerce/payment/adapters/d1";
-import {
-  createD1PricingRepository,
-  createPricingService,
-} from "@ecommerce/pricing";
-import type { PricingD1Database } from "@ecommerce/pricing";
 import { createProductIdEffect } from "@ecommerce/product";
 import {
   createD1PromotionRepository,
@@ -149,9 +144,6 @@ export const createServerCommerceRuntime = ({
     payment: createD1PaymentRepository({
       db: narrowDatabase<PaymentD1Database>(db),
     }),
-    pricing: createD1PricingRepository({
-      db: narrowDatabase<PricingD1Database>(db),
-    }),
     promotion: createD1PromotionRepository({
       db: narrowDatabase<PromotionD1Database>(db),
     }),
@@ -219,6 +211,49 @@ export const createServerCommerceRuntime = ({
           } as const;
         })
       ),
+  };
+  /*
+   * Temporary checkout compatibility bridge.
+   *
+   * Task 7.4 removed the pricing D1 repository and legacy oRPC routes after
+   * moving pricing to Effect HTTP + PostgreSQL. Checkout remains a section-8
+   * legacy Promise orchestrator, so it receives only this development golden
+   * path facade. Do not extend this into a general pricing adapter. Delete it
+   * in task 8.6 when checkout orchestration moves to Effect services and can
+   * depend on the migrated pricing Layer directly.
+   */
+  const checkoutPricingService = {
+    calculatePrice: (input: Record<string, unknown>) => {
+      const currencyCode = String(input.currencyCode ?? "").toUpperCase();
+      const priceSetId = String(input.priceSetId ?? "");
+      const quantity =
+        typeof input.quantity === "number" && Number.isInteger(input.quantity)
+          ? input.quantity
+          : 1;
+
+      if (
+        priceSetId !== developmentSeedIds.priceSet ||
+        currencyCode !== "USD"
+      ) {
+        return Promise.reject(
+          new Error("No matching development price found.")
+        );
+      }
+
+      return Promise.resolve({
+        amount: 2500,
+        currencyCode,
+        priceSetId,
+        quantity,
+        subtotal: 2500 * quantity,
+        trace: {
+          moneyAmountId: developmentSeedIds.moneyAmount,
+          priceListId: null,
+          ruleMatches: [],
+          source: "base",
+        },
+      });
+    },
   };
   /*
    * Temporary checkout compatibility bridge.
@@ -338,10 +373,7 @@ export const createServerCommerceRuntime = ({
       providerRegistry: paymentProviderRegistry,
       repository: repositories.payment,
     }),
-    pricing: createPricingService({
-      ...sharedServiceOptions,
-      repository: repositories.pricing,
-    }),
+    pricing: checkoutPricingService,
     product: checkoutProductService,
     promotion: createPromotionService({
       ...sharedServiceOptions,
@@ -444,10 +476,6 @@ export const createServerCommerceRuntime = ({
         idGenerator,
         providerRegistry: paymentProviderRegistry,
         repository: repositories.payment,
-      },
-      pricing: {
-        ...sharedServiceOptions,
-        repository: repositories.pricing,
       },
       promotion: {
         ...sharedServiceOptions,

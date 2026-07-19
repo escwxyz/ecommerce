@@ -127,7 +127,7 @@ describe("db d1 adapter", () => {
       false
     );
     await expect(tableExists(database.db, "pricing_currency")).resolves.toBe(
-      true
+      false
     );
     await expect(tableExists(database.db, "promotion_promotion")).resolves.toBe(
       true
@@ -229,46 +229,6 @@ describe("db d1 adapter", () => {
         "promotion_rule_promotion_idx",
         "promotion_usage_limit_promotion_idx",
         "promotion_redemption_promotion_idx",
-      ])
-    );
-
-    sqlite.close();
-  });
-
-  it("ships SQL migrations for pricing tables", () => {
-    const sqlite = new Database(":memory:");
-    const migrationsDir = join(import.meta.dir, "migrations", "sql");
-
-    sqlite.exec(
-      readFileSync(join(migrationsDir, "0003_promotion.sql"), "utf8")
-    );
-    sqlite.exec(readFileSync(join(migrationsDir, "0004_pricing.sql"), "utf8"));
-
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'table'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "pricing_currency",
-        "pricing_price_set",
-        "pricing_price_list",
-        "pricing_money_amount",
-        "pricing_price_rule",
-        "pricing_price_preference",
-      ])
-    );
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'index'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "pricing_money_amount_price_set_idx",
-        "pricing_price_rule_price_list_idx",
-        "pricing_price_preference_scope_idx",
       ])
     );
 

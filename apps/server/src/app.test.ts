@@ -11,7 +11,7 @@ import {
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
-import { createInMemoryPricingRepository } from "@ecommerce/pricing";
+import { createInMemoryPromotionRepository } from "@ecommerce/promotion";
 import { call } from "@orpc/server";
 import { ORPCError } from "@orpc/server";
 
@@ -97,15 +97,15 @@ describe("server app", () => {
     expect(await response.text()).toBe("auth-mounted");
   });
 
-  it("accepts an injected API assembly for persistent pricing routes", async () => {
-    const repository = createInMemoryPricingRepository();
+  it("accepts an injected API assembly for remaining legacy module routes", async () => {
+    const repository = createInMemoryPromotionRepository();
     const injectedAssembly = createApiRootAssembly({
       routes: {
-        pricing: {
+        promotion: {
           clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
           idGenerator: createSequenceIdGenerator([
-            "pset_server_injected",
-            "evt_price_set",
+            "camp_server_injected",
+            "evt_campaign",
           ]),
           repository,
         },
@@ -126,22 +126,22 @@ describe("server app", () => {
     await expect(app.request("/")).resolves.toHaveProperty("status", 200);
     await expect(
       call(
-        injectedAssembly.router.pricingPriceSetCreate,
+        injectedAssembly.router.promotionCampaignCreate,
         {
-          title: "Server Injected Prices",
+          name: "Server Injected Campaign",
         },
         {
           context: {
             auth,
             authorization: authorizationEvaluator,
             session: createStoreAdminAuthSession({
-              permissions: ["pricing:read", "pricing:write"],
+              permissions: ["promotion:read", "promotion:write"],
             }),
           },
         }
       )
     ).resolves.toMatchObject({
-      id: "pset_server_injected",
+      id: "pcamp_camp_server_injected",
     });
   });
 

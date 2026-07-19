@@ -119,9 +119,7 @@ describe("deterministic development seed", () => {
     const checkoutFixture = database
       .query<
         {
-          currency_code: string;
           inventory_item_id: string;
-          price_set_id: string;
           shipping_option_id: string;
           stock_location_id: string;
           variant_id: string;
@@ -129,25 +127,19 @@ describe("deterministic development seed", () => {
         []
       >(
         `SELECT
-          ma.currency_code,
-          ps.id AS price_set_id,
           ii.id AS inventory_item_id,
           il.stock_location_id,
           so.id AS shipping_option_id,
-          json_extract(ps.metadata_json, '$.variantId') AS variant_id
-        FROM pricing_price_set ps
-        JOIN pricing_money_amount ma ON ma.price_set_id = ps.id
-        JOIN inventory_item ii ON json_extract(ii.metadata_json, '$.variantId') = json_extract(ps.metadata_json, '$.variantId')
+          json_extract(ii.metadata_json, '$.variantId') AS variant_id
+        FROM inventory_item ii
         JOIN inventory_level il ON il.inventory_item_id = ii.id
         JOIN shipping_option so ON so.id = 'shipopt_dev_ground'
-        WHERE json_extract(ps.metadata_json, '$.variantId') = 'variant_dev_tshirt_black'`
+        WHERE json_extract(ii.metadata_json, '$.variantId') = 'variant_dev_tshirt_black'`
       )
       .get();
 
     expect(checkoutFixture).toEqual({
-      currency_code: "USD",
       inventory_item_id: seedModule.developmentSeedIds.inventoryItem,
-      price_set_id: seedModule.developmentSeedIds.priceSet,
       shipping_option_id: seedModule.developmentSeedIds.fulfillmentOption,
       stock_location_id: seedModule.developmentSeedIds.stockLocation,
       variant_id: seedModule.developmentSeedIds.productVariant,
@@ -194,7 +186,6 @@ describe("deterministic development seed", () => {
 
     const seededCounts = {
       inventoryLevel: countRows(database, "inventory_level"),
-      moneyAmount: countRows(database, "pricing_money_amount"),
       shippingOption: countRows(database, "shipping_option"),
     };
 
@@ -202,7 +193,6 @@ describe("deterministic development seed", () => {
 
     expect({
       inventoryLevel: countRows(database, "inventory_level"),
-      moneyAmount: countRows(database, "pricing_money_amount"),
       shippingOption: countRows(database, "shipping_option"),
     }).toEqual(seededCounts);
 

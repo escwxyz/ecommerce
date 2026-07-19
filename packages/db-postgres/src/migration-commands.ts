@@ -18,6 +18,12 @@ import {
   postgresCustomerGroupCustomerTableName,
   postgresCustomerGroupTableName,
   postgresCustomerTableName,
+  postgresPricingCurrencyTableName,
+  postgresPricingMoneyAmountTableName,
+  postgresPricingPriceListTableName,
+  postgresPricingPricePreferenceTableName,
+  postgresPricingPriceRuleTableName,
+  postgresPricingPriceSetTableName,
   postgresProductTableName,
   postgresRegionCountryTableName,
   postgresRegionTableName,
@@ -308,6 +314,24 @@ export const createPostgresDevelopmentResetPlan = (
       )} CASCADE`,
       `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
         postgresRegionTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresPricingPricePreferenceTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresPricingPriceRuleTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresPricingMoneyAmountTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresPricingPriceListTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresPricingPriceSetTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresPricingCurrencyTableName
       )} CASCADE`,
       `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
         postgresProductTableName

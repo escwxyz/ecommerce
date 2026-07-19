@@ -29,9 +29,6 @@
     "./schema/payment": {
       "default": "./src/schema/payment.ts"
     },
-    "./schema/pricing": {
-      "default": "./src/schema/pricing.ts"
-    },
     "./schema/promotion": {
       "default": "./src/schema/promotion.ts"
     },
@@ -50,7 +47,6 @@
     "@ecommerce/notification-event": "workspace:*",
     "@ecommerce/order": "workspace:*",
     "@ecommerce/payment": "workspace:*",
-    "@ecommerce/pricing": "workspace:*",
     "@ecommerce/promotion": "workspace:*",
     "@ecommerce/tax": "workspace:*",
     "kysely": "catalog:",

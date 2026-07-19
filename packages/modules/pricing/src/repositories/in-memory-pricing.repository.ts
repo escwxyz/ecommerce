@@ -1,3 +1,5 @@
+import { Effect, Layer } from "effect";
+
 import type {
   CurrencyRecord,
   MoneyAmountRecord,
@@ -9,6 +11,7 @@ import type {
   PriceSetRecord,
   PricingRepository,
 } from "../domain";
+import { PricingRepositoryService } from "../domain";
 
 export interface ResettablePricingRepository extends PricingRepository {
   clear(): void;
@@ -61,13 +64,11 @@ export class InMemoryPricingRepository implements ResettablePricingRepository {
     this.#priceSets.clear();
   }
 
-  findCurrencyByCode(code: string): Promise<CurrencyRecord | null> {
-    return Promise.resolve(this.#currencies.get(code) ?? null);
+  findCurrencyByCode(code: string) {
+    return Effect.succeed(this.#currencies.get(code) ?? null);
   }
 
-  findMoneyAmountsForPriceSet(
-    priceSetId: PriceSetId
-  ): Promise<readonly MoneyAmountRecord[]> {
+  findMoneyAmountsForPriceSet(priceSetId: PriceSetId) {
     const amounts: MoneyAmountRecord[] = [];
 
     for (const amount of this.#moneyAmounts.values()) {
@@ -76,16 +77,14 @@ export class InMemoryPricingRepository implements ResettablePricingRepository {
       }
     }
 
-    return Promise.resolve(sortByCreatedAtDescending(amounts));
+    return Effect.succeed(sortByCreatedAtDescending(amounts));
   }
 
-  findPriceListById(id: PriceListId): Promise<PriceListRecord | null> {
-    return Promise.resolve(this.#priceLists.get(id) ?? null);
+  findPriceListById(id: PriceListId) {
+    return Effect.succeed(this.#priceLists.get(id) ?? null);
   }
 
-  findPriceRulesByPriceListId(
-    priceListId: PriceListId
-  ): Promise<readonly PriceRuleRecord[]> {
+  findPriceRulesByPriceListId(priceListId: PriceListId) {
     const rules: PriceRuleRecord[] = [];
 
     for (const rule of this.#priceRules.values()) {
@@ -94,49 +93,57 @@ export class InMemoryPricingRepository implements ResettablePricingRepository {
       }
     }
 
-    return Promise.resolve(sortByCreatedAtDescending(rules));
+    return Effect.succeed(sortByCreatedAtDescending(rules));
   }
 
-  findPriceSetById(id: PriceSetId): Promise<PriceSetRecord | null> {
-    return Promise.resolve(this.#priceSets.get(id) ?? null);
+  findPriceSetById(id: PriceSetId) {
+    return Effect.succeed(this.#priceSets.get(id) ?? null);
   }
 
-  listCurrencies(): Promise<readonly CurrencyRecord[]> {
-    return Promise.resolve(
-      sortByCreatedAtDescending(this.#currencies.values())
-    );
+  readonly listCurrencies = Effect.sync(() =>
+    sortByCreatedAtDescending(this.#currencies.values())
+  );
+
+  saveCurrency(currency: CurrencyRecord) {
+    return Effect.sync(() => {
+      this.#currencies.set(currency.code, currency);
+      return currency;
+    });
   }
 
-  saveCurrency(currency: CurrencyRecord): Promise<CurrencyRecord> {
-    this.#currencies.set(currency.code, currency);
-    return Promise.resolve(currency);
+  saveMoneyAmount(amount: MoneyAmountRecord) {
+    return Effect.sync(() => {
+      this.#moneyAmounts.set(amount.id, amount);
+      return amount;
+    });
   }
 
-  saveMoneyAmount(amount: MoneyAmountRecord): Promise<MoneyAmountRecord> {
-    this.#moneyAmounts.set(amount.id, amount);
-    return Promise.resolve(amount);
+  savePriceList(priceList: PriceListRecord) {
+    return Effect.sync(() => {
+      this.#priceLists.set(priceList.id, priceList);
+      return priceList;
+    });
   }
 
-  savePriceList(priceList: PriceListRecord): Promise<PriceListRecord> {
-    this.#priceLists.set(priceList.id, priceList);
-    return Promise.resolve(priceList);
+  savePricePreference(preference: PricePreferenceRecord) {
+    return Effect.sync(() => {
+      this.#pricePreferences.set(preference.id, preference);
+      return preference;
+    });
   }
 
-  savePricePreference(
-    preference: PricePreferenceRecord
-  ): Promise<PricePreferenceRecord> {
-    this.#pricePreferences.set(preference.id, preference);
-    return Promise.resolve(preference);
+  savePriceRule(rule: PriceRuleRecord) {
+    return Effect.sync(() => {
+      this.#priceRules.set(rule.id, rule);
+      return rule;
+    });
   }
 
-  savePriceRule(rule: PriceRuleRecord): Promise<PriceRuleRecord> {
-    this.#priceRules.set(rule.id, rule);
-    return Promise.resolve(rule);
-  }
-
-  savePriceSet(priceSet: PriceSetRecord): Promise<PriceSetRecord> {
-    this.#priceSets.set(priceSet.id, priceSet);
-    return Promise.resolve(priceSet);
+  savePriceSet(priceSet: PriceSetRecord) {
+    return Effect.sync(() => {
+      this.#priceSets.set(priceSet.id, priceSet);
+      return priceSet;
+    });
   }
 }
 
@@ -147,3 +154,41 @@ export const createInMemoryPricingRepository = (): PricingRepository =>
 
 export const createResettableInMemoryPricingRepository =
   (): ResettablePricingRepository => new InMemoryPricingRepository();
+
+export const createInMemoryPricingRepositoryLayer = () =>
+  Layer.effect(
+    PricingRepositoryService,
+    Effect.sync(() => new InMemoryPricingRepository() as PricingRepository)
+  );
+
+/**
+ * Temporary Promise facade for legacy checkout call sites until task 8.6 moves
+ * checkout orchestration onto Effect services.
+ */
+export const createPricingPromiseRepositoryFromEffectRepository = (
+  repository: PricingRepository
+) => ({
+  findCurrencyByCode: (code: string) =>
+    Effect.runPromise(repository.findCurrencyByCode(code)),
+  findMoneyAmountsForPriceSet: (priceSetId: PriceSetId) =>
+    Effect.runPromise(repository.findMoneyAmountsForPriceSet(priceSetId)),
+  findPriceListById: (id: PriceListId) =>
+    Effect.runPromise(repository.findPriceListById(id)),
+  findPriceRulesByPriceListId: (priceListId: PriceListId) =>
+    Effect.runPromise(repository.findPriceRulesByPriceListId(priceListId)),
+  findPriceSetById: (id: PriceSetId) =>
+    Effect.runPromise(repository.findPriceSetById(id)),
+  listCurrencies: () => Effect.runPromise(repository.listCurrencies),
+  saveCurrency: (currency: CurrencyRecord) =>
+    Effect.runPromise(repository.saveCurrency(currency)),
+  saveMoneyAmount: (amount: MoneyAmountRecord) =>
+    Effect.runPromise(repository.saveMoneyAmount(amount)),
+  savePriceList: (priceList: PriceListRecord) =>
+    Effect.runPromise(repository.savePriceList(priceList)),
+  savePricePreference: (preference: PricePreferenceRecord) =>
+    Effect.runPromise(repository.savePricePreference(preference)),
+  savePriceRule: (rule: PriceRuleRecord) =>
+    Effect.runPromise(repository.savePriceRule(rule)),
+  savePriceSet: (priceSet: PriceSetRecord) =>
+    Effect.runPromise(repository.savePriceSet(priceSet)),
+});

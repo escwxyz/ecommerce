@@ -102,6 +102,12 @@ describe("PostgreSQL migration commands", () => {
       expect.objectContaining({
         name: "20260721000000_product_module",
       }),
+      expect.objectContaining({
+        name: "20260722000000_region_sales_channel_module",
+      }),
+      expect.objectContaining({
+        name: "20260723000000_pricing_module",
+      }),
     ]);
   });
 
@@ -130,6 +136,16 @@ describe("PostgreSQL migration commands", () => {
 
     expect(plan.requiresConfirmation).toBe(true);
     expect(plan.statements).toEqual([
+      'DROP TABLE IF EXISTS "sales_channel_product" CASCADE',
+      'DROP TABLE IF EXISTS "sales_channel" CASCADE',
+      'DROP TABLE IF EXISTS "region_country" CASCADE',
+      'DROP TABLE IF EXISTS "region" CASCADE',
+      'DROP TABLE IF EXISTS "pricing_price_preference" CASCADE',
+      'DROP TABLE IF EXISTS "pricing_price_rule" CASCADE',
+      'DROP TABLE IF EXISTS "pricing_money_amount" CASCADE',
+      'DROP TABLE IF EXISTS "pricing_price_list" CASCADE',
+      'DROP TABLE IF EXISTS "pricing_price_set" CASCADE',
+      'DROP TABLE IF EXISTS "pricing_currency" CASCADE',
       'DROP TABLE IF EXISTS "product" CASCADE',
       'DROP TABLE IF EXISTS "customer_group_customer" CASCADE',
       'DROP TABLE IF EXISTS "customer_group" CASCADE',

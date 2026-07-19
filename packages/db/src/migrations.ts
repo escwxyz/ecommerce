@@ -7,7 +7,6 @@ import { inventoryMigration } from "./schema/inventory";
 import { notificationEventMigration } from "./schema/notification-event";
 import { orderMigration } from "./schema/order";
 import { paymentMigration } from "./schema/payment";
-import { pricingMigration } from "./schema/pricing";
 import { promotionMigration } from "./schema/promotion";
 import { taxMigration } from "./schema/tax";
 
@@ -34,7 +33,6 @@ export const defineCommerceMigrations = <
 
 export const commerceMigrations = defineCommerceMigrations({
   "000_auth": authMigration,
-  "004_pricing": pricingMigration,
   "005_promotion": promotionMigration,
   "007_inventory": inventoryMigration,
   "008_tax": taxMigration,

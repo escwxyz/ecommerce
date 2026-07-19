@@ -81,23 +81,11 @@ describe("admin metadata API", () => {
     ]);
   });
 
-  it("rejects pricing operations when the required permission is missing", async () => {
-    await expect(
-      call(
-        apiAssembly.router.pricingPriceSetCreate,
-        {
-          title: "Denied prices",
-        },
-        createContext(
-          createCustomerAuthSession({ permissions: ["pricing:read"] })
-        )
-      )
-    ).rejects.toBeInstanceOf(ORPCError);
-  });
-
-  it("keeps migrated region operations out of the legacy oRPC root", () => {
+  it("keeps migrated region and pricing operations out of the legacy oRPC root", () => {
     expect(apiAssembly.router).not.toHaveProperty("regionCreate");
     expect(apiAssembly.router).not.toHaveProperty("salesChannelCreate");
+    expect(apiAssembly.router).not.toHaveProperty("pricingPriceSetCreate");
+    expect(apiAssembly.router).not.toHaveProperty("pricingCalculate");
   });
 
   it("rejects promotion operations when the required permission is missing", async () => {

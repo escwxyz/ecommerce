@@ -192,48 +192,6 @@ const taxPolicy = defineSeedWrite(
   ["id"]
 );
 
-const currency = defineSeedWrite(
-  "pricing_currency",
-  {
-    code: "USD",
-    created_at: seedTimestamp,
-    id: developmentSeedIds.currency,
-    name: "US Dollar",
-    precision: 2,
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const priceSet = defineSeedWrite(
-  "pricing_price_set",
-  {
-    created_at: seedTimestamp,
-    id: developmentSeedIds.priceSet,
-    metadata_json: JSON.stringify({
-      variantId: developmentSeedIds.productVariant,
-    }),
-    title: "Development T-Shirt pricing",
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const moneyAmount = defineSeedWrite(
-  "pricing_money_amount",
-  {
-    amount: 2500,
-    created_at: seedTimestamp,
-    currency_code: "USD",
-    id: developmentSeedIds.moneyAmount,
-    price_list_id: null,
-    price_set_id: developmentSeedIds.priceSet,
-    rules_json: JSON.stringify([]),
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
 const inventoryItem = defineSeedWrite(
   "inventory_item",
   {
@@ -287,9 +245,6 @@ export const developmentSeedWrites: readonly DevelopmentSeedWrite[] = [
   taxRegion,
   taxRate,
   taxPolicy,
-  currency,
-  priceSet,
-  moneyAmount,
   inventoryItem,
   stockLocation,
   inventoryLevel,

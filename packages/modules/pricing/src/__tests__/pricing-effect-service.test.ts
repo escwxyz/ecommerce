@@ -1,0 +1,167 @@
+import { describe, expect, it } from "bun:test";
+
+import {
+  createEventCollector,
+  createSequenceIdGenerator,
+  createStaticClock,
+} from "@ecommerce/core/testing";
+import { Effect, Exit } from "effect";
+
+import { createInMemoryPricingRepository } from "../repositories";
+import { createPricingService } from "../services";
+
+describe("pricing Effect service", () => {
+  it("calculates traceable rule-based prices without discounts or tax", async () => {
+    const repository = createInMemoryPricingRepository();
+    const eventCollector = createEventCollector();
+    const service = createPricingService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      eventPublisher: eventCollector.publisher,
+      idGenerator: createSequenceIdGenerator([
+        "pset_hat",
+        "evt_price_set",
+        "plist_vip",
+        "prule_vip",
+        "amt_base",
+        "amt_vip",
+        "evt_calculated",
+        "evt_calculated_fallback",
+      ]),
+      repository,
+    });
+
+    const priceSet = await Effect.runPromise(
+      service.createPriceSet({ title: "Hat prices" })
+    );
+    const priceList = await Effect.runPromise(
+      service.createPriceList({
+        status: "active",
+        title: "VIP",
+      })
+    );
+    await Effect.runPromise(
+      service.createPriceRule({
+        attribute: "customerGroupId",
+        priceListId: priceList.id,
+        value: "vip",
+      })
+    );
+
+    const baseAmount = await Effect.runPromise(
+      service.createMoneyAmount({
+        amount: 3000,
+        currencyCode: "usd",
+        priceSetId: priceSet.id,
+      })
+    );
+    const vipAmount = await Effect.runPromise(
+      service.createMoneyAmount({
+        amount: 2500,
+        currencyCode: "usd",
+        priceListId: priceList.id,
+        priceSetId: priceSet.id,
+        rules: {
+          customerGroupId: "vip",
+        },
+      })
+    );
+
+    const calculatedPrice = await Effect.runPromise(
+      service.calculatePrice({
+        context: {
+          customerGroupId: "vip",
+          regionId: "reg_us",
+        },
+        currencyCode: "USD",
+        priceSetId: priceSet.id,
+        quantity: 2,
+      })
+    );
+
+    expect(calculatedPrice).toMatchObject({
+      amount: 2500,
+      currencyCode: "USD",
+      priceSetId: "pset_hat",
+      quantity: 2,
+      subtotal: 5000,
+      trace: {
+        moneyAmountId: vipAmount.id,
+        priceListId: "plist_vip",
+        ruleMatches: ["customerGroupId:vip"],
+        source: "price-list",
+      },
+    });
+
+    const fallbackPrice = await Effect.runPromise(
+      service.calculatePrice({
+        context: {
+          customerGroupId: "guest",
+          regionId: "reg_us",
+        },
+        currencyCode: "USD",
+        priceSetId: priceSet.id,
+        quantity: 1,
+      })
+    );
+
+    expect(fallbackPrice).toMatchObject({
+      amount: 3000,
+      currencyCode: "USD",
+      trace: {
+        moneyAmountId: baseAmount.id,
+        priceListId: null,
+        source: "base",
+      },
+    });
+    expect(eventCollector.events.map((event) => event.name)).toEqual([
+      "pricing.price-set-created",
+      "pricing.price-calculated",
+      "pricing.price-calculated",
+    ]);
+  });
+
+  it("returns typed failures for duplicate currencies and missing prices", async () => {
+    const service = createPricingService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "cur_usd",
+        "cur_usd_duplicate",
+        "pset_empty",
+        "evt_empty",
+      ]),
+      repository: createInMemoryPricingRepository(),
+    });
+
+    await Effect.runPromise(
+      service.createCurrency({
+        code: "usd",
+        name: "US Dollar",
+      })
+    );
+
+    const duplicateCurrencyExit = await Effect.runPromiseExit(
+      service.createCurrency({
+        code: "USD",
+        name: "Duplicate US Dollar",
+      })
+    );
+    const priceSet = await Effect.runPromise(
+      service.createPriceSet({ title: "Empty prices" })
+    );
+    const missingPriceExit = await Effect.runPromiseExit(
+      service.calculatePrice({
+        currencyCode: "USD",
+        priceSetId: priceSet.id,
+      })
+    );
+
+    expect(Exit.isFailure(duplicateCurrencyExit)).toBe(true);
+    expect(JSON.stringify(duplicateCurrencyExit.toJSON())).toContain(
+      "PricingCurrencyConflict"
+    );
+    expect(Exit.isFailure(missingPriceExit)).toBe(true);
+    expect(JSON.stringify(missingPriceExit.toJSON())).toContain(
+      "PricingNoMatchingPrice"
+    );
+  });
+});

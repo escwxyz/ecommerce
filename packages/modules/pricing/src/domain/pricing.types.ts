@@ -1,118 +1,112 @@
-import type { Brand } from "@ecommerce/core/brand";
-import type { z } from "zod";
+import { Context } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 
+import type { PricingExpectedError } from "./pricing.errors";
 import type {
-  CalculatePriceInputSchema,
+  CalculatedPriceApiSchema,
   CalculatedPriceSchema,
+  CalculatePriceInputSchema,
   CreateCurrencyInputSchema,
   CreateMoneyAmountInputSchema,
   CreatePriceListInputSchema,
   CreatePricePreferenceInputSchema,
   CreatePriceRuleInputSchema,
   CreatePriceSetInputSchema,
+  CurrencyApiListSchema,
   CurrencyApiRecordSchema,
+  CurrencyIdSchema,
   CurrencyRecordSchema,
   MoneyAmountApiRecordSchema,
+  MoneyAmountIdSchema,
   MoneyAmountRecordSchema,
   PriceListApiRecordSchema,
+  PriceListIdSchema,
   PriceListRecordSchema,
   PriceListStatusSchema,
   PricePreferenceApiRecordSchema,
+  PricePreferenceIdSchema,
   PricePreferenceRecordSchema,
   PriceRuleApiRecordSchema,
+  PriceRuleIdSchema,
   PriceRuleRecordSchema,
   PriceSetApiRecordSchema,
+  PriceSetIdSchema,
   PriceSetRecordSchema,
 } from "./pricing.schema";
 
-export type CurrencyId = Brand<string, "currency">;
-export type PriceSetId = Brand<string, "price-set">;
-export type MoneyAmountId = Brand<string, "money-amount">;
-export type PriceListId = Brand<string, "price-list">;
-export type PriceRuleId = Brand<string, "price-rule">;
-export type PricePreferenceId = Brand<string, "price-preference">;
-export type PriceListStatus = z.infer<typeof PriceListStatusSchema>;
-export type CreateCurrencyInput = z.infer<typeof CreateCurrencyInputSchema>;
-export type CurrencyRecord = Omit<
-  z.infer<typeof CurrencyRecordSchema>,
-  "id"
-> & { readonly id: CurrencyId };
-export type CurrencyApiRecord = z.infer<typeof CurrencyApiRecordSchema>;
-export type CreatePriceSetInput = z.infer<typeof CreatePriceSetInputSchema>;
-export type PriceSetRecord = Omit<
-  z.infer<typeof PriceSetRecordSchema>,
-  "id"
-> & { readonly id: PriceSetId };
-export type PriceSetApiRecord = z.infer<typeof PriceSetApiRecordSchema>;
-export type CreatePriceListInput = z.infer<typeof CreatePriceListInputSchema>;
-export type PriceListRecord = Omit<
-  z.infer<typeof PriceListRecordSchema>,
-  "id"
-> & { readonly id: PriceListId };
-export type PriceListApiRecord = z.infer<typeof PriceListApiRecordSchema>;
-export type CreateMoneyAmountInput = z.infer<
-  typeof CreateMoneyAmountInputSchema
->;
-export type MoneyAmountRecord = Omit<
-  z.infer<typeof MoneyAmountRecordSchema>,
-  "id" | "priceListId" | "priceSetId"
-> & {
-  readonly id: MoneyAmountId;
-  readonly priceListId: PriceListId | null;
-  readonly priceSetId: PriceSetId;
-};
-export type MoneyAmountApiRecord = z.infer<typeof MoneyAmountApiRecordSchema>;
-export type CreatePriceRuleInput = z.infer<typeof CreatePriceRuleInputSchema>;
-export type PriceRuleRecord = Omit<
-  z.infer<typeof PriceRuleRecordSchema>,
-  "id" | "priceListId"
-> & {
-  readonly id: PriceRuleId;
-  readonly priceListId: PriceListId;
-};
-export type PriceRuleApiRecord = z.infer<typeof PriceRuleApiRecordSchema>;
-export type CreatePricePreferenceInput = z.infer<
-  typeof CreatePricePreferenceInputSchema
->;
-export type PricePreferenceRecord = Omit<
-  z.infer<typeof PricePreferenceRecordSchema>,
-  "id"
-> & { readonly id: PricePreferenceId };
-export type PricePreferenceApiRecord = z.infer<
-  typeof PricePreferenceApiRecordSchema
->;
-export type CalculatePriceInput = z.infer<typeof CalculatePriceInputSchema>;
-export type CalculatedPrice = Omit<
-  z.infer<typeof CalculatedPriceSchema>,
-  "priceSetId" | "trace"
-> & {
-  readonly priceSetId: PriceSetId;
-  readonly trace: Omit<
-    z.infer<typeof CalculatedPriceSchema>["trace"],
-    "moneyAmountId" | "priceListId"
-  > & {
-    readonly moneyAmountId: MoneyAmountId;
-    readonly priceListId: PriceListId | null;
-  };
-};
+export type CurrencyId = typeof CurrencyIdSchema.Type;
+export type PriceSetId = typeof PriceSetIdSchema.Type;
+export type MoneyAmountId = typeof MoneyAmountIdSchema.Type;
+export type PriceListId = typeof PriceListIdSchema.Type;
+export type PriceRuleId = typeof PriceRuleIdSchema.Type;
+export type PricePreferenceId = typeof PricePreferenceIdSchema.Type;
+export type PriceListStatus = typeof PriceListStatusSchema.Type;
+export type CreateCurrencyInput = typeof CreateCurrencyInputSchema.Type;
+export type CurrencyRecord = typeof CurrencyRecordSchema.Type;
+export type CurrencyApiRecord = typeof CurrencyApiRecordSchema.Type;
+export type CurrencyApiList = typeof CurrencyApiListSchema.Type;
+export type CreatePriceSetInput = typeof CreatePriceSetInputSchema.Type;
+export type PriceSetRecord = typeof PriceSetRecordSchema.Type;
+export type PriceSetApiRecord = typeof PriceSetApiRecordSchema.Type;
+export type CreatePriceListInput = typeof CreatePriceListInputSchema.Type;
+export type PriceListRecord = typeof PriceListRecordSchema.Type;
+export type PriceListApiRecord = typeof PriceListApiRecordSchema.Type;
+export type CreateMoneyAmountInput = typeof CreateMoneyAmountInputSchema.Type;
+export type MoneyAmountRecord = typeof MoneyAmountRecordSchema.Type;
+export type MoneyAmountApiRecord = typeof MoneyAmountApiRecordSchema.Type;
+export type CreatePriceRuleInput = typeof CreatePriceRuleInputSchema.Type;
+export type PriceRuleRecord = typeof PriceRuleRecordSchema.Type;
+export type PriceRuleApiRecord = typeof PriceRuleApiRecordSchema.Type;
+export type CreatePricePreferenceInput =
+  typeof CreatePricePreferenceInputSchema.Type;
+export type PricePreferenceRecord = typeof PricePreferenceRecordSchema.Type;
+export type PricePreferenceApiRecord =
+  typeof PricePreferenceApiRecordSchema.Type;
+export type CalculatePriceInput = typeof CalculatePriceInputSchema.Type;
+export type CalculatedPrice = typeof CalculatedPriceSchema.Type;
+export type CalculatedPriceApi = typeof CalculatedPriceApiSchema.Type;
 
 export interface PricingRepository {
-  findCurrencyByCode(code: string): Promise<CurrencyRecord | null>;
-  findMoneyAmountsForPriceSet(
+  readonly findCurrencyByCode: (
+    code: string
+  ) => EffectValue<CurrencyRecord | null, PricingExpectedError>;
+  readonly findMoneyAmountsForPriceSet: (
     priceSetId: PriceSetId
-  ): Promise<readonly MoneyAmountRecord[]>;
-  findPriceListById(id: PriceListId): Promise<PriceListRecord | null>;
-  findPriceRulesByPriceListId(
+  ) => EffectValue<readonly MoneyAmountRecord[], PricingExpectedError>;
+  readonly findPriceListById: (
+    id: PriceListId
+  ) => EffectValue<PriceListRecord | null, PricingExpectedError>;
+  readonly findPriceRulesByPriceListId: (
     priceListId: PriceListId
-  ): Promise<readonly PriceRuleRecord[]>;
-  findPriceSetById(id: PriceSetId): Promise<PriceSetRecord | null>;
-  listCurrencies(): Promise<readonly CurrencyRecord[]>;
-  saveCurrency(currency: CurrencyRecord): Promise<CurrencyRecord>;
-  saveMoneyAmount(amount: MoneyAmountRecord): Promise<MoneyAmountRecord>;
-  savePriceList(priceList: PriceListRecord): Promise<PriceListRecord>;
-  savePricePreference(
+  ) => EffectValue<readonly PriceRuleRecord[], PricingExpectedError>;
+  readonly findPriceSetById: (
+    id: PriceSetId
+  ) => EffectValue<PriceSetRecord | null, PricingExpectedError>;
+  readonly listCurrencies: EffectValue<
+    readonly CurrencyRecord[],
+    PricingExpectedError
+  >;
+  readonly saveCurrency: (
+    currency: CurrencyRecord
+  ) => EffectValue<CurrencyRecord, PricingExpectedError>;
+  readonly saveMoneyAmount: (
+    amount: MoneyAmountRecord
+  ) => EffectValue<MoneyAmountRecord, PricingExpectedError>;
+  readonly savePriceList: (
+    priceList: PriceListRecord
+  ) => EffectValue<PriceListRecord, PricingExpectedError>;
+  readonly savePricePreference: (
     preference: PricePreferenceRecord
-  ): Promise<PricePreferenceRecord>;
-  savePriceRule(rule: PriceRuleRecord): Promise<PriceRuleRecord>;
-  savePriceSet(priceSet: PriceSetRecord): Promise<PriceSetRecord>;
+  ) => EffectValue<PricePreferenceRecord, PricingExpectedError>;
+  readonly savePriceRule: (
+    rule: PriceRuleRecord
+  ) => EffectValue<PriceRuleRecord, PricingExpectedError>;
+  readonly savePriceSet: (
+    priceSet: PriceSetRecord
+  ) => EffectValue<PriceSetRecord, PricingExpectedError>;
 }
+
+/** Effect-native pricing repository contract consumed by pricing services. */
+export const PricingRepositoryService = Context.Service<PricingRepository>(
+  "@ecommerce/pricing/PricingRepositoryService"
+);

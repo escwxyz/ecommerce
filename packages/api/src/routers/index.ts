@@ -13,8 +13,6 @@ import type { CreateOrderRouteFragmentOptions } from "@ecommerce/order/router";
 import { createOrderRouteFragment } from "@ecommerce/order/router";
 import type { CreatePaymentRouteFragmentOptions } from "@ecommerce/payment/router";
 import { createPaymentRouteFragment } from "@ecommerce/payment/router";
-import type { CreatePricingRouteFragmentOptions } from "@ecommerce/pricing/router";
-import { createPricingRouteFragment } from "@ecommerce/pricing/router";
 import type { CreatePromotionRouteFragmentOptions } from "@ecommerce/promotion/router";
 import { createPromotionRouteFragment } from "@ecommerce/promotion/router";
 import type { CreateTaxRouteFragmentOptions } from "@ecommerce/tax/router";
@@ -138,7 +136,6 @@ export interface CreateBuiltinRouteFragmentsOptions {
   readonly notificationEvent?: CreateNotificationEventRouteFragmentOptions;
   readonly order?: CreateOrderRouteFragmentOptions;
   readonly payment?: CreatePaymentRouteFragmentOptions;
-  readonly pricing?: CreatePricingRouteFragmentOptions;
   readonly promotion?: CreatePromotionRouteFragmentOptions;
   readonly tax?: CreateTaxRouteFragmentOptions;
 }
@@ -151,7 +148,6 @@ export const createBuiltinRouteFragments = ({
   notificationEvent,
   order,
   payment,
-  pricing,
   promotion,
   tax,
 }: CreateBuiltinRouteFragmentsOptions = {}) =>
@@ -163,10 +159,6 @@ export const createBuiltinRouteFragments = ({
     }),
     createApiRouteFragment({
       ...createNotificationEventRouteFragment(notificationEvent),
-      owner: "module",
-    }),
-    createApiRouteFragment({
-      ...createPricingRouteFragment(pricing),
       owner: "module",
     }),
     createApiRouteFragment({
