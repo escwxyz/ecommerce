@@ -44,6 +44,8 @@ export {
   postgresCustomerGroupCustomerTableName,
   postgresCustomerGroupTableName,
   postgresCustomerTableName,
+  postgresProduct,
+  postgresProductTableName,
   postgresStore,
   postgresStoreTableName,
   postgresFoundationSchema,
@@ -60,6 +62,12 @@ export {
   type CustomerPostgresInsert,
   type CustomerPostgresRow,
   type CustomerPostgresUpdate,
+  ProductPostgresInsertSchema,
+  ProductPostgresRowSchema,
+  ProductPostgresUpdateSchema,
+  type ProductPostgresInsert,
+  type ProductPostgresRow,
+  type ProductPostgresUpdate,
   StorePostgresInsertSchema,
   StorePostgresRowSchema,
   StorePostgresUpdateSchema,
@@ -79,6 +87,16 @@ export {
   toCustomerPostgresInsert,
   withPostgresCustomerTransaction,
 } from "./modules/customer/index";
+
+export {
+  createPostgresProductRepository,
+  createPostgresProductRepositoryLayer,
+  PostgresProductRepositoryLayer,
+  resetPostgresProductTables,
+  toProductPostgresInsert,
+  toProductRecord,
+  withPostgresProductTransaction,
+} from "./modules/product/index";
 
 export {
   createPostgresStoreRepository,

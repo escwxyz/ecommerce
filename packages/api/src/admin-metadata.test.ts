@@ -81,21 +81,6 @@ describe("admin metadata API", () => {
     ]);
   });
 
-  it("rejects product operations when the required permission is missing", async () => {
-    await expect(
-      call(
-        apiAssembly.router.productCreate,
-        {
-          handle: "denied-shirt",
-          title: "Denied Shirt",
-        },
-        createContext(
-          createCustomerAuthSession({ permissions: ["product:read"] })
-        )
-      )
-    ).rejects.toBeInstanceOf(ORPCError);
-  });
-
   it("rejects region operations when the required permission is missing", async () => {
     await expect(
       call(

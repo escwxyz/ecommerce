@@ -1,123 +1,173 @@
-import { z } from "zod";
+import { Schema } from "effect";
 
-export const ProductStatusSchema = z.enum(["draft", "active", "archived"]);
-export const ProductVariantStatusSchema = z.enum([
+const isCanonicalIsoDateTime = (value: string): boolean => {
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+};
+
+/** Stable commerce product identifier owned by the product module. */
+export const ProductIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("prod_")),
+  Schema.brand("ProductId")
+);
+
+/** Serialized product identifier used by API and storage boundaries. */
+export const ProductSerializedIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("prod_"))
+);
+
+export const ProductTrimmedStringSchema = Schema.Trimmed.pipe(
+  Schema.check(Schema.isMinLength(1))
+);
+
+/** Canonical UTC ISO datetime string emitted by product API serializers. */
+export const ProductIsoDateTimeStringSchema = ProductTrimmedStringSchema.pipe(
+  Schema.check(Schema.makeFilter(isCanonicalIsoDateTime))
+);
+
+export const ProductStatusSchema = Schema.Literals([
+  "draft",
+  "active",
+  "archived",
+]);
+export const ProductVariantStatusSchema = Schema.Literals([
   "draft",
   "active",
   "archived",
 ]);
 
-export const ProductMetadataSchema = z.record(z.string(), z.string());
+export const ProductMetadataSchema = Schema.Record(
+  Schema.String,
+  Schema.String
+);
 
-export const ProductOptionValueSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  metadata: ProductMetadataSchema.optional(),
-  value: z.string().min(1),
+export const ProductOptionValueSchema = Schema.Struct({
+  id: ProductTrimmedStringSchema,
+  label: ProductTrimmedStringSchema,
+  metadata: Schema.optional(ProductMetadataSchema),
+  value: ProductTrimmedStringSchema,
 });
 
-export const ProductOptionSchema = z.object({
-  id: z.string().min(1),
-  metadata: ProductMetadataSchema.optional(),
-  title: z.string().min(1),
-  values: z.array(ProductOptionValueSchema),
+export const ProductOptionSchema = Schema.Struct({
+  id: ProductTrimmedStringSchema,
+  metadata: Schema.optional(ProductMetadataSchema),
+  title: ProductTrimmedStringSchema,
+  values: Schema.Array(ProductOptionValueSchema),
 });
 
-export const ProductVariantSchema = z.object({
-  id: z.string().min(1),
-  metadata: ProductMetadataSchema.optional(),
-  optionValueIds: z.array(z.string().min(1)),
-  searchableText: z.string().optional(),
-  sku: z.string().min(1).optional(),
+export const ProductVariantSchema = Schema.Struct({
+  id: ProductTrimmedStringSchema,
+  metadata: Schema.optional(ProductMetadataSchema),
+  optionValueIds: Schema.Array(ProductTrimmedStringSchema),
+  searchableText: Schema.optional(Schema.String),
+  sku: Schema.optional(ProductTrimmedStringSchema),
   status: ProductVariantStatusSchema,
-  title: z.string().min(1),
+  title: ProductTrimmedStringSchema,
 });
 
-export const ProductCollectionReferenceSchema = z.object({
-  handle: z.string().min(1),
-  id: z.string().min(1),
-  title: z.string().min(1),
+export const ProductCollectionReferenceSchema = Schema.Struct({
+  handle: ProductTrimmedStringSchema,
+  id: ProductTrimmedStringSchema,
+  title: ProductTrimmedStringSchema,
 });
 
-export const ProductCategoryReferenceSchema = z.object({
-  handle: z.string().min(1),
-  id: z.string().min(1),
-  parentId: z.string().min(1).optional(),
-  title: z.string().min(1),
+export const ProductCategoryReferenceSchema = Schema.Struct({
+  handle: ProductTrimmedStringSchema,
+  id: ProductTrimmedStringSchema,
+  parentId: Schema.optional(ProductTrimmedStringSchema),
+  title: ProductTrimmedStringSchema,
 });
 
-export const ProductMediaReferenceSchema = z.object({
-  altText: z.string().optional(),
-  id: z.string().min(1),
-  metadata: ProductMetadataSchema.optional(),
-  type: z.enum(["image", "video", "file"]),
-  url: z.string().min(1),
+export const ProductMediaReferenceSchema = Schema.Struct({
+  altText: Schema.optional(Schema.String),
+  id: ProductTrimmedStringSchema,
+  metadata: Schema.optional(ProductMetadataSchema),
+  type: Schema.Literals(["image", "video", "file"]),
+  url: ProductTrimmedStringSchema,
 });
 
-export const ProductCatalogSchema = z.object({
-  categories: z.array(ProductCategoryReferenceSchema),
-  collections: z.array(ProductCollectionReferenceSchema),
-  media: z.array(ProductMediaReferenceSchema),
+export const ProductCatalogSchema = Schema.Struct({
+  categories: Schema.Array(ProductCategoryReferenceSchema),
+  collections: Schema.Array(ProductCollectionReferenceSchema),
+  media: Schema.Array(ProductMediaReferenceSchema),
   metadata: ProductMetadataSchema,
-  options: z.array(ProductOptionSchema),
-  publishedAt: z.date().nullable(),
-  searchableText: z.string(),
-  tags: z.array(z.string().min(1)),
-  variants: z.array(ProductVariantSchema),
+  options: Schema.Array(ProductOptionSchema),
+  publishedAt: Schema.NullOr(Schema.Date),
+  searchableText: Schema.String,
+  tags: Schema.Array(ProductTrimmedStringSchema),
+  variants: Schema.Array(ProductVariantSchema),
 });
 
-export const ProductCatalogApiSchema = ProductCatalogSchema.extend({
-  publishedAt: z.string().min(1).nullable(),
+export const ProductCatalogApiSchema = Schema.Struct({
+  categories: Schema.Array(ProductCategoryReferenceSchema),
+  collections: Schema.Array(ProductCollectionReferenceSchema),
+  media: Schema.Array(ProductMediaReferenceSchema),
+  metadata: ProductMetadataSchema,
+  options: Schema.Array(ProductOptionSchema),
+  publishedAt: Schema.NullOr(ProductIsoDateTimeStringSchema),
+  searchableText: Schema.String,
+  tags: Schema.Array(ProductTrimmedStringSchema),
+  variants: Schema.Array(ProductVariantSchema),
 });
 
-export const CreateProductInputSchema = z.object({
-  handle: z.string().min(1),
-  status: ProductStatusSchema.optional(),
-  title: z.string().min(1),
+export const CreateProductInputSchema = Schema.Struct({
+  handle: ProductTrimmedStringSchema,
+  status: Schema.optional(ProductStatusSchema),
+  title: ProductTrimmedStringSchema,
 });
 
-export const UpdateProductCatalogInputSchema = z
-  .object({
-    catalog: ProductCatalogSchema.partial(),
-    id: z.string().min(1).startsWith("prod_"),
-  })
-  .strict();
-
-export const ProductIdentifierSchema = z.object({
-  id: z.string().min(1).startsWith("prod_"),
+export const UpdateProductCatalogInputSchema = Schema.Struct({
+  catalog: Schema.Struct({
+    categories: Schema.optional(Schema.Array(ProductCategoryReferenceSchema)),
+    collections: Schema.optional(
+      Schema.Array(ProductCollectionReferenceSchema)
+    ),
+    media: Schema.optional(Schema.Array(ProductMediaReferenceSchema)),
+    metadata: Schema.optional(ProductMetadataSchema),
+    options: Schema.optional(Schema.Array(ProductOptionSchema)),
+    publishedAt: Schema.optional(Schema.NullOr(Schema.Date)),
+    searchableText: Schema.optional(Schema.String),
+    tags: Schema.optional(Schema.Array(ProductTrimmedStringSchema)),
+    variants: Schema.optional(Schema.Array(ProductVariantSchema)),
+  }),
+  id: ProductIdSchema,
 });
 
-export const ProductVariantValidationInputSchema = z.object({
-  productId: z.string().min(1).startsWith("prod_"),
-  variantId: z.string().min(1),
+export const ProductIdentifierSchema = Schema.Struct({
+  id: ProductIdSchema,
 });
 
-export const ProductRecordSchema = z.object({
+export const ProductVariantValidationInputSchema = Schema.Struct({
+  productId: ProductIdSchema,
+  variantId: ProductTrimmedStringSchema,
+});
+
+export const ProductRecordSchema = Schema.Struct({
   catalog: ProductCatalogSchema,
-  createdAt: z.date(),
-  handle: z.string(),
-  id: z.string().min(1).startsWith("prod_"),
+  createdAt: Schema.Date,
+  handle: ProductTrimmedStringSchema,
+  id: ProductIdSchema,
   status: ProductStatusSchema,
-  title: z.string(),
-  updatedAt: z.date(),
+  title: ProductTrimmedStringSchema,
+  updatedAt: Schema.Date,
 });
 
-export const ProductApiRecordSchema = z.object({
+export const ProductApiRecordSchema = Schema.Struct({
   catalog: ProductCatalogApiSchema,
-  createdAt: z.string().min(1),
-  handle: z.string(),
-  id: z.string().min(1).startsWith("prod_"),
+  createdAt: ProductIsoDateTimeStringSchema,
+  handle: ProductTrimmedStringSchema,
+  id: ProductSerializedIdSchema,
   status: ProductStatusSchema,
-  title: z.string(),
-  updatedAt: z.string().min(1),
+  title: ProductTrimmedStringSchema,
+  updatedAt: ProductIsoDateTimeStringSchema,
 });
 
-export const ProductVariantValidationResultSchema = z.object({
-  productId: z.string().min(1).startsWith("prod_"),
+export const ProductVariantValidationResultSchema = Schema.Struct({
+  productId: ProductSerializedIdSchema,
   productStatus: ProductStatusSchema,
-  valid: z.boolean(),
-  variantId: z.string().min(1),
-  variantStatus: ProductVariantStatusSchema.nullable(),
+  valid: Schema.Boolean,
+  variantId: ProductTrimmedStringSchema,
+  variantStatus: Schema.NullOr(ProductVariantStatusSchema),
 });
 
-export const ProductApiListSchema = z.array(ProductApiRecordSchema);
+export const ProductApiListSchema = Schema.Array(ProductApiRecordSchema);

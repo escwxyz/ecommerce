@@ -11,7 +11,7 @@ import {
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
-import { createInMemoryProductRepository } from "@ecommerce/product";
+import { createResettableInMemoryRegionSalesChannelRepository } from "@ecommerce/region-sales-channel";
 import { call } from "@orpc/server";
 import { ORPCError } from "@orpc/server";
 
@@ -97,14 +97,21 @@ describe("server app", () => {
     expect(await response.text()).toBe("auth-mounted");
   });
 
-  it("accepts an injected API assembly for persistent product routes", async () => {
-    const repository = createInMemoryProductRepository();
+  it("accepts an injected API assembly for persistent region routes", async () => {
+    const repository = createResettableInMemoryRegionSalesChannelRepository();
     const injectedAssembly = createApiRootAssembly({
       routes: {
-        product: {
-          clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-          idGenerator: createSequenceIdGenerator(["prod_server_injected"]),
-          repository,
+        regionSalesChannel: {
+          region: {
+            clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+            idGenerator: createSequenceIdGenerator(["reg_server_injected"]),
+            repository,
+          },
+          salesChannel: {
+            clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+            idGenerator: createSequenceIdGenerator(["sc_server_injected"]),
+            repository,
+          },
         },
       },
     });
@@ -123,23 +130,25 @@ describe("server app", () => {
     await expect(app.request("/")).resolves.toHaveProperty("status", 200);
     await expect(
       call(
-        injectedAssembly.router.productCreate,
+        injectedAssembly.router.regionCreate,
         {
-          handle: "server-injected-product",
-          title: "Server Injected Product",
+          countries: ["US"],
+          currencyCode: "USD",
+          name: "Server Injected Region",
         },
         {
           context: {
             auth,
             authorization: authorizationEvaluator,
-            session: createStoreAdminAuthSession(),
+            session: createStoreAdminAuthSession({
+              permissions: ["region:read", "region:write"],
+            }),
           },
         }
       )
     ).resolves.toMatchObject({
-      id: "prod_server_injected",
+      id: "reg_server_injected",
     });
-    await expect(repository.listProducts()).resolves.toHaveLength(1);
   });
 
   it("authorizes notification-event realtime websocket routing", async () => {

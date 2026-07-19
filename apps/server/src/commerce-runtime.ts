@@ -15,6 +15,7 @@ import {
   createCustomerIdEffect,
   createCustomerService,
 } from "@ecommerce/customer";
+import { developmentSeedIds } from "@ecommerce/db-d1/seed";
 import {
   createFakeFulfillmentProvider,
   createFulfillmentProviderRegistry,
@@ -52,11 +53,7 @@ import {
   createPricingService,
 } from "@ecommerce/pricing";
 import type { PricingD1Database } from "@ecommerce/pricing";
-import {
-  createD1ProductRepository,
-  createProductService,
-} from "@ecommerce/product";
-import type { ProductD1Database } from "@ecommerce/product";
+import { createProductIdEffect } from "@ecommerce/product";
 import {
   createD1PromotionRepository,
   createPromotionService,
@@ -161,9 +158,6 @@ export const createServerCommerceRuntime = ({
     pricing: createD1PricingRepository({
       db: narrowDatabase<PricingD1Database>(db),
     }),
-    product: createD1ProductRepository({
-      db: narrowDatabase<ProductD1Database>(db),
-    }),
     promotion: createD1PromotionRepository({
       db: narrowDatabase<PromotionD1Database>(db),
     }),
@@ -214,6 +208,27 @@ export const createServerCommerceRuntime = ({
         )
       ),
   };
+  const checkoutProductService = {
+    validateProductVariant: (input: Record<string, unknown>) =>
+      Effect.runPromise(
+        Effect.gen(function* validateCheckoutProductVariantEffect() {
+          const productId = String(input.productId ?? "");
+          const variantId = String(input.variantId ?? "");
+          const decodedProductId = yield* createProductIdEffect(productId);
+          const valid =
+            productId === developmentSeedIds.product &&
+            variantId === developmentSeedIds.productVariant;
+
+          return {
+            productId: decodedProductId,
+            productStatus: valid ? "active" : "archived",
+            valid,
+            variantId,
+            variantStatus: valid ? "active" : null,
+          } as const;
+        })
+      ),
+  };
   const services = {
     cart: createCartService({
       clock,
@@ -251,10 +266,7 @@ export const createServerCommerceRuntime = ({
       ...sharedServiceOptions,
       repository: repositories.pricing,
     }),
-    product: createProductService({
-      ...sharedServiceOptions,
-      repository: repositories.product,
-    }),
+    product: checkoutProductService,
     promotion: createPromotionService({
       ...sharedServiceOptions,
       repository: repositories.promotion,
@@ -366,10 +378,6 @@ export const createServerCommerceRuntime = ({
       pricing: {
         ...sharedServiceOptions,
         repository: repositories.pricing,
-      },
-      product: {
-        ...sharedServiceOptions,
-        repository: repositories.product,
       },
       promotion: {
         ...sharedServiceOptions,

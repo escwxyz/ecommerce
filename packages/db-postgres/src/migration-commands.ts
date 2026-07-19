@@ -14,6 +14,11 @@ import {
   commerceMigrationAuditTableName,
   commerceOutboxDeadLetterTableName,
   commerceOutboxTableName,
+  postgresCustomerAddressTableName,
+  postgresCustomerGroupCustomerTableName,
+  postgresCustomerGroupTableName,
+  postgresCustomerTableName,
+  postgresProductTableName,
   postgresStoreTableName,
 } from "./schema/index";
 
@@ -288,6 +293,21 @@ export const createPostgresDevelopmentResetPlan = (
     command,
     requiresConfirmation: true,
     statements: [
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresProductTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresCustomerGroupCustomerTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresCustomerGroupTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresCustomerAddressTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresCustomerTableName
+      )} CASCADE`,
       `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
         postgresStoreTableName
       )} CASCADE`,

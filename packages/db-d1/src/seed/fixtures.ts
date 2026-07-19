@@ -233,42 +233,6 @@ const salesChannel = defineSeedWrite(
   ["id"]
 );
 
-const product = defineSeedWrite(
-  "product",
-  {
-    catalog_metadata: emptyJson,
-    catalog_published_at: seedTimestamp,
-    catalog_searchable_text: "development t-shirt",
-    created_at: seedTimestamp,
-    handle: "development-t-shirt",
-    id: developmentSeedIds.product,
-    status: "active",
-    title: "Development T-Shirt",
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const productVariant = defineSeedWrite(
-  "product_variant",
-  {
-    id: developmentSeedIds.productVariant,
-    metadata: JSON.stringify({
-      inventoryItemId: developmentSeedIds.inventoryItem,
-      priceSetId: developmentSeedIds.priceSet,
-      stockLocationId: developmentSeedIds.stockLocation,
-      taxCategoryId: developmentSeedIds.taxCategory,
-    }),
-    option_value_ids: JSON.stringify([]),
-    product_id: developmentSeedIds.product,
-    searchable_text: "development t-shirt black",
-    sku: "DEV-TSHIRT-BLACK",
-    status: "active",
-    title: "Black",
-  },
-  ["id"]
-);
-
 const salesChannelProduct = defineSeedWrite(
   "sales_channel_product",
   {
@@ -376,8 +340,6 @@ export const developmentSeedWrites: readonly DevelopmentSeedWrite[] = [
   region,
   regionCountry,
   salesChannel,
-  product,
-  productVariant,
   salesChannelProduct,
   currency,
   priceSet,

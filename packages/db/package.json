@@ -29,9 +29,6 @@
     "./schema/payment": {
       "default": "./src/schema/payment.ts"
     },
-    "./schema/product": {
-      "default": "./src/schema/product.ts"
-    },
     "./schema/pricing": {
       "default": "./src/schema/pricing.ts"
     },
@@ -57,7 +54,6 @@
     "@ecommerce/order": "workspace:*",
     "@ecommerce/payment": "workspace:*",
     "@ecommerce/pricing": "workspace:*",
-    "@ecommerce/product": "workspace:*",
     "@ecommerce/promotion": "workspace:*",
     "@ecommerce/region-sales-channel": "workspace:*",
     "@ecommerce/tax": "workspace:*",

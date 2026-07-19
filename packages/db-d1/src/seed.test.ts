@@ -132,21 +132,19 @@ describe("deterministic development seed", () => {
         []
       >(
         `SELECT
-          p.id AS product_id,
-          pv.id AS variant_id,
           scp.sales_channel_id,
+          scp.product_id,
           r.id AS region_id,
           r.currency_code,
           ps.id AS price_set_id,
           ii.id AS inventory_item_id,
           il.stock_location_id,
-          so.id AS shipping_option_id
-        FROM product p
-        JOIN product_variant pv ON pv.product_id = p.id
-        JOIN sales_channel_product scp ON scp.product_id = p.id
+          so.id AS shipping_option_id,
+          json_extract(ps.metadata_json, '$.variantId') AS variant_id
+        FROM sales_channel_product scp
         JOIN region r ON r.id = 'reg_dev_us'
-        JOIN pricing_price_set ps ON ps.id = json_extract(pv.metadata, '$.priceSetId')
-        JOIN inventory_item ii ON ii.id = json_extract(pv.metadata, '$.inventoryItemId')
+        JOIN pricing_price_set ps ON json_extract(ps.metadata_json, '$.variantId') = 'variant_dev_tshirt_black'
+        JOIN inventory_item ii ON json_extract(ii.metadata_json, '$.variantId') = json_extract(ps.metadata_json, '$.variantId')
         JOIN inventory_level il ON il.inventory_item_id = ii.id
         JOIN shipping_option so ON so.id = json_extract(r.fulfillment_option_ids_json, '$[0]')`
       )
@@ -206,7 +204,6 @@ describe("deterministic development seed", () => {
     const seededCounts = {
       inventoryLevel: countRows(database, "inventory_level"),
       moneyAmount: countRows(database, "pricing_money_amount"),
-      product: countRows(database, "product"),
       salesChannelProduct: countRows(database, "sales_channel_product"),
       shippingOption: countRows(database, "shipping_option"),
     };
@@ -216,7 +213,6 @@ describe("deterministic development seed", () => {
     expect({
       inventoryLevel: countRows(database, "inventory_level"),
       moneyAmount: countRows(database, "pricing_money_amount"),
-      product: countRows(database, "product"),
       salesChannelProduct: countRows(database, "sales_channel_product"),
       shippingOption: countRows(database, "shipping_option"),
     }).toEqual(seededCounts);

@@ -7,8 +7,6 @@ import {
   createStaticClock,
 } from "@ecommerce/core/testing";
 import { createInMemoryPricingRepository } from "@ecommerce/pricing";
-import { createInMemoryProductRepository } from "@ecommerce/product";
-import { resetProductState } from "@ecommerce/product/testing";
 import { createResettableInMemoryRegionSalesChannelRepository } from "@ecommerce/region-sales-channel";
 import { OpenAPIGenerator } from "@orpc/openapi";
 import { call, ORPCError } from "@orpc/server";
@@ -42,16 +40,14 @@ const createTestContext = (session: AuthSession = null) =>
 
 describe("api assembly", () => {
   it("assembles built-in route fragments into the root router", async () => {
-    resetProductState();
-
     const assembly = createApiAssembly({
       fragments: builtinRouteFragments,
     });
 
     expect(assembly.fragments).toEqual(builtinRouteFragments);
-    expect(assembly.router).toHaveProperty("productList");
-    expect(assembly.router).toHaveProperty("productCatalogUpdate");
-    expect(assembly.router).toHaveProperty("productVariantValidate");
+    expect(assembly.router).not.toHaveProperty("productList");
+    expect(assembly.router).not.toHaveProperty("productCatalogUpdate");
+    expect(assembly.router).not.toHaveProperty("productVariantValidate");
     expect(assembly.router).toHaveProperty("regionList");
     expect(assembly.router).toHaveProperty("salesChannelList");
     expect(assembly.router).toHaveProperty("pricingCalculate");
@@ -62,7 +58,7 @@ describe("api assembly", () => {
 
     await expect(healthCheck()).resolves.toBe("OK");
 
-    const productContext = {
+    const moduleContext = {
       context: {
         auth,
         authorization: authorizationEvaluator,
@@ -84,31 +80,8 @@ describe("api assembly", () => {
     } as const;
 
     await expect(
-      call(assembly.router.productList, undefined, productContext)
+      call(assembly.router.regionList, undefined, moduleContext)
     ).resolves.toEqual([]);
-
-    await expect(
-      call(
-        assembly.router.productCreate,
-        {
-          handle: "highlight-tee",
-          title: "Highlight Tee",
-        },
-        productContext
-      )
-    ).resolves.toMatchObject({
-      handle: "highlight-tee",
-      status: "draft",
-    });
-
-    await expect(
-      call(assembly.router.productList, undefined, productContext)
-    ).resolves.toMatchObject([
-      {
-        handle: "highlight-tee",
-        title: "Highlight Tee",
-      },
-    ]);
   });
 
   it("fails when two fragments contribute the same root route key", () => {
@@ -216,9 +189,9 @@ describe("api assembly", () => {
     expect(apiAssembly.router).toHaveProperty("healthCheck");
     expect(apiAssembly.router).toHaveProperty("privateData");
     expect(apiAssembly.router).not.toHaveProperty("storeSettingsUpdate");
-    expect(apiAssembly.router).toHaveProperty("productCreate");
-    expect(apiAssembly.router).toHaveProperty("productCatalogUpdate");
-    expect(apiAssembly.router).toHaveProperty("productVariantValidate");
+    expect(apiAssembly.router).not.toHaveProperty("productCreate");
+    expect(apiAssembly.router).not.toHaveProperty("productCatalogUpdate");
+    expect(apiAssembly.router).not.toHaveProperty("productVariantValidate");
     expect(apiAssembly.router).toHaveProperty("regionCreate");
     expect(apiAssembly.router).toHaveProperty("salesChannelCreate");
     expect(apiAssembly.router).toHaveProperty("pricingPriceSetCreate");
@@ -226,17 +199,11 @@ describe("api assembly", () => {
   });
 
   it("creates root assemblies with injected module dependencies", async () => {
-    const productRepository = createInMemoryProductRepository();
     const pricingRepository = createInMemoryPricingRepository();
     const regionSalesChannelRepository =
       createResettableInMemoryRegionSalesChannelRepository();
     const assembly = createApiRootAssembly({
       routes: {
-        product: {
-          clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-          idGenerator: createSequenceIdGenerator(["prod_api_injected"]),
-          repository: productRepository,
-        },
         pricing: {
           clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
           idGenerator: createSequenceIdGenerator([
@@ -267,7 +234,7 @@ describe("api assembly", () => {
         },
       },
     });
-    const productContext = {
+    const moduleContext = {
       context: {
         auth,
         authorization: authorizationEvaluator,
@@ -290,25 +257,13 @@ describe("api assembly", () => {
 
     await expect(
       call(
-        assembly.router.productCreate,
-        {
-          handle: "injected-product",
-          title: "Injected Product",
-        },
-        productContext
-      )
-    ).resolves.toMatchObject({
-      id: "prod_api_injected",
-    });
-    await expect(
-      call(
         assembly.router.regionCreate,
         {
           countries: ["US"],
           currencyCode: "USD",
           name: "United States",
         },
-        productContext
+        moduleContext
       )
     ).resolves.toMatchObject({
       id: "reg_api_injected",
@@ -320,7 +275,7 @@ describe("api assembly", () => {
           name: "Web",
           status: "active",
         },
-        productContext
+        moduleContext
       )
     ).resolves.toMatchObject({
       id: "sc_api_injected",
@@ -330,7 +285,7 @@ describe("api assembly", () => {
       {
         title: "API injected prices",
       },
-      productContext
+      moduleContext
     );
 
     await call(
@@ -340,7 +295,7 @@ describe("api assembly", () => {
         currencyCode: "USD",
         priceSetId: priceSet.id,
       },
-      productContext
+      moduleContext
     );
 
     await expect(
@@ -350,7 +305,7 @@ describe("api assembly", () => {
           currencyCode: "USD",
           priceSetId: priceSet.id,
         },
-        productContext
+        moduleContext
       )
     ).resolves.toMatchObject({
       amount: 4200,
@@ -358,7 +313,6 @@ describe("api assembly", () => {
         source: "base",
       },
     });
-    await expect(productRepository.listProducts()).resolves.toHaveLength(1);
   });
 
   it("rejects invalid input before procedure business logic runs", async () => {
@@ -407,8 +361,7 @@ describe("api assembly", () => {
 
     expect(spec.paths?.["/health"]?.get?.responses).toHaveProperty("200");
     expect(spec.paths?.["/store"]).toBeUndefined();
-    expect(spec.paths?.["/products"]?.post?.requestBody).toBeDefined();
-    expect(spec.paths?.["/products"]?.post?.responses).toHaveProperty("200");
+    expect(spec.paths?.["/products"]).toBeUndefined();
     expect(spec.paths?.["/regions"]?.post?.requestBody).toBeDefined();
     expect(spec.paths?.["/regions"]?.post?.responses).toHaveProperty("200");
     expect(spec.paths?.["/sales-channels"]?.post?.requestBody).toBeDefined();

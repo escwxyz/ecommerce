@@ -97,7 +97,7 @@ describe("db d1 adapter", () => {
     await expect(tableExists(database.db, "product")).resolves.toBe(false);
   });
 
-  it("applies the commerce auth and product migrations on D1-compatible SQLite", async () => {
+  it("applies the commerce auth and legacy module migrations on D1-compatible SQLite", async () => {
     const sqlite = new Database(":memory:");
     const database = createD1Database(createSqliteBackedFakeBinding(sqlite));
 
@@ -108,7 +108,10 @@ describe("db d1 adapter", () => {
     await expect(tableExists(database.db, "session")).resolves.toBe(true);
     await expect(tableExists(database.db, "account")).resolves.toBe(true);
     await expect(tableExists(database.db, "verification")).resolves.toBe(true);
-    await expect(tableExists(database.db, "product")).resolves.toBe(true);
+    await expect(tableExists(database.db, "product")).resolves.toBe(false);
+    await expect(tableExists(database.db, "product_variant")).resolves.toBe(
+      false
+    );
     await expect(columnExists(database.db, "user", "role")).resolves.toBe(true);
     await expect(columnExists(database.db, "user", "banned")).resolves.toBe(
       true
@@ -117,9 +120,6 @@ describe("db d1 adapter", () => {
       columnExists(database.db, "session", "impersonatedBy")
     ).resolves.toBe(true);
     await expect(indexExists(database.db, "session_userId_idx")).resolves.toBe(
-      true
-    );
-    await expect(indexExists(database.db, "product_handle_idx")).resolves.toBe(
       true
     );
     await expect(tableExists(database.db, "region")).resolves.toBe(true);
@@ -194,50 +194,10 @@ describe("db d1 adapter", () => {
     sqlite.close();
   });
 
-  it("ships SQL migrations for normalized product catalog tables", () => {
-    const sqlite = new Database(":memory:");
-    const migrationsDir = join(import.meta.dir, "migrations", "sql");
-
-    sqlite.exec(readFileSync(join(migrationsDir, "0001_product.sql"), "utf8"));
-    sqlite.exec(
-      readFileSync(join(migrationsDir, "0002_product_catalog.sql"), "utf8")
-    );
-
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'table'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "product",
-        "product_variant",
-        "product_option",
-        "product_option_value",
-        "product_variant_option",
-        "product_collection",
-        "product_collection_product",
-        "product_category",
-        "product_category_product",
-        "product_media",
-        "product_tag",
-        "product_tags",
-        "product_type",
-        "product_type_product",
-      ])
-    );
-
-    sqlite.close();
-  });
-
   it("ships SQL migrations for promotion tables", () => {
     const sqlite = new Database(":memory:");
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
-    sqlite.exec(readFileSync(join(migrationsDir, "0001_product.sql"), "utf8"));
-    sqlite.exec(
-      readFileSync(join(migrationsDir, "0002_product_catalog.sql"), "utf8")
-    );
     sqlite.exec(
       readFileSync(join(migrationsDir, "0003_promotion.sql"), "utf8")
     );
@@ -277,10 +237,6 @@ describe("db d1 adapter", () => {
     const sqlite = new Database(":memory:");
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
-    sqlite.exec(readFileSync(join(migrationsDir, "0001_product.sql"), "utf8"));
-    sqlite.exec(
-      readFileSync(join(migrationsDir, "0002_product_catalog.sql"), "utf8")
-    );
     sqlite.exec(
       readFileSync(join(migrationsDir, "0003_promotion.sql"), "utf8")
     );
@@ -647,7 +603,6 @@ describe("db d1 adapter", () => {
         .map((row) => (row as { name: string }).name)
     ).toEqual(
       expect.arrayContaining([
-        "product",
         "region",
         "inventory_item",
         "inventory_level",

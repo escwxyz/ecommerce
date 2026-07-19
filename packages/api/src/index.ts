@@ -136,6 +136,19 @@ export {
   customerEffectHttpApiContribution,
 } from "./customer-effect-http-api";
 export {
+  ProductApiListSuccessSchema,
+  ProductApiNullableRecordSuccessSchema,
+  ProductApiRecordSuccessSchema,
+  ProductVariantValidationSuccessSchema,
+  productAdminHttpApiGroup,
+  productReadErrors,
+  productWriteErrors,
+} from "./product-effect-http-contract";
+export {
+  productAdminHttpApiHandlers,
+  productEffectHttpApiContribution,
+} from "./product-effect-http-api";
+export {
   StoreApiRecordSuccessSchema,
   StoreDefaultsApiRecordSuccessSchema,
   storeAdminHttpApiGroup,

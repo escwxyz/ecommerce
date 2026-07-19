@@ -6,7 +6,6 @@ import type { NotificationEventDatabase } from "./schema/notification-event";
 import type { OrderDatabase } from "./schema/order";
 import type { PaymentDatabase } from "./schema/payment";
 import type { PricingDatabase } from "./schema/pricing";
-import type { ProductDatabase } from "./schema/product";
 import type { PromotionDatabase } from "./schema/promotion";
 import type { RegionSalesChannelDatabase } from "./schema/region-sales-channel";
 import type { TaxDatabase } from "./schema/tax";
@@ -25,9 +24,6 @@ export * as notificationEventSchema from "./schema/notification-event";
 export * as orderSchema from "./schema/order";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as paymentSchema from "./schema/payment";
-// oxlint-disable-next-line oxc/no-barrel-file
-export * as productSchema from "./schema/product";
-// oxlint-disable-next-line oxc/no-barrel-file
 export * as pricingSchema from "./schema/pricing";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as regionSalesChannelSchema from "./schema/region-sales-channel";
@@ -51,7 +47,6 @@ export interface CommerceDatabase
     NotificationEventDatabase,
     OrderDatabase,
     PaymentDatabase,
-    ProductDatabase,
     PricingDatabase,
     PromotionDatabase,
     RegionSalesChannelDatabase,

@@ -10,7 +10,6 @@ describe("promotion API and admin assembly", () => {
       createBuiltinRouteFragments().map((fragment) => fragment.key)
     ).toEqual([
       "builtin:core",
-      "module:product",
       "module:region-sales-channel",
       "module:inventory",
       "module:notification-event",

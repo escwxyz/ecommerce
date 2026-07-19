@@ -58,9 +58,10 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
-As of 2026-07-19, tasks 1.1 through 7.1 of
+As of 2026-07-19, tasks 1.1 through 7.2 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
-customer foundational slice have migrated to the Effect backend architecture:
+customer/product foundational slices have migrated to the Effect backend
+architecture:
 
 - `@ecommerce/store` owns Effect Schema domain/API contracts, schema-backed
   tagged errors, Effect services, repository contracts, in-memory test Layers,
@@ -78,20 +79,28 @@ customer foundational slice have migrated to the Effect backend architecture:
   exports have been removed.
 - `@ecommerce/api` exposes customer admin operations through Effect `HttpApi`
   groups instead of the legacy customer oRPC router.
-- The legacy D1 seed no longer creates a `store` table row. Checkout smoke tests
-  still run against the remaining legacy D1 modules by using temporary
-  server-owned store defaults and customer payment-identity facades until
-  checkout itself migrates.
+- `@ecommerce/product` owns Effect Schema domain/API contracts,
+  schema-backed tagged errors, Effect services, repository contracts,
+  in-memory test Layers, and PostgreSQL Drizzle persistence. Its legacy Zod,
+  Kysely/D1 repository, shared-D1 migration, oRPC router, and related public
+  exports have been removed.
+- `@ecommerce/api` exposes product admin operations through Effect `HttpApi`
+  groups instead of the legacy product oRPC router.
+- The legacy D1 seed no longer creates `store`, `customer`, `product`, or
+  `product_variant` records. Checkout smoke tests still run against the
+  remaining legacy D1 modules by using temporary server-owned store defaults,
+  customer payment-identity, and deterministic product-variant validation
+  facades until checkout itself migrates.
 
 ## Current Gaps
 
-- Live PostgreSQL store/customer contract verification is opt-in and still requires
+- Live PostgreSQL store/customer/product contract verification is opt-in and still requires
   `POSTGRES_URL`. Credential-free suites validate the in-memory contract,
   package type shape, migrations as checked-in files, API contracts, SDK
   transports, and Worker composition.
-- Product, region/sales-channel, pricing, inventory, cart, promotion, tax,
-  fulfillment, payment, checkout, order, and notification-event still have
-  legacy D1/Kysely/oRPC paths until their vertical-slice tasks run.
+- Region/sales-channel, pricing, inventory, cart, promotion, tax, fulfillment,
+  payment, checkout, order, and notification-event still have legacy
+  D1/Kysely/oRPC paths until their vertical-slice tasks run.
 - The Hono Worker remains the deployed compatibility entrypoint while the
   Effect Worker foundation accumulates migrated module groups.
 - Better Auth remains behind the Effect auth adapter with a temporary D1/Kysely

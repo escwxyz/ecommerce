@@ -2,14 +2,17 @@ import type {
   ClockServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
+import { ClockService, IdGeneratorService } from "@ecommerce/core";
 import { slugify } from "@ecommerce/utils";
-import { Context, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
 import type {
   CreateProductInput,
   ProductCategoryReference,
   ProductCollectionReference,
+  ProductExpectedError,
   ProductMediaReference,
   ProductOption,
   ProductOptionValue,
@@ -22,55 +25,71 @@ import type {
   ProductVariantValidationResult,
   UpdateProductCatalogInput,
 } from "../domain";
-import { PRODUCT_ID_PREFIX, createProductId } from "../domain";
+import {
+  PRODUCT_ID_PREFIX,
+  ProductCatalogValidationFailure,
+  ProductHandleConflict,
+  ProductNotFound,
+  ProductRepositoryService,
+  createProductIdEffect,
+} from "../domain";
 import { defaultProductRepository } from "../repositories";
 
+export type ProductServiceFailure = ProductExpectedError;
+
 export interface ProductServiceShape {
-  addProductCategory(input: {
+  readonly addProductCategory: (input: {
     readonly category: ProductCategoryReference;
     readonly productId: ProductId;
-  }): Promise<ProductRecord>;
-  addProductCollection(input: {
+  }) => EffectValue<ProductRecord, ProductServiceFailure>;
+  readonly addProductCollection: (input: {
     readonly collection: ProductCollectionReference;
     readonly productId: ProductId;
-  }): Promise<ProductRecord>;
-  addProductMedia(input: {
+  }) => EffectValue<ProductRecord, ProductServiceFailure>;
+  readonly addProductMedia: (input: {
     readonly media: ProductMediaReference;
     readonly productId: ProductId;
-  }): Promise<ProductRecord>;
-  addProductOption(input: {
+  }) => EffectValue<ProductRecord, ProductServiceFailure>;
+  readonly addProductOption: (input: {
     readonly option: ProductOption;
     readonly productId: ProductId;
-  }): Promise<ProductRecord>;
-  addProductOptionValue(input: {
+  }) => EffectValue<ProductRecord, ProductServiceFailure>;
+  readonly addProductOptionValue: (input: {
     readonly optionId: string;
     readonly productId: ProductId;
     readonly value: ProductOptionValue;
-  }): Promise<ProductRecord>;
-  addProductTag(input: {
+  }) => EffectValue<ProductRecord, ProductServiceFailure>;
+  readonly addProductTag: (input: {
     readonly productId: ProductId;
     readonly tag: string;
-  }): Promise<ProductRecord>;
-  addProductVariant(input: {
+  }) => EffectValue<ProductRecord, ProductServiceFailure>;
+  readonly addProductVariant: (input: {
     readonly productId: ProductId;
     readonly variant: ProductVariant;
-  }): Promise<ProductRecord>;
-  createProductDraft(input: CreateProductInput): Promise<ProductRecord>;
-  getProductById(id: ProductId): Promise<ProductRecord | null>;
-  listProducts(): Promise<readonly ProductRecord[]>;
-  setProductCatalogMetadata(input: {
+  }) => EffectValue<ProductRecord, ProductServiceFailure>;
+  readonly createProductDraft: (
+    input: CreateProductInput
+  ) => EffectValue<ProductRecord, ProductServiceFailure>;
+  readonly getProductById: (
+    id: ProductId
+  ) => EffectValue<ProductRecord | null, ProductServiceFailure>;
+  readonly listProducts: EffectValue<
+    readonly ProductRecord[],
+    ProductServiceFailure
+  >;
+  readonly setProductCatalogMetadata: (input: {
     readonly metadata: ProductCatalog["metadata"];
     readonly productId: ProductId;
     readonly publishedAt?: Date | null;
     readonly searchableText?: string;
-  }): Promise<ProductRecord>;
-  updateProductCatalog(
+  }) => EffectValue<ProductRecord, ProductServiceFailure>;
+  readonly updateProductCatalog: (
     input: UpdateProductCatalogInput
-  ): Promise<ProductRecord>;
-  validateProductVariant(input: {
+  ) => EffectValue<ProductRecord, ProductServiceFailure>;
+  readonly validateProductVariant: (input: {
     readonly productId: ProductId;
     readonly variantId: string;
-  }): Promise<ProductVariantValidationResult>;
+  }) => EffectValue<ProductVariantValidationResult, ProductServiceFailure>;
 }
 
 export const ProductService = Context.Service<ProductServiceShape>(
@@ -88,7 +107,7 @@ const createDefaultClock = (): ClockServiceShape => ({
 });
 
 const createDefaultIdGenerator = (): IdGeneratorServiceShape => ({
-  nextId: () => `${PRODUCT_ID_PREFIX}${nanoid()}`,
+  nextId: () => nanoid(),
 });
 
 const normalizeHandle = (handle: string): string => slugify(handle);
@@ -140,217 +159,276 @@ const mergeProductCatalog = (
   variants: next.variants ?? current.variants,
 });
 
-const assertUniqueIds = (
+const validateUniqueIds = (
   entityName: string,
   values: readonly { readonly id: string }[]
-): void => {
-  const seen = new Set<string>();
+): EffectValue<void, ProductCatalogValidationFailure> =>
+  Effect.gen(function* validateUniqueIdsEffect() {
+    const seen = new Set<string>();
 
-  for (const value of values) {
-    if (seen.has(value.id)) {
-      throw new Error(`Duplicate ${entityName} id "${value.id}".`);
+    for (const value of values) {
+      if (seen.has(value.id)) {
+        return yield* new ProductCatalogValidationFailure({
+          message: `Duplicate ${entityName} id "${value.id}".`,
+        });
+      }
+
+      seen.add(value.id);
     }
+  });
 
-    seen.add(value.id);
-  }
-};
+const validateCatalogStructure = (
+  catalog: ProductCatalog
+): EffectValue<void, ProductCatalogValidationFailure> =>
+  Effect.gen(function* validateCatalogStructureEffect() {
+    yield* validateUniqueIds("product option", catalog.options);
+    yield* validateUniqueIds("product variant", catalog.variants);
+    yield* validateUniqueIds("product collection", catalog.collections);
+    yield* validateUniqueIds("product category", catalog.categories);
+    yield* validateUniqueIds("product media", catalog.media);
 
-const validateCatalogStructure = (catalog: ProductCatalog): void => {
-  assertUniqueIds("product option", catalog.options);
-  assertUniqueIds("product variant", catalog.variants);
-  assertUniqueIds("product collection", catalog.collections);
-  assertUniqueIds("product category", catalog.categories);
-  assertUniqueIds("product media", catalog.media);
+    const optionValueIds = new Set<string>();
 
-  const optionValueIds = new Set<string>();
+    for (const option of catalog.options) {
+      yield* validateUniqueIds("product option value", option.values);
 
-  for (const option of catalog.options) {
-    assertUniqueIds("product option value", option.values);
-
-    for (const value of option.values) {
-      optionValueIds.add(value.id);
-    }
-  }
-
-  for (const variant of catalog.variants) {
-    for (const optionValueId of variant.optionValueIds) {
-      if (!optionValueIds.has(optionValueId)) {
-        throw new Error(
-          `Product variant "${variant.id}" references unknown option value "${optionValueId}".`
-        );
+      for (const value of option.values) {
+        optionValueIds.add(value.id);
       }
     }
-  }
-};
 
-const requireProduct = async (
+    for (const variant of catalog.variants) {
+      for (const optionValueId of variant.optionValueIds) {
+        if (!optionValueIds.has(optionValueId)) {
+          return yield* new ProductCatalogValidationFailure({
+            message: `Product variant "${variant.id}" references unknown option value "${optionValueId}".`,
+          });
+        }
+      }
+    }
+  });
+
+const requireProduct = (
   repository: ProductRepository,
   productId: ProductId
-): Promise<ProductRecord> => {
-  const product = await repository.findProductById(productId);
-
-  if (!product) {
-    throw new Error(`Product "${productId}" was not found.`);
-  }
-
-  return product;
-};
+): EffectValue<ProductRecord, ProductServiceFailure> =>
+  repository
+    .findProductById(productId)
+    .pipe(
+      Effect.flatMap((product) =>
+        product
+          ? Effect.succeed(product)
+          : Effect.fail(new ProductNotFound({ productId }))
+      )
+    );
 
 const validateCandidateCatalog = (
   product: ProductRecord,
   catalog: ProductCatalog
-): void => validateCatalogStructure({ ...product.catalog, ...catalog });
+): EffectValue<void, ProductCatalogValidationFailure> =>
+  validateCatalogStructure({ ...product.catalog, ...catalog });
+
+const createPrefixedId = (
+  idGenerator: IdGeneratorServiceShape,
+  prefix: string
+): string => {
+  const nextId = idGenerator.nextId();
+  return nextId.startsWith(prefix) ? nextId : `${prefix}${nextId}`;
+};
 
 export const createProductService = ({
   clock = createDefaultClock(),
   idGenerator = createDefaultIdGenerator(),
   repository = defaultProductRepository,
 }: CreateProductServiceOptions = {}): ProductServiceShape => ({
-  addProductCategory: async ({ category, productId }) => {
-    const product = await requireProduct(repository, productId);
-    validateCandidateCatalog(product, {
-      ...product.catalog,
-      categories: [...product.catalog.categories, category],
-    });
-    return repository.addProductCategory(productId, category);
-  },
-  addProductCollection: async ({ collection, productId }) => {
-    const product = await requireProduct(repository, productId);
-    validateCandidateCatalog(product, {
-      ...product.catalog,
-      collections: [...product.catalog.collections, collection],
-    });
-    return repository.addProductCollection(productId, collection);
-  },
-  addProductMedia: async ({ media, productId }) => {
-    const product = await requireProduct(repository, productId);
-    validateCandidateCatalog(product, {
-      ...product.catalog,
-      media: [...product.catalog.media, media],
-    });
-    return repository.addProductMedia(productId, media);
-  },
-  addProductOption: async ({ option, productId }) => {
-    const product = await requireProduct(repository, productId);
-    validateCandidateCatalog(product, {
-      ...product.catalog,
-      options: [...product.catalog.options, option],
-    });
-    return repository.addProductOption(productId, option);
-  },
-  addProductOptionValue: async ({ optionId, productId, value }) => {
-    const product = await requireProduct(repository, productId);
-    const catalog = {
-      ...product.catalog,
-      options: product.catalog.options.map((option) =>
-        option.id === optionId
-          ? { ...option, values: [...option.values, value] }
-          : option
-      ),
-    };
-    validateCandidateCatalog(product, catalog);
-    return repository.addProductOptionValue({ optionId, productId, value });
-  },
-  addProductTag: async ({ productId, tag }) => {
-    const product = await requireProduct(repository, productId);
-    const normalizedTags = dedupeTrimmedValues([...product.catalog.tags, tag]);
-    validateCandidateCatalog(product, {
-      ...product.catalog,
-      tags: normalizedTags,
-    });
+  addProductCategory: ({ category, productId }) =>
+    Effect.gen(function* addProductCategoryEffect() {
+      const product = yield* requireProduct(repository, productId);
+      yield* validateCandidateCatalog(product, {
+        ...product.catalog,
+        categories: [...product.catalog.categories, category],
+      });
+      return yield* repository.addProductCategory(productId, category);
+    }),
+  addProductCollection: ({ collection, productId }) =>
+    Effect.gen(function* addProductCollectionEffect() {
+      const product = yield* requireProduct(repository, productId);
+      yield* validateCandidateCatalog(product, {
+        ...product.catalog,
+        collections: [...product.catalog.collections, collection],
+      });
+      return yield* repository.addProductCollection(productId, collection);
+    }),
+  addProductMedia: ({ media, productId }) =>
+    Effect.gen(function* addProductMediaEffect() {
+      const product = yield* requireProduct(repository, productId);
+      yield* validateCandidateCatalog(product, {
+        ...product.catalog,
+        media: [...product.catalog.media, media],
+      });
+      return yield* repository.addProductMedia(productId, media);
+    }),
+  addProductOption: ({ option, productId }) =>
+    Effect.gen(function* addProductOptionEffect() {
+      const product = yield* requireProduct(repository, productId);
+      yield* validateCandidateCatalog(product, {
+        ...product.catalog,
+        options: [...product.catalog.options, option],
+      });
+      return yield* repository.addProductOption(productId, option);
+    }),
+  addProductOptionValue: ({ optionId, productId, value }) =>
+    Effect.gen(function* addProductOptionValueEffect() {
+      const product = yield* requireProduct(repository, productId);
+      const catalog = {
+        ...product.catalog,
+        options: product.catalog.options.map((option) =>
+          option.id === optionId
+            ? { ...option, values: [...option.values, value] }
+            : option
+        ),
+      };
+      yield* validateCandidateCatalog(product, catalog);
+      return yield* repository.addProductOptionValue({
+        optionId,
+        productId,
+        value,
+      });
+    }),
+  addProductTag: ({ productId, tag }) =>
+    Effect.gen(function* addProductTagEffect() {
+      const product = yield* requireProduct(repository, productId);
+      const normalizedTag = tag.trim();
+      const normalizedTags = dedupeTrimmedValues([
+        ...product.catalog.tags,
+        normalizedTag,
+      ]);
+      yield* validateCandidateCatalog(product, {
+        ...product.catalog,
+        tags: normalizedTags,
+      });
 
-    if (product.catalog.tags.includes(tag.trim())) {
-      return product;
-    }
+      if (product.catalog.tags.includes(normalizedTag)) {
+        return product;
+      }
 
-    return repository.addProductTag(productId, tag.trim());
-  },
-  addProductVariant: async ({ productId, variant }) => {
-    const product = await requireProduct(repository, productId);
-    validateCandidateCatalog(product, {
-      ...product.catalog,
-      variants: [...product.catalog.variants, variant],
-    });
-    return repository.addProductVariant(productId, variant);
-  },
-  createProductDraft: async (input) => {
-    const handle = normalizeHandle(input.handle);
-    const title = input.title.trim();
+      return yield* repository.addProductTag(productId, normalizedTag);
+    }),
+  addProductVariant: ({ productId, variant }) =>
+    Effect.gen(function* addProductVariantEffect() {
+      const product = yield* requireProduct(repository, productId);
+      yield* validateCandidateCatalog(product, {
+        ...product.catalog,
+        variants: [...product.catalog.variants, variant],
+      });
+      return yield* repository.addProductVariant(productId, variant);
+    }),
+  createProductDraft: (input) =>
+    Effect.gen(function* createProductDraftEffect() {
+      const handle = normalizeHandle(input.handle);
+      const title = input.title.trim();
 
-    if (!handle) {
-      throw new Error("Product handle is required.");
-    }
+      if (!handle) {
+        return yield* new ProductCatalogValidationFailure({
+          message: "Product handle is required.",
+        });
+      }
 
-    if (!title) {
-      throw new Error("Product title is required.");
-    }
+      if (!title) {
+        return yield* new ProductCatalogValidationFailure({
+          message: "Product title is required.",
+        });
+      }
 
-    const existing = await repository.findProductByHandle(handle);
+      const existing = yield* repository.findProductByHandle(handle);
+      if (existing) {
+        return yield* new ProductHandleConflict({ handle });
+      }
 
-    if (existing) {
-      throw new Error(`Product handle "${handle}" already exists.`);
-    }
+      const now = clock.now();
+      const productId = yield* createProductIdEffect(
+        createPrefixedId(idGenerator, PRODUCT_ID_PREFIX)
+      );
+      const product: ProductRecord = {
+        catalog: createEmptyProductCatalog(),
+        createdAt: now,
+        handle,
+        id: productId,
+        status: normalizeStatus(input.status),
+        title,
+        updatedAt: now,
+      };
 
-    const now = clock.now();
-    const product: ProductRecord = {
-      catalog: createEmptyProductCatalog(),
-      createdAt: now,
-      handle,
-      id: createProductId(idGenerator.nextId()),
-      status: normalizeStatus(input.status),
-      title,
-      updatedAt: now,
-    };
-
-    return repository.saveProduct(product);
-  },
+      return yield* repository.saveProduct(product);
+    }),
   getProductById: (id) => repository.findProductById(id),
-  listProducts: () => repository.listProducts(),
-  setProductCatalogMetadata: async (input) => {
-    await requireProduct(repository, input.productId);
-    return repository.setProductCatalogMetadata({
-      ...input,
-      searchableText: input.searchableText?.trim(),
-    });
-  },
-  updateProductCatalog: async (input) => {
-    const product = await requireProduct(repository, createProductId(input.id));
-    const catalog = mergeProductCatalog(product.catalog, input.catalog);
-    validateCatalogStructure(catalog);
+  listProducts: repository.listProducts,
+  setProductCatalogMetadata: (input) =>
+    Effect.gen(function* setProductCatalogMetadataEffect() {
+      yield* requireProduct(repository, input.productId);
+      return yield* repository.setProductCatalogMetadata({
+        ...input,
+        searchableText: input.searchableText?.trim(),
+      });
+    }),
+  updateProductCatalog: (input) =>
+    Effect.gen(function* updateProductCatalogEffect() {
+      const product = yield* requireProduct(repository, input.id);
+      const catalog = mergeProductCatalog(product.catalog, input.catalog);
+      yield* validateCatalogStructure(catalog);
+      return yield* repository.updateProduct({
+        ...product,
+        catalog,
+        updatedAt: clock.now(),
+      });
+    }),
+  validateProductVariant: ({ productId, variantId }) =>
+    Effect.gen(function* validateProductVariantEffect() {
+      const product = yield* repository.findProductById(productId);
+      if (!product) {
+        return {
+          productId,
+          productStatus: "archived",
+          valid: false,
+          variantId,
+          variantStatus: null,
+        };
+      }
 
-    return repository.updateProduct({
-      ...product,
-      catalog,
-      updatedAt: clock.now(),
-    });
-  },
-  validateProductVariant: async ({ productId, variantId }) => {
-    const product = await repository.findProductById(productId);
+      const variant =
+        product.catalog.variants.find(
+          (candidate) => candidate.id === variantId
+        ) ?? null;
 
-    if (!product) {
       return {
         productId,
-        productStatus: "archived",
-        valid: false,
+        productStatus: product.status,
+        valid: product.status === "active" && variant?.status === "active",
         variantId,
-        variantStatus: null,
+        variantStatus: variant?.status ?? null,
       };
-    }
-
-    const variant =
-      product.catalog.variants.find(
-        (candidate) => candidate.id === variantId
-      ) ?? null;
-
-    return {
-      productId,
-      productStatus: product.status,
-      valid: product.status === "active" && variant?.status === "active",
-      variantId,
-      variantStatus: variant?.status ?? null,
-    };
-  },
+    }),
 });
+
+export const createProductRepositoryLayer = (
+  repository: ProductRepository = defaultProductRepository
+) => Layer.succeed(ProductRepositoryService, repository);
+
+export const createProductServiceFromDependenciesLayer = () =>
+  Layer.effect(
+    ProductService,
+    Effect.gen(function* productServiceLayerEffect() {
+      const repository = yield* ProductRepositoryService;
+      const clock = yield* ClockService;
+      const idGenerator = yield* IdGeneratorService;
+
+      return createProductService({
+        clock,
+        idGenerator,
+        repository,
+      });
+    })
+  );
 
 export const createProductServiceLayer = (service: ProductServiceShape) =>
   Layer.succeed(ProductService, service);

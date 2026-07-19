@@ -39,6 +39,16 @@ export {
   type CustomerPostgresUpdate,
 } from "../modules/customer/schema";
 export {
+  postgresProduct,
+  postgresProductTableName,
+  ProductPostgresInsertSchema,
+  ProductPostgresRowSchema,
+  ProductPostgresUpdateSchema,
+  type ProductPostgresInsert,
+  type ProductPostgresRow,
+  type ProductPostgresUpdate,
+} from "../modules/product/schema";
+export {
   postgresStore,
   postgresStoreTableName,
   StorePostgresInsertSchema,
