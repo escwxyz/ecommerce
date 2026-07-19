@@ -64,7 +64,7 @@
 - [x] 6.3 Replace generic store errors with schema-backed tagged errors
 - [x] 6.4 Replace the store service and dependencies with Effect 4 services and Layers
 - [x] 6.5 Implement the store repository contract and in-memory test Layer
-- [ ] 6.6 Implement store Drizzle PostgreSQL schemas, codecs, migrations, transactions, and repository Layer
+- [x] 6.6 Implement store Drizzle PostgreSQL schemas, codecs, migrations, transactions, and repository Layer
 - [ ] 6.7 Replace the store oRPC router with Effect admin/storefront API groups and handlers
 - [ ] 6.8 Add store SDK coverage through both storefront transports
 - [ ] 6.9 Delete store Zod, Kysely, and oRPC code and enable completed-package import bans

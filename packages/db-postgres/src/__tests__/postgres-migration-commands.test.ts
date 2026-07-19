@@ -93,6 +93,9 @@ describe("PostgreSQL migration commands", () => {
       expect.objectContaining({
         name: "20260712000000_initial_foundation",
       }),
+      expect.objectContaining({
+        name: "20260719000000_store_module",
+      }),
     ]);
   });
 
@@ -121,6 +124,7 @@ describe("PostgreSQL migration commands", () => {
 
     expect(plan.requiresConfirmation).toBe(true);
     expect(plan.statements).toEqual([
+      'DROP TABLE IF EXISTS "store" CASCADE',
       'DROP TABLE IF EXISTS "commerce_outbox_dead_letter" CASCADE',
       'DROP TABLE IF EXISTS "commerce_outbox" CASCADE',
       'DROP TABLE IF EXISTS "commerce_migration_audit" CASCADE',

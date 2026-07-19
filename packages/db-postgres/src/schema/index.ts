@@ -14,3 +14,13 @@ export {
   type CommerceOutboxInsert,
   type CommerceOutboxRow,
 } from "./foundation";
+export {
+  postgresStore,
+  postgresStoreTableName,
+  StorePostgresInsertSchema,
+  StorePostgresRowSchema,
+  StorePostgresUpdateSchema,
+  type StorePostgresInsert,
+  type StorePostgresRow,
+  type StorePostgresUpdate,
+} from "../modules/store/schema";

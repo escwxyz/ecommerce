@@ -29,6 +29,8 @@ export {
   commerceOutboxDeadLetterTableName,
   commerceOutboxTableName,
   drizzleMigrationsTableName,
+  postgresStore,
+  postgresStoreTableName,
   postgresFoundationSchema,
   type CommerceMigrationAuditInsert,
   type CommerceMigrationAuditRow,
@@ -36,7 +38,23 @@ export {
   type CommerceOutboxDeadLetterRow,
   type CommerceOutboxInsert,
   type CommerceOutboxRow,
+  StorePostgresInsertSchema,
+  StorePostgresRowSchema,
+  StorePostgresUpdateSchema,
+  type StorePostgresInsert,
+  type StorePostgresRow,
+  type StorePostgresUpdate,
 } from "./schema/index";
+
+export {
+  createPostgresStoreRepository,
+  createPostgresStoreRepositoryLayer,
+  PostgresStoreRepositoryLayer,
+  resetPostgresStoreTables,
+  toStorePostgresInsert,
+  toStoreSettings,
+  withPostgresStoreTransaction,
+} from "./modules/store/index";
 
 export {
   createPostgresDevelopmentResetPlan,

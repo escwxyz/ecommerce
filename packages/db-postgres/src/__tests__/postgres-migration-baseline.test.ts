@@ -11,11 +11,13 @@ import {
   createPostgresMigrationConfig,
   defaultPostgresMigrationsFolder,
   defaultPostgresMigrationsTable,
+  postgresStoreTableName,
   postgresFoundationSchema,
   runPostgresMigrations,
 } from "../index";
 
 const baselineMigrationFolder = "20260712000000_initial_foundation";
+const storeMigrationFolder = "20260719000000_store_module";
 
 describe("PostgreSQL Drizzle migration baseline", () => {
   it("exports the clean foundation schema tables", () => {
@@ -41,6 +43,24 @@ describe("PostgreSQL Drizzle migration baseline", () => {
     const sql = readFileSync(migrationPath, "utf8");
 
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "commerce_outbox"');
+    expect(sql).toContain("--> statement-breakpoint");
+    expect(sql).not.toContain("kysely");
+  });
+
+  it("ships the store module PostgreSQL migration", () => {
+    const migrationPath = join(
+      defaultPostgresMigrationsFolder,
+      storeMigrationFolder,
+      "migration.sql"
+    );
+
+    expect(existsSync(migrationPath)).toBe(true);
+
+    const sql = readFileSync(migrationPath, "utf8");
+
+    expect(postgresStoreTableName).toBe("store");
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "store"');
+    expect(sql).toContain('"supported_currency_codes_json" jsonb NOT NULL');
     expect(sql).toContain("--> statement-breakpoint");
     expect(sql).not.toContain("kysely");
   });

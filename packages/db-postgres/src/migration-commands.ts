@@ -14,6 +14,7 @@ import {
   commerceMigrationAuditTableName,
   commerceOutboxDeadLetterTableName,
   commerceOutboxTableName,
+  postgresStoreTableName,
 } from "./schema/index";
 
 export type PostgresMigrationCommand =
@@ -287,6 +288,9 @@ export const createPostgresDevelopmentResetPlan = (
     command,
     requiresConfirmation: true,
     statements: [
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresStoreTableName
+      )} CASCADE`,
       `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
         commerceOutboxDeadLetterTableName
       )} CASCADE`,
