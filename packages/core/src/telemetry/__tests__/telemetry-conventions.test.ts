@@ -27,25 +27,34 @@ describe("Effect telemetry conventions", () => {
     const rawSecret = "postgres://commerce:secret@localhost/commerce";
     const attributes = sanitizeTelemetryAttributes({
       attempts: 2,
+      accessToken: "access-token-secret",
       databaseUrl: rawSecret,
       infinite: Number.POSITIVE_INFINITY,
       longValue: "x".repeat(257),
       metadata: { rawSecret },
       provider: "postgres",
+      refresh_token: "refresh-token-secret",
+      stripeSecret: "stripe-secret",
       token: Redacted.make("provider-token"),
     });
 
     expect(attributes).toEqual({
+      accessToken: "<redacted>",
       attempts: 2,
       databaseUrl: "<redacted>",
       infinite: "<unsupported>",
       longValue: "<unsupported>",
       metadata: "<unsupported>",
       provider: "postgres",
+      refresh_token: "<redacted>",
+      stripeSecret: "<redacted>",
       token: "<redacted>",
     });
     expect(JSON.stringify(attributes)).not.toContain(rawSecret);
+    expect(JSON.stringify(attributes)).not.toContain("access-token-secret");
     expect(JSON.stringify(attributes)).not.toContain("provider-token");
+    expect(JSON.stringify(attributes)).not.toContain("refresh-token-secret");
+    expect(JSON.stringify(attributes)).not.toContain("stripe-secret");
   });
 
   it("accepts only centrally registered operation names", () => {

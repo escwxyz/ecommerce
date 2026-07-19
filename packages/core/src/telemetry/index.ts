@@ -14,7 +14,7 @@ export const commerceOperationNames = ["store.read", "unknown"] as const;
 
 export type CommerceOperationName = (typeof commerceOperationNames)[number];
 
-const protectedAttributeNames = new Set([
+const exactProtectedAttributeNames = new Set([
   "apikey",
   "authorization",
   "connectionstring",
@@ -26,6 +26,19 @@ const protectedAttributeNames = new Set([
   "setcookie",
   "token",
 ]);
+
+const compoundProtectedAttributeFragments = [
+  "apikey",
+  "authorization",
+  "connectionstring",
+  "cookie",
+  "databaseurl",
+  "password",
+  "privatekey",
+  "secret",
+  "setcookie",
+  "token",
+] as const;
 
 export type TelemetryAttributeValue = boolean | number | string;
 
@@ -58,6 +71,17 @@ const operationCounter = Metric.counter("commerce_operation_total", {
 
 const normalizeAttributeName = (name: string): string =>
   name.replaceAll(/[^a-zA-Z0-9]/gu, "").toLowerCase();
+
+const isProtectedAttributeName = (name: string): boolean => {
+  const normalized = normalizeAttributeName(name);
+
+  return (
+    exactProtectedAttributeNames.has(normalized) ||
+    compoundProtectedAttributeFragments.some((fragment) =>
+      normalized.includes(fragment)
+    )
+  );
+};
 
 const sanitizeTelemetryValue = (value: unknown): TelemetryAttributeValue => {
   if (Redacted.isRedacted(value)) {
@@ -95,7 +119,7 @@ export const sanitizeTelemetryAttributes = (
     if (value === undefined) {
       continue;
     }
-    sanitized[name] = protectedAttributeNames.has(normalizeAttributeName(name))
+    sanitized[name] = isProtectedAttributeName(name)
       ? REDACTED_VALUE
       : sanitizeTelemetryValue(value);
   }
