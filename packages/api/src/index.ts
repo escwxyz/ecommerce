@@ -149,6 +149,23 @@ export {
   productEffectHttpApiContribution,
 } from "./product-effect-http-api";
 export {
+  RegionApiListSuccessSchema,
+  RegionApiNullableRecordSuccessSchema,
+  RegionApiRecordSuccessSchema,
+  RegionValidationResultSuccessSchema,
+  SalesChannelApiListSuccessSchema,
+  SalesChannelApiNullableRecordSuccessSchema,
+  SalesChannelApiRecordSuccessSchema,
+  SalesChannelPublishabilityResultSuccessSchema,
+  regionSalesChannelAdminHttpApiGroup,
+  regionSalesChannelReadErrors,
+  regionSalesChannelWriteErrors,
+} from "./region-sales-channel-effect-http-contract";
+export {
+  regionSalesChannelAdminHttpApiHandlers,
+  regionSalesChannelEffectHttpApiContribution,
+} from "./region-sales-channel-effect-http-api";
+export {
   StoreApiRecordSuccessSchema,
   StoreDefaultsApiRecordSuccessSchema,
   storeAdminHttpApiGroup,

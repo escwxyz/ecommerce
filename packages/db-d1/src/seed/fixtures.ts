@@ -192,56 +192,6 @@ const taxPolicy = defineSeedWrite(
   ["id"]
 );
 
-const region = defineSeedWrite(
-  "region",
-  {
-    created_at: seedTimestamp,
-    currency_code: "USD",
-    fulfillment_option_ids_json: JSON.stringify([
-      developmentSeedIds.fulfillmentOption,
-    ]),
-    id: developmentSeedIds.region,
-    metadata_json: emptyJson,
-    name: "United States",
-    payment_provider_ids_json: JSON.stringify(["manual"]),
-    tax_provider_id: developmentSeedIds.taxProvider,
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const regionCountry = defineSeedWrite(
-  "region_country",
-  {
-    country_code: "US",
-    region_id: developmentSeedIds.region,
-  },
-  ["region_id", "country_code"]
-);
-
-const salesChannel = defineSeedWrite(
-  "sales_channel",
-  {
-    created_at: seedTimestamp,
-    description: "Default development storefront",
-    id: developmentSeedIds.salesChannel,
-    metadata_json: emptyJson,
-    name: "Development web store",
-    status: "active",
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const salesChannelProduct = defineSeedWrite(
-  "sales_channel_product",
-  {
-    product_id: developmentSeedIds.product,
-    sales_channel_id: developmentSeedIds.salesChannel,
-  },
-  ["sales_channel_id", "product_id"]
-);
-
 const currency = defineSeedWrite(
   "pricing_currency",
   {
@@ -337,10 +287,6 @@ export const developmentSeedWrites: readonly DevelopmentSeedWrite[] = [
   taxRegion,
   taxRate,
   taxPolicy,
-  region,
-  regionCountry,
-  salesChannel,
-  salesChannelProduct,
   currency,
   priceSet,
   moneyAmount,

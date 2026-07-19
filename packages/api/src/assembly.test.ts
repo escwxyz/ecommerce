@@ -7,7 +7,6 @@ import {
   createStaticClock,
 } from "@ecommerce/core/testing";
 import { createInMemoryPricingRepository } from "@ecommerce/pricing";
-import { createResettableInMemoryRegionSalesChannelRepository } from "@ecommerce/region-sales-channel";
 import { OpenAPIGenerator } from "@orpc/openapi";
 import { call, ORPCError } from "@orpc/server";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
@@ -48,8 +47,8 @@ describe("api assembly", () => {
     expect(assembly.router).not.toHaveProperty("productList");
     expect(assembly.router).not.toHaveProperty("productCatalogUpdate");
     expect(assembly.router).not.toHaveProperty("productVariantValidate");
-    expect(assembly.router).toHaveProperty("regionList");
-    expect(assembly.router).toHaveProperty("salesChannelList");
+    expect(assembly.router).not.toHaveProperty("regionList");
+    expect(assembly.router).not.toHaveProperty("salesChannelList");
     expect(assembly.router).toHaveProperty("pricingCalculate");
 
     const healthCheck = assembly.router.healthCheck.callable({
@@ -58,30 +57,9 @@ describe("api assembly", () => {
 
     await expect(healthCheck()).resolves.toBe("OK");
 
-    const moduleContext = {
-      context: {
-        auth,
-        authorization: authorizationEvaluator,
-        session: createStoreAdminAuthSession({
-          permissions: [
-            "store:read",
-            "store:write",
-            "product:read",
-            "product:write",
-            "region:read",
-            "region:write",
-            "sales-channel:read",
-            "sales-channel:write",
-            "pricing:read",
-            "pricing:write",
-          ],
-        }),
-      },
-    } as const;
-
-    await expect(
-      call(assembly.router.regionList, undefined, moduleContext)
-    ).resolves.toEqual([]);
+    expect(assembly.fragments.map((fragment) => fragment.key)).toContain(
+      "module:pricing"
+    );
   });
 
   it("fails when two fragments contribute the same root route key", () => {
@@ -192,16 +170,14 @@ describe("api assembly", () => {
     expect(apiAssembly.router).not.toHaveProperty("productCreate");
     expect(apiAssembly.router).not.toHaveProperty("productCatalogUpdate");
     expect(apiAssembly.router).not.toHaveProperty("productVariantValidate");
-    expect(apiAssembly.router).toHaveProperty("regionCreate");
-    expect(apiAssembly.router).toHaveProperty("salesChannelCreate");
+    expect(apiAssembly.router).not.toHaveProperty("regionCreate");
+    expect(apiAssembly.router).not.toHaveProperty("salesChannelCreate");
     expect(apiAssembly.router).toHaveProperty("pricingPriceSetCreate");
     expect(apiAssembly.router).toHaveProperty("pricingCalculate");
   });
 
   it("creates root assemblies with injected module dependencies", async () => {
     const pricingRepository = createInMemoryPricingRepository();
-    const regionSalesChannelRepository =
-      createResettableInMemoryRegionSalesChannelRepository();
     const assembly = createApiRootAssembly({
       routes: {
         pricing: {
@@ -213,24 +189,6 @@ describe("api assembly", () => {
             "evt_calculated",
           ]),
           repository: pricingRepository,
-        },
-        regionSalesChannel: {
-          region: {
-            clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-            idGenerator: createSequenceIdGenerator([
-              "reg_api_injected",
-              "evt_reg",
-            ]),
-            repository: regionSalesChannelRepository,
-          },
-          salesChannel: {
-            clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-            idGenerator: createSequenceIdGenerator([
-              "sc_api_injected",
-              "evt_sc",
-            ]),
-            repository: regionSalesChannelRepository,
-          },
         },
       },
     });
@@ -255,31 +213,6 @@ describe("api assembly", () => {
       },
     } as const;
 
-    await expect(
-      call(
-        assembly.router.regionCreate,
-        {
-          countries: ["US"],
-          currencyCode: "USD",
-          name: "United States",
-        },
-        moduleContext
-      )
-    ).resolves.toMatchObject({
-      id: "reg_api_injected",
-    });
-    await expect(
-      call(
-        assembly.router.salesChannelCreate,
-        {
-          name: "Web",
-          status: "active",
-        },
-        moduleContext
-      )
-    ).resolves.toMatchObject({
-      id: "sc_api_injected",
-    });
     const priceSet = await call(
       assembly.router.pricingPriceSetCreate,
       {
@@ -362,12 +295,8 @@ describe("api assembly", () => {
     expect(spec.paths?.["/health"]?.get?.responses).toHaveProperty("200");
     expect(spec.paths?.["/store"]).toBeUndefined();
     expect(spec.paths?.["/products"]).toBeUndefined();
-    expect(spec.paths?.["/regions"]?.post?.requestBody).toBeDefined();
-    expect(spec.paths?.["/regions"]?.post?.responses).toHaveProperty("200");
-    expect(spec.paths?.["/sales-channels"]?.post?.requestBody).toBeDefined();
-    expect(spec.paths?.["/sales-channels"]?.post?.responses).toHaveProperty(
-      "200"
-    );
+    expect(spec.paths?.["/regions"]).toBeUndefined();
+    expect(spec.paths?.["/sales-channels"]).toBeUndefined();
     expect(spec.paths?.["/pricing/calculate"]?.post?.requestBody).toBeDefined();
     expect(spec.paths?.["/pricing/price-sets"]?.post?.responses).toHaveProperty(
       "200"

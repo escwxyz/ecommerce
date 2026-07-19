@@ -3,8 +3,14 @@ import type {
   EventPublisherServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
+import {
+  ClockService,
+  EventPublisherService,
+  IdGeneratorService,
+} from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import { Context, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
 import type {
@@ -13,10 +19,17 @@ import type {
   RegionProviderAvailability,
   RegionRecord,
   RegionRepository,
+  RegionSalesChannelExpectedError,
   RegionValidationResult,
   ValidateRegionInput,
 } from "../domain";
-import { REGION_ID_PREFIX, createRegionId } from "../domain";
+import {
+  REGION_ID_PREFIX,
+  RegionRepositoryService,
+  RegionSalesChannelEventPublishFailure,
+  RegionValidationFailure,
+  createRegionIdEffect,
+} from "../domain";
 import { defaultRegionSalesChannelRepository } from "../repositories";
 
 export const REGION_CREATED_EVENT = "region.created" as const;
@@ -27,13 +40,22 @@ export interface RegionCreatedEventPayload {
   readonly currencyCode: string;
 }
 
+export type RegionServiceFailure = RegionSalesChannelExpectedError;
+
 export interface RegionServiceShape {
-  createRegion(input: CreateRegionInput): Promise<RegionRecord>;
-  getRegionById(id: RegionId): Promise<RegionRecord | null>;
-  listRegions(): Promise<readonly RegionRecord[]>;
-  validateRegionConstraints(
+  readonly createRegion: (
+    input: CreateRegionInput
+  ) => EffectValue<RegionRecord, RegionServiceFailure>;
+  readonly getRegionById: (
+    id: RegionId
+  ) => EffectValue<RegionRecord | null, RegionServiceFailure>;
+  readonly listRegions: EffectValue<
+    readonly RegionRecord[],
+    RegionServiceFailure
+  >;
+  readonly validateRegionConstraints: (
     input: ValidateRegionInput
-  ): Promise<RegionValidationResult>;
+  ) => EffectValue<RegionValidationResult, RegionServiceFailure>;
 }
 
 export const RegionService = Context.Service<RegionServiceShape>(
@@ -52,7 +74,7 @@ const createDefaultClock = (): ClockServiceShape => ({
 });
 
 const createDefaultIdGenerator = (): IdGeneratorServiceShape => ({
-  nextId: () => `${REGION_ID_PREFIX}${nanoid()}`,
+  nextId: () => nanoid(),
 });
 
 const createNoopEventPublisher = (): EventPublisherServiceShape => ({
@@ -102,117 +124,179 @@ const normalizeProviderAvailability = (
   taxProviderId: input.taxProviderId?.trim() || null,
 });
 
+const createPrefixedId = (
+  idGenerator: IdGeneratorServiceShape,
+  prefix: string
+): string => {
+  const nextId = idGenerator.nextId();
+  return nextId.startsWith(prefix) ? nextId : `${prefix}${nextId}`;
+};
+
+const toEventPublishFailure = ({
+  entityId,
+  eventName,
+}: {
+  readonly entityId: string;
+  readonly eventName: string;
+}): RegionSalesChannelEventPublishFailure =>
+  new RegionSalesChannelEventPublishFailure({
+    entityId,
+    eventName,
+    reason: "event-publish-failed",
+  });
+
 export const createRegionService = ({
   clock = createDefaultClock(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
   repository = defaultRegionSalesChannelRepository,
 }: CreateRegionServiceOptions = {}): RegionServiceShape => ({
-  createRegion: async (input) => {
-    const countries = normalizeDistinctValues(
-      input.countries,
-      normalizeCountryCode
-    );
-    const currencyCode = normalizeCurrencyCode(input.currencyCode);
-    const name = input.name.trim();
+  createRegion: (input) =>
+    Effect.gen(function* createRegionEffect() {
+      const countries = normalizeDistinctValues(
+        input.countries,
+        normalizeCountryCode
+      );
+      const currencyCode = normalizeCurrencyCode(input.currencyCode);
+      const name = input.name.trim();
 
-    if (!name) {
-      throw new Error("Region name is required.");
-    }
+      if (!name) {
+        return yield* new RegionValidationFailure({
+          message: "Region name is required.",
+        });
+      }
 
-    if (countries.length === 0) {
-      throw new Error("Region must include at least one country.");
-    }
+      if (countries.length === 0) {
+        return yield* new RegionValidationFailure({
+          message: "Region must include at least one country.",
+        });
+      }
 
-    if (!currencyCode) {
-      throw new Error("Region currency is required.");
-    }
+      if (!currencyCode) {
+        return yield* new RegionValidationFailure({
+          message: "Region currency is required.",
+        });
+      }
 
-    const now = clock.now();
-    const region: RegionRecord = {
-      countries,
-      createdAt: now,
-      currencyCode,
-      id: createRegionId(idGenerator.nextId()),
-      metadata: input.metadata ?? {},
-      name,
-      providerAvailability: normalizeProviderAvailability(input),
-      updatedAt: now,
-    };
-    const saved = await repository.saveRegion(region);
-
-    await eventPublisher.publish(
-      createEventEnvelope({
-        id: idGenerator.nextId(),
-        name: REGION_CREATED_EVENT,
-        payload: {
-          countryCodes: saved.countries,
-          currencyCode: saved.currencyCode,
-          id: saved.id,
-        } satisfies RegionCreatedEventPayload,
-        sourceModule: "region",
-        subject: {
-          id: saved.id,
-          type: "region",
-        },
-      })
-    );
-
-    return saved;
-  },
-  getRegionById: (id) => repository.findRegionById(id),
-  listRegions: () => repository.listRegions(),
-  validateRegionConstraints: async (input) => {
-    const region = await repository.findRegionById(
-      createRegionId(input.regionId)
-    );
-    const reasons: string[] = [];
-
-    if (!region) {
-      return {
-        allowed: false,
-        reasons: ["region-not-found"],
+      const now = clock.now();
+      const id = yield* createRegionIdEffect(
+        createPrefixedId(idGenerator, REGION_ID_PREFIX)
+      );
+      const region: RegionRecord = {
+        countries,
+        createdAt: now,
+        currencyCode,
+        id,
+        metadata: input.metadata ?? {},
+        name,
+        providerAvailability: normalizeProviderAvailability(input),
+        updatedAt: now,
       };
-    }
+      const saved = yield* repository.saveRegion(region);
 
-    if (
-      input.currencyCode &&
-      region.currencyCode !== normalizeCurrencyCode(input.currencyCode)
-    ) {
-      reasons.push("currency-not-allowed");
-    }
+      yield* Effect.tryPromise({
+        catch: () =>
+          toEventPublishFailure({
+            entityId: saved.id,
+            eventName: REGION_CREATED_EVENT,
+          }),
+        try: () =>
+          Promise.resolve(
+            eventPublisher.publish(
+              createEventEnvelope({
+                id: idGenerator.nextId(),
+                name: REGION_CREATED_EVENT,
+                payload: {
+                  countryCodes: saved.countries,
+                  currencyCode: saved.currencyCode,
+                  id: saved.id,
+                } satisfies RegionCreatedEventPayload,
+                sourceModule: "region",
+                subject: {
+                  id: saved.id,
+                  type: "region",
+                },
+              })
+            )
+          ),
+      });
 
-    if (
-      input.countryCode &&
-      !region.countries.includes(normalizeCountryCode(input.countryCode))
-    ) {
-      reasons.push("country-not-allowed");
-    }
+      return saved;
+    }),
+  getRegionById: (id) => repository.findRegionById(id),
+  listRegions: repository.listRegions,
+  validateRegionConstraints: (input) =>
+    Effect.gen(function* validateRegionConstraintsEffect() {
+      const region = yield* repository.findRegionById(input.regionId);
+      const reasons: string[] = [];
 
-    if (
-      input.paymentProviderId &&
-      !region.providerAvailability.paymentProviderIds.includes(
-        input.paymentProviderId
-      )
-    ) {
-      reasons.push("payment-provider-not-available");
-    }
+      if (!region) {
+        return {
+          allowed: false,
+          reasons: ["region-not-found"],
+        };
+      }
 
-    if (
-      input.fulfillmentOptionId &&
-      !region.providerAvailability.fulfillmentOptionIds.includes(
-        input.fulfillmentOptionId
-      )
-    ) {
-      reasons.push("fulfillment-option-not-available");
-    }
+      if (
+        input.currencyCode &&
+        region.currencyCode !== normalizeCurrencyCode(input.currencyCode)
+      ) {
+        reasons.push("currency-not-allowed");
+      }
 
-    return {
-      allowed: reasons.length === 0,
-      reasons,
-    };
-  },
+      if (
+        input.countryCode &&
+        !region.countries.includes(normalizeCountryCode(input.countryCode))
+      ) {
+        reasons.push("country-not-allowed");
+      }
+
+      if (
+        input.paymentProviderId &&
+        !region.providerAvailability.paymentProviderIds.includes(
+          input.paymentProviderId
+        )
+      ) {
+        reasons.push("payment-provider-not-available");
+      }
+
+      if (
+        input.fulfillmentOptionId &&
+        !region.providerAvailability.fulfillmentOptionIds.includes(
+          input.fulfillmentOptionId
+        )
+      ) {
+        reasons.push("fulfillment-option-not-available");
+      }
+
+      return {
+        allowed: reasons.length === 0,
+        reasons,
+      };
+    }),
 });
+
+export const createRegionRepositoryLayer = (
+  repository: RegionRepository = defaultRegionSalesChannelRepository
+) => Layer.succeed(RegionRepositoryService, repository);
+
+export const createRegionServiceFromDependenciesLayer = () =>
+  Layer.effect(
+    RegionService,
+    Effect.gen(function* regionServiceLayerEffect() {
+      const clock = yield* ClockService;
+      const eventPublisher = yield* EventPublisherService;
+      const idGenerator = yield* IdGeneratorService;
+      const repository = yield* RegionRepositoryService;
+
+      return createRegionService({
+        clock,
+        eventPublisher,
+        idGenerator,
+        repository,
+      });
+    })
+  );
 
 export const createRegionServiceLayer = (service: RegionServiceShape) =>
   Layer.succeed(RegionService, service);

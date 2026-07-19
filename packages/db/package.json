@@ -35,9 +35,6 @@
     "./schema/promotion": {
       "default": "./src/schema/promotion.ts"
     },
-    "./schema/region-sales-channel": {
-      "default": "./src/schema/region-sales-channel.ts"
-    },
     "./schema/tax": {
       "default": "./src/schema/tax.ts"
     }
@@ -55,7 +52,6 @@
     "@ecommerce/payment": "workspace:*",
     "@ecommerce/pricing": "workspace:*",
     "@ecommerce/promotion": "workspace:*",
-    "@ecommerce/region-sales-channel": "workspace:*",
     "@ecommerce/tax": "workspace:*",
     "kysely": "catalog:",
     "zod": "catalog:"

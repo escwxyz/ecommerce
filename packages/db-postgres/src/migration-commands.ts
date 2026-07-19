@@ -19,6 +19,10 @@ import {
   postgresCustomerGroupTableName,
   postgresCustomerTableName,
   postgresProductTableName,
+  postgresRegionCountryTableName,
+  postgresRegionTableName,
+  postgresSalesChannelProductTableName,
+  postgresSalesChannelTableName,
   postgresStoreTableName,
 } from "./schema/index";
 
@@ -293,6 +297,18 @@ export const createPostgresDevelopmentResetPlan = (
     command,
     requiresConfirmation: true,
     statements: [
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresSalesChannelProductTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresSalesChannelTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresRegionCountryTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresRegionTableName
+      )} CASCADE`,
       `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
         postgresProductTableName
       )} CASCADE`,

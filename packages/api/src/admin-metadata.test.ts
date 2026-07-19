@@ -81,22 +81,6 @@ describe("admin metadata API", () => {
     ]);
   });
 
-  it("rejects region operations when the required permission is missing", async () => {
-    await expect(
-      call(
-        apiAssembly.router.regionCreate,
-        {
-          countries: ["US"],
-          currencyCode: "USD",
-          name: "Denied region",
-        },
-        createContext(
-          createCustomerAuthSession({ permissions: ["region:read"] })
-        )
-      )
-    ).rejects.toBeInstanceOf(ORPCError);
-  });
-
   it("rejects pricing operations when the required permission is missing", async () => {
     await expect(
       call(
@@ -106,6 +90,25 @@ describe("admin metadata API", () => {
         },
         createContext(
           createCustomerAuthSession({ permissions: ["pricing:read"] })
+        )
+      )
+    ).rejects.toBeInstanceOf(ORPCError);
+  });
+
+  it("keeps migrated region operations out of the legacy oRPC root", () => {
+    expect(apiAssembly.router).not.toHaveProperty("regionCreate");
+    expect(apiAssembly.router).not.toHaveProperty("salesChannelCreate");
+  });
+
+  it("rejects promotion operations when the required permission is missing", async () => {
+    await expect(
+      call(
+        apiAssembly.router.promotionCampaignCreate,
+        {
+          name: "Denied promotion",
+        },
+        createContext(
+          createCustomerAuthSession({ permissions: ["promotion:read"] })
         )
       )
     ).rejects.toBeInstanceOf(ORPCError);

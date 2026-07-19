@@ -122,8 +122,10 @@ describe("db d1 adapter", () => {
     await expect(indexExists(database.db, "session_userId_idx")).resolves.toBe(
       true
     );
-    await expect(tableExists(database.db, "region")).resolves.toBe(true);
-    await expect(tableExists(database.db, "sales_channel")).resolves.toBe(true);
+    await expect(tableExists(database.db, "region")).resolves.toBe(false);
+    await expect(tableExists(database.db, "sales_channel")).resolves.toBe(
+      false
+    );
     await expect(tableExists(database.db, "pricing_currency")).resolves.toBe(
       true
     );
@@ -267,42 +269,6 @@ describe("db d1 adapter", () => {
         "pricing_money_amount_price_set_idx",
         "pricing_price_rule_price_list_idx",
         "pricing_price_preference_scope_idx",
-      ])
-    );
-
-    sqlite.close();
-  });
-
-  it("ships SQL migrations for region sales-channel tables", () => {
-    const sqlite = new Database(":memory:");
-    const migrationsDir = join(import.meta.dir, "migrations", "sql");
-
-    sqlite.exec(
-      readFileSync(join(migrationsDir, "0006_region_sales_channel.sql"), "utf8")
-    );
-
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'table'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "region",
-        "region_country",
-        "sales_channel",
-        "sales_channel_product",
-      ])
-    );
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'index'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "region_country_region_idx",
-        "sales_channel_product_channel_idx",
       ])
     );
 
@@ -603,7 +569,6 @@ describe("db d1 adapter", () => {
         .map((row) => (row as { name: string }).name)
     ).toEqual(
       expect.arrayContaining([
-        "region",
         "inventory_item",
         "inventory_level",
         "inventory_reservation",

@@ -1,7 +1,10 @@
 export {
   InMemoryRegionSalesChannelRepository,
+  createInMemoryRegionRepositoryLayer,
   createInMemoryRegionRepository,
+  createInMemoryRegionSalesChannelRepositoryLayer,
   createInMemoryRegionSalesChannelRepository,
+  createInMemorySalesChannelRepositoryLayer,
   createInMemorySalesChannelRepository,
   createResettableInMemoryRegionSalesChannelRepository,
   defaultRegionSalesChannelRepository,

@@ -10,7 +10,6 @@ describe("tax API and admin assembly", () => {
       createBuiltinRouteFragments().map((fragment) => fragment.key)
     ).toEqual([
       "builtin:core",
-      "module:region-sales-channel",
       "module:inventory",
       "module:notification-event",
       "module:pricing",

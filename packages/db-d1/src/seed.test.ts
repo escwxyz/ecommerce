@@ -122,9 +122,6 @@ describe("deterministic development seed", () => {
           currency_code: string;
           inventory_item_id: string;
           price_set_id: string;
-          product_id: string;
-          region_id: string;
-          sales_channel_id: string;
           shipping_option_id: string;
           stock_location_id: string;
           variant_id: string;
@@ -132,21 +129,18 @@ describe("deterministic development seed", () => {
         []
       >(
         `SELECT
-          scp.sales_channel_id,
-          scp.product_id,
-          r.id AS region_id,
-          r.currency_code,
+          ma.currency_code,
           ps.id AS price_set_id,
           ii.id AS inventory_item_id,
           il.stock_location_id,
           so.id AS shipping_option_id,
           json_extract(ps.metadata_json, '$.variantId') AS variant_id
-        FROM sales_channel_product scp
-        JOIN region r ON r.id = 'reg_dev_us'
-        JOIN pricing_price_set ps ON json_extract(ps.metadata_json, '$.variantId') = 'variant_dev_tshirt_black'
+        FROM pricing_price_set ps
+        JOIN pricing_money_amount ma ON ma.price_set_id = ps.id
         JOIN inventory_item ii ON json_extract(ii.metadata_json, '$.variantId') = json_extract(ps.metadata_json, '$.variantId')
         JOIN inventory_level il ON il.inventory_item_id = ii.id
-        JOIN shipping_option so ON so.id = json_extract(r.fulfillment_option_ids_json, '$[0]')`
+        JOIN shipping_option so ON so.id = 'shipopt_dev_ground'
+        WHERE json_extract(ps.metadata_json, '$.variantId') = 'variant_dev_tshirt_black'`
       )
       .get();
 
@@ -154,9 +148,6 @@ describe("deterministic development seed", () => {
       currency_code: "USD",
       inventory_item_id: seedModule.developmentSeedIds.inventoryItem,
       price_set_id: seedModule.developmentSeedIds.priceSet,
-      product_id: seedModule.developmentSeedIds.product,
-      region_id: seedModule.developmentSeedIds.region,
-      sales_channel_id: seedModule.developmentSeedIds.salesChannel,
       shipping_option_id: seedModule.developmentSeedIds.fulfillmentOption,
       stock_location_id: seedModule.developmentSeedIds.stockLocation,
       variant_id: seedModule.developmentSeedIds.productVariant,
@@ -204,7 +195,6 @@ describe("deterministic development seed", () => {
     const seededCounts = {
       inventoryLevel: countRows(database, "inventory_level"),
       moneyAmount: countRows(database, "pricing_money_amount"),
-      salesChannelProduct: countRows(database, "sales_channel_product"),
       shippingOption: countRows(database, "shipping_option"),
     };
 
@@ -213,7 +203,6 @@ describe("deterministic development seed", () => {
     expect({
       inventoryLevel: countRows(database, "inventory_level"),
       moneyAmount: countRows(database, "pricing_money_amount"),
-      salesChannelProduct: countRows(database, "sales_channel_product"),
       shippingOption: countRows(database, "shipping_option"),
     }).toEqual(seededCounts);
 

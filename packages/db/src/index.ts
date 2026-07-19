@@ -7,7 +7,6 @@ import type { OrderDatabase } from "./schema/order";
 import type { PaymentDatabase } from "./schema/payment";
 import type { PricingDatabase } from "./schema/pricing";
 import type { PromotionDatabase } from "./schema/promotion";
-import type { RegionSalesChannelDatabase } from "./schema/region-sales-channel";
 import type { TaxDatabase } from "./schema/tax";
 
 // oxlint-disable-next-line oxc/no-barrel-file
@@ -25,8 +24,6 @@ export * as orderSchema from "./schema/order";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as paymentSchema from "./schema/payment";
 export * as pricingSchema from "./schema/pricing";
-// oxlint-disable-next-line oxc/no-barrel-file
-export * as regionSalesChannelSchema from "./schema/region-sales-channel";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as promotionSchema from "./schema/promotion";
 // oxlint-disable-next-line oxc/no-barrel-file
@@ -49,7 +46,6 @@ export interface CommerceDatabase
     PaymentDatabase,
     PricingDatabase,
     PromotionDatabase,
-    RegionSalesChannelDatabase,
     TaxDatabase {}
 
 export type CommerceDatabaseSchema = CommerceDatabase;

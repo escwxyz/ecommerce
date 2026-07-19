@@ -13,7 +13,10 @@ const forbiddenImport = (specifier: string): boolean =>
   specifier.startsWith("@ecommerce/db-d1") ||
   specifier.startsWith("@ecommerce/env/server") ||
   specifier.startsWith("../../../apps/server") ||
-  specifier.startsWith("@ecommerce/server");
+  specifier.startsWith("@ecommerce/server") ||
+  specifier.startsWith("@orpc/") ||
+  specifier === "kysely" ||
+  specifier === "zod";
 
 const forbiddenRuntimeTokenPattern =
   /\b(?:DurableObjectNamespace|DurableObjectStub|DurableObjectState)\b/;
@@ -39,7 +42,7 @@ const listSourceFiles = (directory: string): string[] => {
 };
 
 describe("region sales-channel module boundaries", () => {
-  it("does not import runtime-specific modules", () => {
+  it("does not import runtime-specific or legacy router/database modules", () => {
     const violations = listSourceFiles(sourceRoot).flatMap((filePath) => {
       const source = readFileSync(filePath, "utf8");
       const matched: string[] = [];

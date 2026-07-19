@@ -9,18 +9,24 @@ bun run db:seed
 ```
 
 `db:seed` targets only Wrangler's local `Database` binding. It creates stable
-checkout prerequisites for region, sales channel availability, pricing,
-inventory, tax, and fulfillment data. It does not create store records,
-customer records, product records, product variants, auth users, carts, orders,
+checkout prerequisites for pricing, inventory, tax, and fulfillment data. It
+does not create store records, customer records, product records, product
+variants, region records, sales-channel records, auth users, carts, orders,
 payments, fulfillments, or notification history.
 
-The store tracer slice and customer/product foundational slices have migrated off the
-legacy D1/Kysely path. Local checkout smoke tests still need store defaults and
-a customer payment-identity lookup plus product variant validation while
-checkout and its dependent modules remain on the legacy runtime, so the server
-composition provides temporary in-memory compatibility facades for that path.
-Do not reintroduce D1 `store`, `customer`, `product`, or `product_variant`
-tables or seed rows for migrated behavior.
+The store tracer slice and customer/product/region-sales-channel foundational
+slices have migrated off the legacy D1/Kysely path. Local checkout smoke tests
+still need store defaults, customer payment-identity lookup, product variant
+validation, region constraints, and sales-channel publishability while checkout
+and its dependent modules remain on the legacy runtime. The server composition
+therefore provides temporary deterministic compatibility facades for that path.
+Those facades are owned by the checkout migration gap and must be deleted in
+task 8.6, when checkout orchestration moves to Effect and consumes migrated
+module service Layers directly.
+
+Do not reintroduce D1 `store`, `customer`, `product`, `product_variant`,
+`region`, `region_country`, `sales_channel`, or `sales_channel_product` tables
+or seed rows for migrated behavior.
 
 The command is idempotent. Rerunning it converges records under reserved
 development IDs without duplicating entities or relationship rows.

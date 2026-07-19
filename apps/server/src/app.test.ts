@@ -11,7 +11,7 @@ import {
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
-import { createResettableInMemoryRegionSalesChannelRepository } from "@ecommerce/region-sales-channel";
+import { createInMemoryPricingRepository } from "@ecommerce/pricing";
 import { call } from "@orpc/server";
 import { ORPCError } from "@orpc/server";
 
@@ -97,21 +97,17 @@ describe("server app", () => {
     expect(await response.text()).toBe("auth-mounted");
   });
 
-  it("accepts an injected API assembly for persistent region routes", async () => {
-    const repository = createResettableInMemoryRegionSalesChannelRepository();
+  it("accepts an injected API assembly for persistent pricing routes", async () => {
+    const repository = createInMemoryPricingRepository();
     const injectedAssembly = createApiRootAssembly({
       routes: {
-        regionSalesChannel: {
-          region: {
-            clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-            idGenerator: createSequenceIdGenerator(["reg_server_injected"]),
-            repository,
-          },
-          salesChannel: {
-            clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-            idGenerator: createSequenceIdGenerator(["sc_server_injected"]),
-            repository,
-          },
+        pricing: {
+          clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+          idGenerator: createSequenceIdGenerator([
+            "pset_server_injected",
+            "evt_price_set",
+          ]),
+          repository,
         },
       },
     });
@@ -130,24 +126,22 @@ describe("server app", () => {
     await expect(app.request("/")).resolves.toHaveProperty("status", 200);
     await expect(
       call(
-        injectedAssembly.router.regionCreate,
+        injectedAssembly.router.pricingPriceSetCreate,
         {
-          countries: ["US"],
-          currencyCode: "USD",
-          name: "Server Injected Region",
+          title: "Server Injected Prices",
         },
         {
           context: {
             auth,
             authorization: authorizationEvaluator,
             session: createStoreAdminAuthSession({
-              permissions: ["region:read", "region:write"],
+              permissions: ["pricing:read", "pricing:write"],
             }),
           },
         }
       )
     ).resolves.toMatchObject({
-      id: "reg_server_injected",
+      id: "pset_server_injected",
     });
   });
 

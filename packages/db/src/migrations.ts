@@ -9,7 +9,6 @@ import { orderMigration } from "./schema/order";
 import { paymentMigration } from "./schema/payment";
 import { pricingMigration } from "./schema/pricing";
 import { promotionMigration } from "./schema/promotion";
-import { regionSalesChannelMigration } from "./schema/region-sales-channel";
 import { taxMigration } from "./schema/tax";
 
 export type CommerceMigration = Migration;
@@ -35,7 +34,6 @@ export const defineCommerceMigrations = <
 
 export const commerceMigrations = defineCommerceMigrations({
   "000_auth": authMigration,
-  "003_region_sales_channel": regionSalesChannelMigration,
   "004_pricing": pricingMigration,
   "005_promotion": promotionMigration,
   "007_inventory": inventoryMigration,

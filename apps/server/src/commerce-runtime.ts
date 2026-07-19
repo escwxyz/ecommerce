@@ -59,12 +59,6 @@ import {
   createPromotionService,
 } from "@ecommerce/promotion";
 import type { PromotionD1Database } from "@ecommerce/promotion";
-import {
-  createD1RegionSalesChannelRepository,
-  createRegionService,
-  createSalesChannelService,
-} from "@ecommerce/region-sales-channel";
-import type { RegionSalesChannelD1Database } from "@ecommerce/region-sales-channel";
 import { createStoreService } from "@ecommerce/store";
 import { createD1TaxRepository, createTaxService } from "@ecommerce/tax";
 import type { TaxD1Database } from "@ecommerce/tax";
@@ -161,9 +155,6 @@ export const createServerCommerceRuntime = ({
     promotion: createD1PromotionRepository({
       db: narrowDatabase<PromotionD1Database>(db),
     }),
-    regionSalesChannel: createD1RegionSalesChannelRepository({
-      db: narrowDatabase<RegionSalesChannelD1Database>(db),
-    }),
     tax: createD1TaxRepository({ db: narrowDatabase<TaxD1Database>(db) }),
   };
 
@@ -229,6 +220,91 @@ export const createServerCommerceRuntime = ({
         })
       ),
   };
+  /*
+   * Temporary checkout compatibility bridge.
+   *
+   * Task 7.3 removed the region/sales-channel D1 repository and legacy oRPC
+   * routes after moving that module to Effect HTTP + PostgreSQL. Checkout is
+   * still a section-8 legacy Promise orchestrator, so it cannot consume the new
+   * Effect services directly without widening this task into checkout
+   * migration. Keep this server-owned facade deterministic and limited to the
+   * development golden-path IDs. Delete it in task 8.6 when checkout orchestration
+   * moves to Effect and can depend on migrated module service Layers directly.
+   */
+  const checkoutRegionService = {
+    validateRegionConstraints: (input: Record<string, unknown>) => {
+      const regionId = String(input.regionId ?? "");
+      const countryCode = String(input.countryCode ?? "").toUpperCase();
+      const currencyCode = String(input.currencyCode ?? "").toUpperCase();
+      const fulfillmentOptionId = String(input.fulfillmentOptionId ?? "");
+      const paymentProviderId = String(input.paymentProviderId ?? "");
+
+      if (regionId !== developmentSeedIds.region) {
+        return Promise.resolve({
+          allowed: false,
+          reasons: ["region-not-found"],
+        } as const);
+      }
+
+      const reasons: string[] = [];
+
+      if (currencyCode && currencyCode !== "USD") {
+        reasons.push("currency-not-allowed");
+      }
+
+      if (countryCode && countryCode !== "US") {
+        reasons.push("country-not-allowed");
+      }
+
+      if (paymentProviderId && paymentProviderId !== "manual") {
+        reasons.push("payment-provider-not-available");
+      }
+
+      if (
+        fulfillmentOptionId &&
+        fulfillmentOptionId !== developmentSeedIds.fulfillmentOption
+      ) {
+        reasons.push("fulfillment-option-not-available");
+      }
+
+      return Promise.resolve({
+        allowed: reasons.length === 0,
+        reasons,
+      });
+    },
+  };
+  /*
+   * Temporary checkout compatibility bridge.
+   *
+   * Mirrors only the development storefront publishability invariant that the
+   * deleted D1 `sales_channel_product` seed row used to provide. Do not extend
+   * this into a general sales-channel adapter; migrated code must use the
+   * Effect HTTP/Layer-backed region-sales-channel module. Task 8.6 removes this
+   * facade with the legacy checkout API/schema path.
+   */
+  const checkoutSalesChannelService = {
+    checkProductPublishability: (input: Record<string, unknown>) => {
+      const productId = String(input.productId ?? "");
+      const salesChannelId = String(input.salesChannelId ?? "");
+
+      if (salesChannelId !== developmentSeedIds.salesChannel) {
+        return Promise.resolve({
+          publishable: false,
+          reasons: ["sales-channel-not-found"],
+        } as const);
+      }
+
+      const reasons =
+        productId === developmentSeedIds.product
+          ? []
+          : ["product-not-published-to-channel"];
+
+      return Promise.resolve({
+        publishable: reasons.length === 0,
+        reasons,
+      });
+    },
+  };
   const services = {
     cart: createCartService({
       clock,
@@ -271,14 +347,8 @@ export const createServerCommerceRuntime = ({
       ...sharedServiceOptions,
       repository: repositories.promotion,
     }),
-    region: createRegionService({
-      ...sharedServiceOptions,
-      repository: repositories.regionSalesChannel,
-    }),
-    salesChannel: createSalesChannelService({
-      ...sharedServiceOptions,
-      repository: repositories.regionSalesChannel,
-    }),
+    region: checkoutRegionService,
+    salesChannel: checkoutSalesChannelService,
     store: checkoutStoreService,
     tax: createTaxService({
       ...sharedServiceOptions,
@@ -382,16 +452,6 @@ export const createServerCommerceRuntime = ({
       promotion: {
         ...sharedServiceOptions,
         repository: repositories.promotion,
-      },
-      regionSalesChannel: {
-        region: {
-          ...sharedServiceOptions,
-          repository: repositories.regionSalesChannel,
-        },
-        salesChannel: {
-          ...sharedServiceOptions,
-          repository: repositories.regionSalesChannel,
-        },
       },
       tax: {
         ...sharedServiceOptions,
