@@ -1,11 +1,18 @@
+import { RepositoryUnavailable } from "@ecommerce/core";
 import { Effect, Layer, Ref } from "effect";
 
 import type {
+  StoreExpectedError,
   StoreLegacyRepository,
   StoreRepository,
   StoreSettings,
 } from "../domain";
-import { StoreRepositoryService } from "../domain";
+import {
+  StoreCurrencyListEmpty,
+  StoreDefaultCurrencyUnsupported,
+  StoreInvalidIdentifier,
+  StoreRepositoryService,
+} from "../domain";
 
 export interface ResettableStoreRepository extends StoreRepository {
   readonly reset: Effect.Effect<void>;
@@ -41,12 +48,38 @@ export const createResettableInMemoryStoreRepository =
 export const createInMemoryStoreRepositoryLayer = () =>
   Layer.succeed(StoreRepositoryService, createInMemoryStoreRepository());
 
+const storeRepositoryName = "StoreRepository";
+const legacyStoreRepositoryAdapter = "legacy-store-repository";
+
+const isStoreExpectedError = (cause: unknown): cause is StoreExpectedError =>
+  cause instanceof RepositoryUnavailable ||
+  cause instanceof StoreCurrencyListEmpty ||
+  cause instanceof StoreDefaultCurrencyUnsupported ||
+  cause instanceof StoreInvalidIdentifier;
+
+const toLegacyRepositoryFailure =
+  (operation: "read" | "write") =>
+  (cause: unknown): StoreExpectedError =>
+    isStoreExpectedError(cause)
+      ? cause
+      : new RepositoryUnavailable({
+          adapter: legacyStoreRepositoryAdapter,
+          operation,
+          repository: storeRepositoryName,
+        });
+
 export const createStoreRepositoryFromLegacyRepository = (
   repository: StoreLegacyRepository
 ): StoreRepository => ({
-  getStoreSettings: Effect.promise(() => repository.getStoreSettings()),
+  getStoreSettings: Effect.tryPromise({
+    catch: toLegacyRepositoryFailure("read"),
+    try: () => repository.getStoreSettings(),
+  }),
   saveStoreSettings: (settings) =>
-    Effect.promise(() => repository.saveStoreSettings(settings)),
+    Effect.tryPromise({
+      catch: toLegacyRepositoryFailure("write"),
+      try: () => repository.saveStoreSettings(settings),
+    }),
 });
 
 export const createStoreLegacyRepositoryFromRepository = (

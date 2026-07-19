@@ -1,6 +1,7 @@
 import { Context } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 
+import type { StoreExpectedError } from "./store.errors";
 import type {
   StoreApiRecordSchema,
   StoreDefaultsApiRecordSchema,
@@ -21,10 +22,13 @@ export type UpdateStoreSettingsInput =
   typeof UpdateStoreSettingsInputSchema.Type;
 
 export interface StoreRepository {
-  readonly getStoreSettings: EffectValue<StoreSettings | null>;
+  readonly getStoreSettings: EffectValue<
+    StoreSettings | null,
+    StoreExpectedError
+  >;
   readonly saveStoreSettings: (
     settings: StoreSettings
-  ) => EffectValue<StoreSettings>;
+  ) => EffectValue<StoreSettings, StoreExpectedError>;
 }
 
 /** Temporary Promise repository bridge for legacy D1 and oRPC paths. */

@@ -1,3 +1,4 @@
+import type { RepositoryFailure } from "@ecommerce/core";
 /* eslint-disable max-classes-per-file -- store expected failures form one schema-backed domain vocabulary */
 import { Schema } from "effect";
 
@@ -32,4 +33,5 @@ export class StoreDefaultCurrencyUnsupported extends Schema.TaggedErrorClass<Sto
 export type StoreExpectedError =
   | StoreCurrencyListEmpty
   | StoreDefaultCurrencyUnsupported
-  | StoreInvalidIdentifier;
+  | StoreInvalidIdentifier
+  | RepositoryFailure;
