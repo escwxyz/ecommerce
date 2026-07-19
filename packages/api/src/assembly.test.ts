@@ -10,7 +10,10 @@ import { createInMemoryPricingRepository } from "@ecommerce/pricing";
 import { createInMemoryProductRepository } from "@ecommerce/product";
 import { resetProductState } from "@ecommerce/product/testing";
 import { createResettableInMemoryRegionSalesChannelRepository } from "@ecommerce/region-sales-channel";
-import { createInMemoryStoreRepository } from "@ecommerce/store";
+import {
+  createInMemoryStoreRepository,
+  createStoreLegacyRepositoryFromRepository,
+} from "@ecommerce/store";
 import { resetStoreState } from "@ecommerce/store/testing";
 import { OpenAPIGenerator } from "@orpc/openapi";
 import { call, ORPCError } from "@orpc/server";
@@ -280,7 +283,8 @@ describe("api assembly", () => {
         store: {
           clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
           idGenerator: createSequenceIdGenerator(["store_api_injected"]),
-          repository: storeRepository,
+          repository:
+            createStoreLegacyRepositoryFromRepository(storeRepository),
         },
       },
     });

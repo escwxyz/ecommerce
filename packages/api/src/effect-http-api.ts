@@ -16,7 +16,7 @@ export type EffectHttpApiHandlerLayer =
 
 export interface EffectHttpApiGroupContribution<
   TSurface extends EffectHttpApiSurface = EffectHttpApiSurface,
-  TGroup extends HttpApiGroup.AnyWithProps = HttpApiGroup.AnyWithProps,
+  TGroup extends HttpApiGroup.Any = HttpApiGroup.Any,
   THandlers extends EffectHttpApiHandlerLayer = EffectHttpApiHandlerLayer,
 > {
   readonly group: TGroup;

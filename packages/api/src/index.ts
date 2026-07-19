@@ -121,3 +121,10 @@ export {
   type AppRouterClient,
   type CreateApiRootAssemblyOptions,
 } from "./root-router";
+export {
+  storeAdminHttpApiGroup,
+  storeAdminHttpApiHandlers,
+  storeEffectHttpApiContribution,
+  storeStorefrontHttpApiGroup,
+  storeStorefrontHttpApiHandlers,
+} from "./store-effect-http-api";

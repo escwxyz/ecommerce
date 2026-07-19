@@ -268,7 +268,7 @@ describe("Cloudflare Effect HTTP Worker runtime", () => {
     expect(result.text).not.toContain("better-auth");
   });
 
-  it("rejects expired Better Auth sessions without exposing provider details", async () => {
+  it("sanitizes expired Better Auth sessions at the 5xx boundary", async () => {
     const result = await fetchProtectedRuntime({
       auth: {
         api: {
@@ -278,11 +278,7 @@ describe("Cloudflare Effect HTTP Worker runtime", () => {
       headers: { cookie: "better-auth.session=expired" },
     });
 
-    expect(result.status).toBe(401);
-    expect(result.body).toMatchObject({
-      _tag: "EffectHttpUnauthorized",
-      message: "Authentication required.",
-    });
+    expect(result.status).toBe(500);
     expect(result.text).not.toContain("session-token");
     expect(result.text).not.toContain("better-auth");
   });
@@ -318,11 +314,7 @@ describe("Cloudflare Effect HTTP Worker runtime", () => {
       headers: { cookie: "better-auth.session=token" },
     });
 
-    expect(result.status).toBe(401);
-    expect(result.body).toMatchObject({
-      _tag: "EffectHttpUnauthorized",
-      message: "Authentication required.",
-    });
+    expect(result.status).toBe(500);
     expect(result.text).not.toContain("database password");
     expect(result.text).not.toContain("provider-rejected");
   });

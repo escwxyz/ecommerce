@@ -48,10 +48,8 @@ export class EffectHttpApiAssemblyError extends Error {
   }
 }
 
-export interface EffectHttpApiAssembly<
-  TApi extends HttpApi.AnyWithProps = HttpApi.AnyWithProps,
-> {
-  readonly api: TApi;
+export interface EffectHttpApiAssembly {
+  readonly api: HttpApi.HttpApi<string, HttpApiGroup.Any>;
   readonly contributions: readonly EffectHttpApiGroupContribution[];
   readonly groups: readonly HttpApiGroup.Any[];
   readonly handlers: readonly EffectHttpApiHandlerLayer[];
@@ -60,7 +58,7 @@ export interface EffectHttpApiAssembly<
 }
 
 export interface CreateEffectHttpApiAssemblyOptions<
-  TApi extends HttpApi.AnyWithProps,
+  TApi extends HttpApi.HttpApi<string, HttpApiGroup.Any>,
 > {
   readonly contributions: readonly EffectHttpApiGroupContribution[];
   readonly root: TApi;
@@ -226,7 +224,7 @@ export const createEffectHttpApiAssembly = <
   const groups: HttpApiGroup.Any[] = [];
   const handlers: EffectHttpApiHandlerLayer[] = [];
   const routes: EffectHttpApiRouteFingerprint[] = [];
-  let api: HttpApi.AnyWithProps = root;
+  let api: HttpApi.HttpApi<string, HttpApiGroup.Any> = root;
 
   for (const contribution of selectedContributions) {
     assertUniqueGroup(groupsByIdentifier, contribution);
