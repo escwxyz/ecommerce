@@ -14,7 +14,6 @@ interface DevelopmentSeedModule {
     readonly region: string;
     readonly salesChannel: string;
     readonly stockLocation: string;
-    readonly store: string;
     readonly taxCategory: string;
     readonly taxRate: string;
     readonly taxRegion: string;
@@ -190,26 +189,6 @@ describe("deterministic development seed", () => {
       tax_region_name: "United States",
     });
 
-    const store = database
-      .query<
-        {
-          default_currency_code: string;
-          default_region_id: string;
-          default_sales_channel_id: string;
-          id: string;
-        },
-        []
-      >(
-        "SELECT id, default_currency_code, default_region_id, default_sales_channel_id FROM store"
-      )
-      .get();
-    expect(store).toEqual({
-      default_currency_code: "USD",
-      default_region_id: seedModule.developmentSeedIds.region,
-      default_sales_channel_id: seedModule.developmentSeedIds.salesChannel,
-      id: seedModule.developmentSeedIds.store,
-    });
-
     const customerCountry = database
       .query<{ country_code: string; customer_id: string }, []>(
         "SELECT country_code, customer_id FROM customer_address WHERE is_default_shipping = 1"
@@ -241,7 +220,6 @@ describe("deterministic development seed", () => {
       product: countRows(database, "product"),
       salesChannelProduct: countRows(database, "sales_channel_product"),
       shippingOption: countRows(database, "shipping_option"),
-      store: countRows(database, "store"),
     };
 
     database.exec(seedSql);
@@ -253,7 +231,6 @@ describe("deterministic development seed", () => {
       product: countRows(database, "product"),
       salesChannelProduct: countRows(database, "sales_channel_product"),
       shippingOption: countRows(database, "shipping_option"),
-      store: countRows(database, "store"),
     }).toEqual(seededCounts);
 
     expect(countRows(database, "cart")).toBe(0);

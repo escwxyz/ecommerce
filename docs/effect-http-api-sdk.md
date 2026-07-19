@@ -223,3 +223,22 @@ The intended import split is therefore:
 - explicit browser alias: `@ecommerce/storefront-sdk/browser`;
 - Cloudflare Worker or SSR code with a backend Service Binding:
   `@ecommerce/storefront-sdk/cloudflare`.
+
+## Store API and SDK migration status
+
+Task 6.7 through 6.10 wire the store tracer slice into the Effect HTTP and SDK
+foundation:
+
+- The store admin API group exposes protected store settings read/write
+  endpoints through the canonical Effect admin root.
+- The store storefront API group exposes public store defaults through the
+  canonical Effect storefront root.
+- The Cloudflare Effect Worker composition serves the migrated store groups
+  through Effect HTTP handlers backed by `StoreService`.
+- The storefront SDK store helper is transport-neutral at the contract level and
+  is verified against both public HTTP and server-only Cloudflare Service
+  Binding clients.
+
+The remaining gap is deployment switchover, not contract ownership. The Hono
+entrypoint and oRPC aggregate remain for unmigrated modules until later slices
+and section 12 remove the compatibility runtime.

@@ -66,9 +66,9 @@
 - [x] 6.5 Implement the store repository contract and in-memory test Layer
 - [x] 6.6 Implement store Drizzle PostgreSQL schemas, codecs, migrations, transactions, and repository Layer
 - [x] 6.7 Replace the store oRPC router with Effect admin/storefront API groups and handlers
-- [ ] 6.8 Add store SDK coverage through both storefront transports
-- [ ] 6.9 Delete store Zod, Kysely, and oRPC code and enable completed-package import bans
-- [ ] 6.10 Run store domain, schema, repository, API, SDK, boundary, and Cloudflare integration verification
+- [x] 6.8 Add store SDK coverage through both storefront transports
+- [x] 6.9 Delete store Zod, Kysely, and oRPC code and enable completed-package import bans
+- [x] 6.10 Run store domain, schema, repository, API, SDK, boundary, and Cloudflare integration verification
 
 ## 7. Foundational module migration
 

@@ -119,7 +119,6 @@ describe("db d1 adapter", () => {
     await expect(indexExists(database.db, "session_userId_idx")).resolves.toBe(
       true
     );
-    await expect(tableExists(database.db, "store")).resolves.toBe(true);
     await expect(indexExists(database.db, "product_handle_idx")).resolves.toBe(
       true
     );
@@ -334,11 +333,10 @@ describe("db d1 adapter", () => {
     sqlite.close();
   });
 
-  it("ships SQL migrations for store and region sales-channel tables", () => {
+  it("ships SQL migrations for region sales-channel tables", () => {
     const sqlite = new Database(":memory:");
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
-    sqlite.exec(readFileSync(join(migrationsDir, "0005_store.sql"), "utf8"));
     sqlite.exec(
       readFileSync(join(migrationsDir, "0006_region_sales_channel.sql"), "utf8")
     );
@@ -350,7 +348,6 @@ describe("db d1 adapter", () => {
         .map((row) => (row as { name: string }).name)
     ).toEqual(
       expect.arrayContaining([
-        "store",
         "region",
         "region_country",
         "sales_channel",
@@ -707,7 +704,6 @@ describe("db d1 adapter", () => {
         "customer_group",
         "customer_group_customer",
         "product",
-        "store",
         "region",
         "inventory_item",
         "inventory_level",

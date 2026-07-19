@@ -30,7 +30,6 @@ export const developmentSeedIds = {
   serviceZone: "fzone_dev_us",
   shippingProfile: "shprof_dev_default",
   stockLocation: "sloc_dev_main",
-  store: "store_dev_default",
   taxCategory: "txcat_dev_standard",
   taxPolicy: "txpolicy_dev_us",
   taxProvider: "txprov_dev_manual",
@@ -403,24 +402,6 @@ const customerAddress = defineSeedWrite(
   ["id"]
 );
 
-const store = defineSeedWrite(
-  "store",
-  {
-    created_at: seedTimestamp,
-    default_currency_code: "USD",
-    default_locale: "en-US",
-    default_region_id: developmentSeedIds.region,
-    default_sales_channel_id: developmentSeedIds.salesChannel,
-    id: developmentSeedIds.store,
-    metadata_json: emptyJson,
-    name: "Development Store",
-    supported_currency_codes_json: JSON.stringify(["USD"]),
-    timezone: "UTC",
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
 export const developmentSeedWrites: readonly DevelopmentSeedWrite[] = [
   fulfillmentProvider,
   fulfillmentSet,
@@ -446,5 +427,4 @@ export const developmentSeedWrites: readonly DevelopmentSeedWrite[] = [
   inventoryLevel,
   customer,
   customerAddress,
-  store,
 ];
