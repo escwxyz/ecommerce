@@ -16,7 +16,6 @@ import { nanoid } from "nanoid";
 import type {
   StoreDefaults,
   StoreExpectedError,
-  StoreLegacyRepository,
   StoreRepository,
   StoreSettings,
   UpdateStoreSettingsInput,
@@ -29,11 +28,7 @@ import {
   StoreRepositoryService,
   createStoreIdEffect,
 } from "../domain";
-import {
-  createStoreRepositoryFromLegacyRepository,
-  defaultStoreRepository,
-  defaultStoreRepositoryLegacy,
-} from "../repositories";
+import { defaultStoreRepository } from "../repositories";
 
 export const STORE_SETTINGS_UPDATED_EVENT = "store.settings.updated" as const;
 
@@ -52,13 +47,6 @@ export interface StoreServiceShape {
   ) => EffectValue<StoreSettings, StoreServiceFailure>;
 }
 
-/** Temporary facade for legacy Promise consumers while adjacent modules migrate. */
-export interface StorePromiseServiceShape {
-  getStoreDefaults(): Promise<StoreDefaults>;
-  getStoreSettings(): Promise<StoreSettings>;
-  updateStoreSettings(input: UpdateStoreSettingsInput): Promise<StoreSettings>;
-}
-
 export const StoreService = Context.Service<StoreServiceShape>(
   "@ecommerce/store/StoreService"
 );
@@ -69,19 +57,6 @@ export interface CreateStoreServiceOptions {
   readonly idGenerator?: IdGeneratorServiceShape;
   readonly initialSettings?: StoreSettings;
   readonly repository?: StoreRepository;
-}
-
-/**
- * Temporary Promise-facade construction options for legacy oRPC and D1 callers
- * during the Effect migration. The compatibility invariant is that injected
- * repositories keep the legacy Promise shape at this boundary only; the factory
- * immediately adapts them back into the Effect-native repository contract.
- */
-export interface CreateStorePromiseServiceOptions extends Omit<
-  CreateStoreServiceOptions,
-  "repository"
-> {
-  readonly repository?: StoreLegacyRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -319,31 +294,6 @@ export const createStoreService = ({
   };
 };
 
-/**
- * Creates the temporary Promise facade for store consumers that have not moved
- * to Effect services yet. Keep this facade behaviorally aligned with
- * `createStoreService`: Promise callers may keep their existing API while all
- * domain normalization, typed failures, and repository bridging remain owned by
- * the Effect implementation.
- */
-export const createStorePromiseService = (
-  options: CreateStorePromiseServiceOptions = {}
-): StorePromiseServiceShape => {
-  const service = createStoreService({
-    ...options,
-    repository: options.repository
-      ? createStoreRepositoryFromLegacyRepository(options.repository)
-      : undefined,
-  });
-
-  return {
-    getStoreDefaults: () => Effect.runPromise(service.getStoreDefaults),
-    getStoreSettings: () => Effect.runPromise(service.getStoreSettings),
-    updateStoreSettings: (input) =>
-      Effect.runPromise(service.updateStoreSettings(input)),
-  };
-};
-
 export const createStoreServiceLayer = (service: StoreServiceShape) =>
   Layer.succeed(StoreService, service);
 
@@ -373,8 +323,4 @@ export const createStoreServiceFromDependenciesLayer = (
 
 export const defaultStoreService = createStoreService({
   repository: defaultStoreRepository,
-});
-
-export const defaultStorePromiseService = createStorePromiseService({
-  repository: defaultStoreRepositoryLegacy,
 });

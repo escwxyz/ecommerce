@@ -10,7 +10,6 @@ describe("promotion API and admin assembly", () => {
       createBuiltinRouteFragments().map((fragment) => fragment.key)
     ).toEqual([
       "builtin:core",
-      "module:store",
       "module:customer",
       "module:product",
       "module:region-sales-channel",
@@ -32,9 +31,6 @@ describe("promotion API and admin assembly", () => {
       (fragment) => fragment.key
     );
 
-    expect(fragmentKeys.indexOf("module:customer")).toBeGreaterThan(
-      fragmentKeys.indexOf("module:store")
-    );
     expect(fragmentKeys.indexOf("module:customer")).toBeLessThan(
       fragmentKeys.indexOf("module:product")
     );

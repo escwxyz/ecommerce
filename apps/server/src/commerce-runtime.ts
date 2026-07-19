@@ -69,13 +69,10 @@ import {
   createSalesChannelService,
 } from "@ecommerce/region-sales-channel";
 import type { RegionSalesChannelD1Database } from "@ecommerce/region-sales-channel";
-import {
-  createD1StoreRepository,
-  createStorePromiseService,
-} from "@ecommerce/store";
-import type { StoreD1Database } from "@ecommerce/store";
+import { createStoreService } from "@ecommerce/store";
 import { createD1TaxRepository, createTaxService } from "@ecommerce/tax";
 import type { TaxD1Database } from "@ecommerce/tax";
+import { Effect } from "effect";
 
 type NotificationEventRuntimeHooks = NonNullable<
   CreateNotificationEventServiceOptions["runtime"]
@@ -177,9 +174,6 @@ export const createServerCommerceRuntime = ({
     regionSalesChannel: createD1RegionSalesChannelRepository({
       db: narrowDatabase<RegionSalesChannelD1Database>(db),
     }),
-    store: createD1StoreRepository({
-      db: narrowDatabase<StoreD1Database>(db),
-    }),
     tax: createD1TaxRepository({ db: narrowDatabase<TaxD1Database>(db) }),
   };
 
@@ -204,6 +198,14 @@ export const createServerCommerceRuntime = ({
     },
   };
   const sharedServiceOptions = { clock, eventPublisher, idGenerator };
+  const storeService = createStoreService({
+    clock,
+    eventPublisher,
+    idGenerator: { nextId: () => "store_checkout_defaults" },
+  });
+  const checkoutStoreService = {
+    getStoreDefaults: () => Effect.runPromise(storeService.getStoreDefaults),
+  };
   const services = {
     cart: createCartService({
       clock,
@@ -261,10 +263,7 @@ export const createServerCommerceRuntime = ({
       ...sharedServiceOptions,
       repository: repositories.regionSalesChannel,
     }),
-    store: createStorePromiseService({
-      ...sharedServiceOptions,
-      repository: repositories.store,
-    }),
+    store: checkoutStoreService,
     tax: createTaxService({
       ...sharedServiceOptions,
       repository: repositories.tax,
@@ -386,10 +385,6 @@ export const createServerCommerceRuntime = ({
           ...sharedServiceOptions,
           repository: repositories.regionSalesChannel,
         },
-      },
-      store: {
-        ...sharedServiceOptions,
-        repository: repositories.store,
       },
       tax: {
         ...sharedServiceOptions,

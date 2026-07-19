@@ -98,7 +98,7 @@ describe("store Effect schemas", () => {
     ).toThrow();
   });
 
-  it("keeps Zod isolated to the temporary legacy oRPC contract bridge", () => {
+  it("keeps domain schemas free of legacy Zod inference", () => {
     expect(readDomainSource("store.schema.ts")).not.toContain("zod");
     expect(readDomainSource("store.types.ts")).not.toContain("z.infer");
   });

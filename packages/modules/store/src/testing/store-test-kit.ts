@@ -1,18 +1,15 @@
-import {
-  createResettableInMemoryStoreRepository,
-  createStoreLegacyRepositoryFromRepository,
-} from "../repositories";
-import { createStorePromiseService } from "../services";
-import type { CreateStorePromiseServiceOptions } from "../services";
+import { createResettableInMemoryStoreRepository } from "../repositories";
+import { createStoreService } from "../services";
+import type { CreateStoreServiceOptions } from "../services";
 
 const repository = createResettableInMemoryStoreRepository();
 
 export const createTestStoreService = (
-  options: Omit<CreateStorePromiseServiceOptions, "repository"> = {}
+  options: Omit<CreateStoreServiceOptions, "repository"> = {}
 ) =>
-  createStorePromiseService({
+  createStoreService({
     ...options,
-    repository: createStoreLegacyRepositoryFromRepository(repository),
+    repository,
   });
 
 export const resetStoreState = (): void => {

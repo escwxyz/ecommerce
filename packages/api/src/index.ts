@@ -122,9 +122,15 @@ export {
   type CreateApiRootAssemblyOptions,
 } from "./root-router";
 export {
+  StoreApiRecordSuccessSchema,
+  StoreDefaultsApiRecordSuccessSchema,
   storeAdminHttpApiGroup,
+  storeReadErrors,
+  storeStorefrontHttpApiGroup,
+  storeWriteErrors,
+} from "./store-effect-http-contract";
+export {
   storeAdminHttpApiHandlers,
   storeEffectHttpApiContribution,
-  storeStorefrontHttpApiGroup,
   storeStorefrontHttpApiHandlers,
 } from "./store-effect-http-api";

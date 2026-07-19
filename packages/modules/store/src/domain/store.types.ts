@@ -31,12 +31,6 @@ export interface StoreRepository {
   ) => EffectValue<StoreSettings, StoreExpectedError>;
 }
 
-/** Temporary Promise repository bridge for legacy D1 and oRPC paths. */
-export interface StoreLegacyRepository {
-  getStoreSettings(): Promise<StoreSettings | null>;
-  saveStoreSettings(settings: StoreSettings): Promise<StoreSettings>;
-}
-
 /** Effect-native store repository contract consumed by store services. */
 export const StoreRepositoryService = Context.Service<StoreRepository>(
   "@ecommerce/store/StoreRepositoryService"

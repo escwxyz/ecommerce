@@ -1,19 +1,7 @@
-import { RepositoryUnavailable } from "@ecommerce/core";
 import { Effect, Layer, Ref } from "effect";
 
-import type {
-  StoreExpectedError,
-  StoreLegacyRepository,
-  StoreRepository,
-  StoreSettings,
-} from "../domain";
-import {
-  StoreCurrencyListEmpty,
-  StoreDefaultCurrencyUnsupported,
-  StoreEventPublishFailure,
-  StoreInvalidIdentifier,
-  StoreRepositoryService,
-} from "../domain";
+import type { StoreRepository, StoreSettings } from "../domain";
+import { StoreRepositoryService } from "../domain";
 
 export interface ResettableStoreRepository extends StoreRepository {
   readonly reset: Effect.Effect<void>;
@@ -48,61 +36,3 @@ export const createResettableInMemoryStoreRepository =
 
 export const createInMemoryStoreRepositoryLayer = () =>
   Layer.succeed(StoreRepositoryService, createInMemoryStoreRepository());
-
-const storeRepositoryName = "StoreRepository";
-const legacyStoreRepositoryAdapter = "legacy-store-repository";
-
-const isStoreExpectedError = (cause: unknown): cause is StoreExpectedError =>
-  cause instanceof RepositoryUnavailable ||
-  cause instanceof StoreCurrencyListEmpty ||
-  cause instanceof StoreDefaultCurrencyUnsupported ||
-  cause instanceof StoreEventPublishFailure ||
-  cause instanceof StoreInvalidIdentifier;
-
-const toLegacyRepositoryFailure =
-  (operation: "read" | "write") =>
-  (cause: unknown): StoreExpectedError =>
-    isStoreExpectedError(cause)
-      ? cause
-      : new RepositoryUnavailable({
-          adapter: legacyStoreRepositoryAdapter,
-          operation,
-          repository: storeRepositoryName,
-        });
-
-/**
- * Temporary migration bridge from legacy Promise repositories into the
- * Effect-native store repository contract. Keep this adapter narrow: legacy
- * callers may still reject Promises, but those rejections must become supported
- * typed repository/domain failures before entering store service logic.
- */
-export const createStoreRepositoryFromLegacyRepository = (
-  repository: StoreLegacyRepository
-): StoreRepository => ({
-  getStoreSettings: Effect.tryPromise({
-    catch: toLegacyRepositoryFailure("read"),
-    try: () => repository.getStoreSettings(),
-  }),
-  saveStoreSettings: (settings) =>
-    Effect.tryPromise({
-      catch: toLegacyRepositoryFailure("write"),
-      try: () => repository.saveStoreSettings(settings),
-    }),
-});
-
-/**
- * Temporary migration bridge from the Effect-native store repository back to
- * the legacy Promise shape used by older D1 and route code. Compatibility
- * depends on preserving the legacy method signatures while ensuring all writes
- * still execute through the Effect repository implementation.
- */
-export const createStoreLegacyRepositoryFromRepository = (
-  repository: StoreRepository
-): StoreLegacyRepository => ({
-  getStoreSettings: () => Effect.runPromise(repository.getStoreSettings),
-  saveStoreSettings: (settings) =>
-    Effect.runPromise(repository.saveStoreSettings(settings)),
-});
-
-export const defaultStoreRepositoryLegacy =
-  createStoreLegacyRepositoryFromRepository(defaultStoreRepository);

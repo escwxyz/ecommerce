@@ -2,7 +2,6 @@ import { defineCommerceModule } from "@ecommerce/core";
 
 import { storeAdminSurfaces } from "../admin";
 import { storePermissionList } from "../permissions";
-import { storeApiFragment } from "../router";
 import { STORE_SETTINGS_UPDATED_EVENT, StoreService } from "../services";
 
 export const storeExtensionPoints = {
@@ -13,7 +12,7 @@ export const storeExtensionPoints = {
 export const storeModule = defineCommerceModule({
   contributions: {
     adminSurfaces: storeAdminSurfaces,
-    apiFragments: [storeApiFragment],
+    apiFragments: [],
     eventTypes: [STORE_SETTINGS_UPDATED_EVENT],
     permissions: storePermissionList,
   },

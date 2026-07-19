@@ -1,4 +1,5 @@
 import { storefrontHttpApi } from "@ecommerce/api/effect-http-api";
+import { storeStorefrontHttpApiGroup } from "@ecommerce/api/store-effect-http-contract";
 import { Effect } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
 import { HttpApiClient } from "effect/unstable/httpapi";
@@ -6,6 +7,15 @@ import type * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import type * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 
 export type StorefrontHttpApi = HttpApi.AnyWithProps;
+
+/**
+ * Canonical storefront SDK API contract. Migrated storefront module groups are
+ * added here so both public HTTP and Service Binding clients expose the same
+ * typed operations without importing backend handler Layers.
+ */
+export const storefrontSdkHttpApi = storefrontHttpApi.add(
+  storeStorefrontHttpApiGroup
+);
 
 export type StorefrontHttpClient<Groups extends HttpApiGroup.Any> =
   HttpApiClient.Client<Groups>;
@@ -72,5 +82,5 @@ export const createStorefrontHttpClient = (
 ) =>
   createStorefrontHttpClientForApi({
     ...options,
-    api: storefrontHttpApi,
+    api: storefrontSdkHttpApi,
   });

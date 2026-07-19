@@ -25,23 +25,12 @@ export {
   StoreTrimmedStringSchema,
   UpdateStoreSettingsInputSchema,
 } from "./store.schema";
-export {
-  storeMigration,
-  storeSchema,
-  storeTableName,
-  type StoreDatabase,
-  type StoreDatabaseSchema,
-  type StoreInsert,
-  type StoreRow,
-  type StoreSchemaKey,
-} from "./store.database-schema";
 export type {
   StoreApiRecord,
   StoreDefaults,
   StoreDefaultsApiRecord,
   StoreId,
   StoreIdentifierInput,
-  StoreLegacyRepository,
   StoreRepository,
   StoreSettings,
   UpdateStoreSettingsInput,

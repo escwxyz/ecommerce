@@ -4,11 +4,10 @@ import {
   createInMemoryRepositoryContractHarness,
   type RepositoryContractCase,
 } from "@ecommerce/core/testing";
-import { Cause, Effect, Exit, Ref } from "effect";
+import { Effect, Ref } from "effect";
 
 import { createStoreId, StoreRepositoryService } from "../domain";
 import type { StoreRepository, StoreSettings } from "../domain";
-import { createStoreRepositoryFromLegacyRepository } from "../repositories";
 
 const createStoreSettings = (name: string): StoreSettings => ({
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -85,46 +84,5 @@ describe("store Effect repository contract", () => {
     await expect(Effect.runPromise(harness.snapshot)).resolves.toMatchObject({
       name: "Second",
     });
-  });
-
-  it("maps rejected legacy repository promises to typed repository failures", async () => {
-    const readRepository = createStoreRepositoryFromLegacyRepository({
-      getStoreSettings: () => Promise.reject(new Error("read unavailable")),
-      saveStoreSettings: async (settings) => settings,
-    });
-    const writeRepository = createStoreRepositoryFromLegacyRepository({
-      getStoreSettings: async () => null,
-      saveStoreSettings: () => Promise.reject(new Error("write unavailable")),
-    });
-
-    const readExit = await Effect.runPromiseExit(
-      readRepository.getStoreSettings
-    );
-    const writeExit = await Effect.runPromiseExit(
-      writeRepository.saveStoreSettings(createStoreSettings("Rejected Store"))
-    );
-
-    expect(Exit.isFailure(readExit)).toBe(true);
-    expect(Exit.isFailure(writeExit)).toBe(true);
-
-    if (Exit.isFailure(readExit)) {
-      const failure = readExit.cause.reasons.find(Cause.isFailReason);
-      expect(failure?.error).toMatchObject({
-        _tag: "RepositoryUnavailable",
-        operation: "read",
-        repository: "StoreRepository",
-      });
-      expect(readExit.cause.reasons.some(Cause.isDieReason)).toBe(false);
-    }
-
-    if (Exit.isFailure(writeExit)) {
-      const failure = writeExit.cause.reasons.find(Cause.isFailReason);
-      expect(failure?.error).toMatchObject({
-        _tag: "RepositoryUnavailable",
-        operation: "write",
-        repository: "StoreRepository",
-      });
-      expect(writeExit.cause.reasons.some(Cause.isDieReason)).toBe(false);
-    }
   });
 });

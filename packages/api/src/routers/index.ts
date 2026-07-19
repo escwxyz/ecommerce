@@ -23,8 +23,6 @@ import type { CreatePromotionRouteFragmentOptions } from "@ecommerce/promotion/r
 import { createPromotionRouteFragment } from "@ecommerce/promotion/router";
 import type { CreateRegionSalesChannelRouteFragmentOptions } from "@ecommerce/region-sales-channel/router";
 import { createRegionSalesChannelRouteFragment } from "@ecommerce/region-sales-channel/router";
-import type { CreateStoreRouteFragmentOptions } from "@ecommerce/store/router";
-import { createStoreRouteFragment } from "@ecommerce/store/router";
 import type { CreateTaxRouteFragmentOptions } from "@ecommerce/tax/router";
 import { createTaxRouteFragment } from "@ecommerce/tax/router";
 import { z } from "zod";
@@ -151,7 +149,6 @@ export interface CreateBuiltinRouteFragmentsOptions {
   readonly pricing?: CreatePricingRouteFragmentOptions;
   readonly regionSalesChannel?: CreateRegionSalesChannelRouteFragmentOptions;
   readonly promotion?: CreatePromotionRouteFragmentOptions;
-  readonly store?: CreateStoreRouteFragmentOptions;
   readonly tax?: CreateTaxRouteFragmentOptions;
 }
 
@@ -168,15 +165,10 @@ export const createBuiltinRouteFragments = ({
   pricing,
   promotion,
   regionSalesChannel,
-  store,
   tax,
 }: CreateBuiltinRouteFragmentsOptions = {}) =>
   [
     coreRouteFragment,
-    createApiRouteFragment({
-      ...createStoreRouteFragment(store),
-      owner: "module",
-    }),
     createApiRouteFragment({
       ...createCustomerRouteFragment(customer),
       owner: "module",

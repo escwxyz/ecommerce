@@ -81,20 +81,6 @@ describe("admin metadata API", () => {
     ]);
   });
 
-  it("rejects store operations when the required permission is missing", async () => {
-    await expect(
-      call(
-        apiAssembly.router.storeSettingsUpdate,
-        {
-          name: "Denied Store",
-        },
-        createContext(
-          createCustomerAuthSession({ permissions: ["store:read"] })
-        )
-      )
-    ).rejects.toBeInstanceOf(ORPCError);
-  });
-
   it("rejects product operations when the required permission is missing", async () => {
     await expect(
       call(

@@ -1,9 +1,8 @@
-import { storefrontHttpApi } from "@ecommerce/api/effect-http-api";
 import type { Effect } from "effect";
 import type * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import type * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 
-import { createStorefrontHttpClientForApi } from "./http";
+import { createStorefrontHttpClientForApi, storefrontSdkHttpApi } from "./http";
 import type {
   StorefrontHttpClient,
   StorefrontHttpClientRequirements,
@@ -89,5 +88,5 @@ export const createStorefrontServiceBindingClient = (
 ) =>
   createStorefrontServiceBindingClientForApi({
     ...options,
-    api: storefrontHttpApi,
+    api: storefrontSdkHttpApi,
   });
