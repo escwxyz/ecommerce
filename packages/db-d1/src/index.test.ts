@@ -1,6 +1,6 @@
 import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { D1Database } from "@cloudflare/workers-types";
@@ -130,7 +130,7 @@ describe("db d1 adapter", () => {
       false
     );
     await expect(tableExists(database.db, "promotion_promotion")).resolves.toBe(
-      true
+      false
     );
     await expect(tableExists(database.db, "tax_region")).resolves.toBe(true);
     await expect(tableExists(database.db, "tax_rate")).resolves.toBe(true);
@@ -193,43 +193,10 @@ describe("db d1 adapter", () => {
     sqlite.close();
   });
 
-  it("ships SQL migrations for promotion tables", () => {
-    const sqlite = new Database(":memory:");
+  it("does not ship a legacy D1 promotion migration after the Effect slice migration", () => {
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
-    sqlite.exec(
-      readFileSync(join(migrationsDir, "0003_promotion.sql"), "utf8")
-    );
-
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'table'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "promotion_campaign",
-        "promotion_promotion",
-        "promotion_rule",
-        "promotion_usage_limit",
-        "promotion_redemption",
-      ])
-    );
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'index'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "promotion_code_idx",
-        "promotion_rule_promotion_idx",
-        "promotion_usage_limit_promotion_idx",
-        "promotion_redemption_promotion_idx",
-      ])
-    );
-
-    sqlite.close();
+    expect(existsSync(join(migrationsDir, "0003_promotion.sql"))).toBe(false);
   });
 
   it("does not ship a legacy D1 inventory migration after the Effect slice migration", () => {

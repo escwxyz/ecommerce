@@ -9,8 +9,6 @@ import type { CreateOrderRouteFragmentOptions } from "@ecommerce/order/router";
 import { createOrderRouteFragment } from "@ecommerce/order/router";
 import type { CreatePaymentRouteFragmentOptions } from "@ecommerce/payment/router";
 import { createPaymentRouteFragment } from "@ecommerce/payment/router";
-import type { CreatePromotionRouteFragmentOptions } from "@ecommerce/promotion/router";
-import { createPromotionRouteFragment } from "@ecommerce/promotion/router";
 import type { CreateTaxRouteFragmentOptions } from "@ecommerce/tax/router";
 import { createTaxRouteFragment } from "@ecommerce/tax/router";
 import { z } from "zod";
@@ -130,7 +128,6 @@ export interface CreateBuiltinRouteFragmentsOptions {
   readonly notificationEvent?: CreateNotificationEventRouteFragmentOptions;
   readonly order?: CreateOrderRouteFragmentOptions;
   readonly payment?: CreatePaymentRouteFragmentOptions;
-  readonly promotion?: CreatePromotionRouteFragmentOptions;
   readonly tax?: CreateTaxRouteFragmentOptions;
 }
 
@@ -140,17 +137,12 @@ export const createBuiltinRouteFragments = ({
   notificationEvent,
   order,
   payment,
-  promotion,
   tax,
 }: CreateBuiltinRouteFragmentsOptions = {}) =>
   [
     coreRouteFragment,
     createApiRouteFragment({
       ...createNotificationEventRouteFragment(notificationEvent),
-      owner: "module",
-    }),
-    createApiRouteFragment({
-      ...createPromotionRouteFragment(promotion),
       owner: "module",
     }),
     createApiRouteFragment({

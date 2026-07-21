@@ -1,23 +1,37 @@
 import { describe, expect, it } from "bun:test";
 
 import { createAdminMetadataModel } from "./admin-metadata";
-import { authorizationEvaluator } from "./permissions";
-import { createBuiltinRouteFragments } from "./routers";
+import {
+  adminHttpApi,
+  createEffectHttpApiAssembly,
+  promotionEffectHttpApiContribution,
+} from "./index";
+import {
+  authorizationEvaluator,
+  builtinPermissionStatement,
+} from "./permissions";
 
 describe("promotion API and admin assembly", () => {
-  it("includes promotion route fragments in builtin API composition", () => {
-    expect(
-      createBuiltinRouteFragments().map((fragment) => fragment.key)
-    ).toEqual([
-      "builtin:core",
-      "module:notification-event",
-      "module:promotion",
-      "module:tax",
-      "module:payment",
-      "module:fulfillment",
-      "module:order",
-      "module:checkout",
+  it("includes promotion permissions in builtin permission composition", () => {
+    expect(builtinPermissionStatement.promotion).toEqual(["read", "write"]);
+  });
+
+  it("includes promotion Effect HTTP operations in canonical admin composition", () => {
+    const admin = createEffectHttpApiAssembly({
+      contributions: promotionEffectHttpApiContribution.groups,
+      root: adminHttpApi,
+      surface: "admin",
+    });
+
+    expect(admin.routes.map((route) => route.routeKey)).toEqual([
+      "POST /admin/promotions/adjustments/calculate",
+      "POST /admin/promotions/campaigns",
+      "POST /admin/promotions",
+      "POST /admin/promotions/redemptions",
+      "POST /admin/promotions/rules",
+      "POST /admin/promotions/usage-limits",
     ]);
+    expect(promotionEffectHttpApiContribution.moduleName).toBe("promotion");
   });
 
   it("exposes promotion admin metadata through shared module contracts", () => {

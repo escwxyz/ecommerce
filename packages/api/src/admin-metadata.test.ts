@@ -1,11 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import type { AuthService } from "@ecommerce/auth";
-import {
-  createCustomerAuthSession,
-  createStoreAdminAuthSession,
-} from "@ecommerce/auth/testing";
-import { call, ORPCError } from "@orpc/server";
+import { createStoreAdminAuthSession } from "@ecommerce/auth/testing";
+import { call } from "@orpc/server";
 
 import { authorizationEvaluator } from "./context";
 import { apiAssembly } from "./index";
@@ -81,24 +78,14 @@ describe("admin metadata API", () => {
     ]);
   });
 
-  it("keeps migrated region and pricing operations out of the legacy oRPC root", () => {
+  it("keeps migrated region, pricing, and promotion operations out of the legacy oRPC root", () => {
     expect(apiAssembly.router).not.toHaveProperty("regionCreate");
     expect(apiAssembly.router).not.toHaveProperty("salesChannelCreate");
     expect(apiAssembly.router).not.toHaveProperty("pricingPriceSetCreate");
     expect(apiAssembly.router).not.toHaveProperty("pricingCalculate");
-  });
-
-  it("rejects promotion operations when the required permission is missing", async () => {
-    await expect(
-      call(
-        apiAssembly.router.promotionCampaignCreate,
-        {
-          name: "Denied promotion",
-        },
-        createContext(
-          createCustomerAuthSession({ permissions: ["promotion:read"] })
-        )
-      )
-    ).rejects.toBeInstanceOf(ORPCError);
+    expect(apiAssembly.router).not.toHaveProperty("promotionCampaignCreate");
+    expect(apiAssembly.router).not.toHaveProperty(
+      "promotionAdjustmentsCalculate"
+    );
   });
 });

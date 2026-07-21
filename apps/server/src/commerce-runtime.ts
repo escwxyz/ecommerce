@@ -49,14 +49,15 @@ import { createD1PaymentRepository } from "@ecommerce/payment/adapters/d1";
 import type { PaymentD1Database } from "@ecommerce/payment/adapters/d1";
 import { createProductIdEffect } from "@ecommerce/product";
 import {
-  createD1PromotionRepository,
+  CalculatePromotionAdjustmentsInputSchema,
+  createInMemoryPromotionRepository,
   createPromotionService,
 } from "@ecommerce/promotion";
-import type { PromotionD1Database } from "@ecommerce/promotion";
+import type { PromotionServiceShape } from "@ecommerce/promotion";
 import { createStoreService } from "@ecommerce/store";
 import { createD1TaxRepository, createTaxService } from "@ecommerce/tax";
 import type { TaxD1Database } from "@ecommerce/tax";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 type NotificationEventRuntimeHooks = NonNullable<
   CreateNotificationEventServiceOptions["runtime"]
@@ -85,6 +86,7 @@ const narrowDatabase = <Database>(db: ServerCommerceDatabase): Database =>
   db as unknown as Database;
 
 type CheckoutCartContract = CreateCheckoutServiceOptions["cart"];
+type CheckoutPromotionContract = CreateCheckoutServiceOptions["promotion"];
 
 const createCheckoutCartPromiseFacade = (
   service: CartServiceShape
@@ -107,6 +109,17 @@ const createCheckoutCartPromiseFacade = (
       service.updateTotals(
         input as Parameters<CartServiceShape["updateTotals"]>[0]
       )
+    ),
+});
+
+const createCheckoutPromotionPromiseFacade = (
+  service: PromotionServiceShape
+): CheckoutPromotionContract => ({
+  calculateAdjustments: (input) =>
+    Effect.runPromise(
+      Schema.decodeUnknownEffect(CalculatePromotionAdjustmentsInputSchema)(
+        input
+      ).pipe(Effect.flatMap((decoded) => service.calculateAdjustments(decoded)))
     ),
 });
 
@@ -160,9 +173,9 @@ export const createServerCommerceRuntime = ({
     payment: createD1PaymentRepository({
       db: narrowDatabase<PaymentD1Database>(db),
     }),
-    promotion: createD1PromotionRepository({
-      db: narrowDatabase<PromotionD1Database>(db),
-    }),
+    // Temporary checkout-only bridge until task 8.6 moves checkout onto
+    // Effect module Layers directly. New promotion traffic uses Effect HTTP.
+    promotion: createInMemoryPromotionRepository(),
     tax: createD1TaxRepository({ db: narrowDatabase<TaxD1Database>(db) }),
   };
 
@@ -471,7 +484,7 @@ export const createServerCommerceRuntime = ({
           payment: services.payment,
           pricing: services.pricing,
           product: services.product,
-          promotion: services.promotion,
+          promotion: createCheckoutPromotionPromiseFacade(services.promotion),
           region: services.region,
           salesChannel: services.salesChannel,
           store: services.store,
@@ -527,10 +540,6 @@ export const createServerCommerceRuntime = ({
         idGenerator,
         providerRegistry: paymentProviderRegistry,
         repository: repositories.payment,
-      },
-      promotion: {
-        ...sharedServiceOptions,
-        repository: repositories.promotion,
       },
       tax: {
         ...sharedServiceOptions,

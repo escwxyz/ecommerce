@@ -11,7 +11,6 @@ describe("tax API and admin assembly", () => {
     ).toEqual([
       "builtin:core",
       "module:notification-event",
-      "module:promotion",
       "module:tax",
       "module:payment",
       "module:fulfillment",

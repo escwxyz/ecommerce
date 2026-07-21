@@ -5,9 +5,12 @@ import { join } from "node:path";
 const forbiddenImports = [
   "@ecommerce/db-d1",
   "@ecommerce/web",
+  "@orpc/server",
   "cloudflare:workers",
   "hono",
+  "kysely",
   "kysely-d1",
+  "zod",
 ] as const;
 
 const collectFiles = (directory: string): string[] => {
@@ -30,11 +33,11 @@ const collectFiles = (directory: string): string[] => {
   return files;
 };
 
-describe("promotion module import boundaries", () => {
-  it("does not import runtime-specific packages or concrete database adapters", () => {
+describe("promotion module completed Effect boundary", () => {
+  it("does not import legacy backend or runtime-specific modules", () => {
     const sourceRoot = new URL("../", import.meta.url).pathname;
     const files = collectFiles(sourceRoot).filter(
-      (file) => !file.includes("/_tests/")
+      (file) => !file.includes("/__tests__/")
     );
     const violations: string[] = [];
 
@@ -49,5 +52,24 @@ describe("promotion module import boundaries", () => {
     }
 
     expect(violations).toEqual([]);
+  });
+
+  it("does not declare legacy backend dependencies or public legacy exports", () => {
+    const packageJson = readFileSync(
+      new URL("../../package.json", import.meta.url),
+      "utf8"
+    );
+
+    for (const forbiddenDependency of [
+      "@orpc/server",
+      "kysely",
+      "kysely-d1",
+      "zod",
+    ]) {
+      expect(packageJson).not.toContain(`"${forbiddenDependency}"`);
+    }
+    expect(packageJson).not.toContain('"./adapters/d1"');
+    expect(packageJson).not.toContain('"./contracts"');
+    expect(packageJson).not.toContain('"./router"');
   });
 });

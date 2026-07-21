@@ -193,6 +193,21 @@ export {
   pricingEffectHttpApiContribution,
 } from "./pricing-effect-http-api";
 export {
+  CampaignApiRecordSuccessSchema,
+  PromotionAdjustmentResultSuccessSchema,
+  PromotionApiRecordSuccessSchema,
+  PromotionRedemptionApiRecordSuccessSchema,
+  PromotionRuleApiRecordSuccessSchema,
+  PromotionUsageLimitApiRecordSuccessSchema,
+  promotionAdminHttpApiGroup,
+  promotionReadErrors,
+  promotionWriteErrors,
+} from "./promotion-effect-http-contract";
+export {
+  promotionAdminHttpApiHandlers,
+  promotionEffectHttpApiContribution,
+} from "./promotion-effect-http-api";
+export {
   RegionApiListSuccessSchema,
   RegionApiNullableRecordSuccessSchema,
   RegionApiRecordSuccessSchema,

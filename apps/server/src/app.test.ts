@@ -7,12 +7,6 @@ import {
 } from "@ecommerce/api";
 import type { AuthService } from "@ecommerce/auth";
 import { createStoreAdminAuthSession } from "@ecommerce/auth/testing";
-import {
-  createSequenceIdGenerator,
-  createStaticClock,
-} from "@ecommerce/core/testing";
-import { createInMemoryPromotionRepository } from "@ecommerce/promotion";
-import { call } from "@orpc/server";
 import { ORPCError } from "@orpc/server";
 
 import { createServerApp } from "./app";
@@ -98,19 +92,7 @@ describe("server app", () => {
   });
 
   it("accepts an injected API assembly for remaining legacy module routes", async () => {
-    const repository = createInMemoryPromotionRepository();
-    const injectedAssembly = createApiRootAssembly({
-      routes: {
-        promotion: {
-          clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-          idGenerator: createSequenceIdGenerator([
-            "camp_server_injected",
-            "evt_campaign",
-          ]),
-          repository,
-        },
-      },
-    });
+    const injectedAssembly = createApiRootAssembly();
     const app = createServerApp({
       apiAssembly: injectedAssembly,
       auth,
@@ -124,25 +106,6 @@ describe("server app", () => {
     });
 
     await expect(app.request("/")).resolves.toHaveProperty("status", 200);
-    await expect(
-      call(
-        injectedAssembly.router.promotionCampaignCreate,
-        {
-          name: "Server Injected Campaign",
-        },
-        {
-          context: {
-            auth,
-            authorization: authorizationEvaluator,
-            session: createStoreAdminAuthSession({
-              permissions: ["promotion:read", "promotion:write"],
-            }),
-          },
-        }
-      )
-    ).resolves.toMatchObject({
-      id: "pcamp_camp_server_injected",
-    });
   });
 
   it("authorizes notification-event realtime websocket routing", async () => {

@@ -15,6 +15,7 @@ import {
   postgresCustomerTableName,
   postgresInventoryItemTableName,
   postgresProductTableName,
+  postgresPromotionTableName,
   postgresStoreTableName,
   postgresFoundationSchema,
   runPostgresMigrations,
@@ -26,6 +27,7 @@ const customerMigrationFolder = "20260720000000_customer_module";
 const productMigrationFolder = "20260721000000_product_module";
 const inventoryMigrationFolder = "20260724000000_inventory_module";
 const cartMigrationFolder = "20260725000000_cart_module";
+const promotionMigrationFolder = "20260726000000_promotion_module";
 
 describe("PostgreSQL Drizzle migration baseline", () => {
   it("exports the clean foundation schema tables", () => {
@@ -143,6 +145,27 @@ describe("PostgreSQL Drizzle migration baseline", () => {
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "cart"');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "cart_line_item"');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "cart_adjustment"');
+    expect(sql).toContain("--> statement-breakpoint");
+    expect(sql).not.toContain("kysely");
+  });
+
+  it("ships the promotion module PostgreSQL migration", () => {
+    const migrationPath = join(
+      defaultPostgresMigrationsFolder,
+      promotionMigrationFolder,
+      "migration.sql"
+    );
+
+    expect(existsSync(migrationPath)).toBe(true);
+
+    const sql = readFileSync(migrationPath, "utf8");
+
+    expect(postgresPromotionTableName).toBe("promotion_promotion");
+    expect(sql).toContain('CREATE TABLE "promotion_campaign"');
+    expect(sql).toContain('CREATE TABLE "promotion_promotion"');
+    expect(sql).toContain('CREATE TABLE "promotion_rule"');
+    expect(sql).toContain('CREATE TABLE "promotion_usage_limit"');
+    expect(sql).toContain('CREATE TABLE "promotion_redemption"');
     expect(sql).toContain("--> statement-breakpoint");
     expect(sql).not.toContain("kysely");
   });

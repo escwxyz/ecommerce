@@ -3,7 +3,6 @@ import type { FulfillmentDatabase } from "./schema/fulfillment";
 import type { NotificationEventDatabase } from "./schema/notification-event";
 import type { OrderDatabase } from "./schema/order";
 import type { PaymentDatabase } from "./schema/payment";
-import type { PromotionDatabase } from "./schema/promotion";
 import type { TaxDatabase } from "./schema/tax";
 
 // oxlint-disable-next-line oxc/no-barrel-file
@@ -16,9 +15,6 @@ export * as notificationEventSchema from "./schema/notification-event";
 export * as orderSchema from "./schema/order";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * as paymentSchema from "./schema/payment";
-// oxlint-disable-next-line oxc/no-barrel-file
-export * as promotionSchema from "./schema/promotion";
-// oxlint-disable-next-line oxc/no-barrel-file
 export * as taxSchema from "./schema/tax";
 
 /**
@@ -34,7 +30,6 @@ export interface CommerceDatabase
     NotificationEventDatabase,
     OrderDatabase,
     PaymentDatabase,
-    PromotionDatabase,
     TaxDatabase {}
 
 export type CommerceDatabaseSchema = CommerceDatabase;

@@ -32,6 +32,11 @@ import {
   postgresPricingPricePreferenceTableName,
   postgresPricingPriceRuleTableName,
   postgresPricingPriceSetTableName,
+  postgresPromotionCampaignTableName,
+  postgresPromotionRedemptionTableName,
+  postgresPromotionRuleTableName,
+  postgresPromotionTableName,
+  postgresPromotionUsageLimitTableName,
   postgresProductTableName,
   postgresRegionCountryTableName,
   postgresRegionTableName,
@@ -319,6 +324,21 @@ export const createPostgresDevelopmentResetPlan = (
       )} CASCADE`,
       `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
         postgresCartTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresPromotionRedemptionTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresPromotionUsageLimitTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresPromotionRuleTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresPromotionTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresPromotionCampaignTableName
       )} CASCADE`,
       `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
         postgresInventoryAdjustmentEventTableName

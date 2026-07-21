@@ -5,7 +5,6 @@ import { fulfillmentMigration } from "./schema/fulfillment";
 import { notificationEventMigration } from "./schema/notification-event";
 import { orderMigration } from "./schema/order";
 import { paymentMigration } from "./schema/payment";
-import { promotionMigration } from "./schema/promotion";
 import { taxMigration } from "./schema/tax";
 
 export type CommerceMigration = Migration;
@@ -31,7 +30,6 @@ export const defineCommerceMigrations = <
 
 export const commerceMigrations = defineCommerceMigrations({
   "000_auth": authMigration,
-  "005_promotion": promotionMigration,
   "008_tax": taxMigration,
   "009_payment": paymentMigration,
   "010_fulfillment": fulfillmentMigration,
