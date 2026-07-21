@@ -58,7 +58,7 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
-As of 2026-07-19, tasks 1.1 through 7.5 of
+As of 2026-07-21, tasks 1.1 through 7.6 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
 customer/product/region-sales-channel/pricing/inventory foundational slices have migrated to the
 Effect backend architecture:
@@ -120,6 +120,11 @@ Effect backend architecture:
   by deleted D1 seed rows. Task 8.6 owns their removal when checkout
   orchestration migrates to Effect and can consume migrated module service
   Layers directly.
+- The shared section-7 verification gate has passed for foundational module
+  repository contracts, Effect HTTP API assembly, permission metadata,
+  storefront SDK transports and browser boundaries, runtime import boundaries,
+  shared auth contracts, PostgreSQL/D1 compatibility checks, and the
+  credential-free Cloudflare Worker/platform suites.
 
 ## Current Gaps
 

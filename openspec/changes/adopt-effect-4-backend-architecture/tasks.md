@@ -77,7 +77,7 @@
 - [x] 7.3 Migrate region and sales-channel end-to-end and delete their legacy paths
 - [x] 7.4 Migrate pricing end-to-end and delete its legacy path
 - [x] 7.5 Migrate inventory end-to-end and delete its legacy path
-- [ ] 7.6 Run shared foundational-module repository, API, SDK, permission, boundary, and Cloudflare suites
+- [x] 7.6 Run shared foundational-module repository, API, SDK, permission, boundary, and Cloudflare suites
 
 ## 8. Transactional module migration
 
