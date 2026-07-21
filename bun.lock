@@ -29,6 +29,7 @@
         "@ecommerce/api": "workspace:*",
         "@ecommerce/auth": "workspace:*",
         "@ecommerce/cart": "workspace:*",
+        "@ecommerce/checkout": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "@ecommerce/customer": "workspace:*",
         "@ecommerce/db": "workspace:*",
@@ -214,6 +215,7 @@
     "packages/db-postgres": {
       "name": "@ecommerce/db-postgres",
       "dependencies": {
+        "@ecommerce/cart": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "@ecommerce/customer": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
@@ -279,18 +281,12 @@
       "version": "0.0.0",
       "dependencies": {
         "@ecommerce/core": "workspace:*",
-        "@ecommerce/module-contracts": "workspace:*",
-        "@ecommerce/utils": "workspace:*",
-        "@orpc/server": "catalog:",
         "effect": "catalog:",
-        "kysely": "catalog:",
         "nanoid": "^5.1.6",
-        "zod": "catalog:",
       },
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
-        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -552,6 +548,7 @@
         "@ecommerce/cart": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "@ecommerce/notification-event": "workspace:*",
+        "effect": "catalog:",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:",

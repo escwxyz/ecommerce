@@ -140,15 +140,15 @@ const resolveHydratedOwner = (
       return { id: cart.customerId, type: "customer" };
     }
 
-    throw new CartCacheOwnershipError(
-      `Cart "${cart.id}" is owned by customer:${cart.customerId}.`
-    );
+    throw new CartCacheOwnershipError({
+      message: `Cart "${cart.id}" is owned by customer:${cart.customerId}.`,
+    });
   }
 
   if (scope.type === "customer") {
-    throw new CartCacheOwnershipError(
-      `Cart "${cart.id}" is not assigned to an authenticated customer.`
-    );
+    throw new CartCacheOwnershipError({
+      message: `Cart "${cart.id}" is not assigned to an authenticated customer.`,
+    });
   }
 
   return scope;
@@ -243,9 +243,9 @@ export class CartCacheDurableObject extends DurableObject {
       await this.ctx.storage.get<CartOwnershipScope>(ownerStorageKey);
 
     if (owner && !canAccessScope(owner, scope)) {
-      throw new CartCacheOwnershipError(
-        `Cart is owned by ${serializeCartOwnershipScope(owner)}.`
-      );
+      throw new CartCacheOwnershipError({
+        message: `Cart is owned by ${serializeCartOwnershipScope(owner)}.`,
+      });
     }
   }
 
@@ -262,9 +262,9 @@ export class CartCacheDurableObject extends DurableObject {
       !canAccessScope(current, next) &&
       !canClaimScope(current, next)
     ) {
-      throw new CartCacheOwnershipError(
-        `Cart is owned by ${serializeCartOwnershipScope(current)}.`
-      );
+      throw new CartCacheOwnershipError({
+        message: `Cart is owned by ${serializeCartOwnershipScope(current)}.`,
+      });
     }
 
     await this.ctx.storage.put(ownerStorageKey, next);

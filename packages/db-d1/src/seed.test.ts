@@ -183,7 +183,6 @@ describe("deterministic development seed", () => {
       shippingOption: countRows(database, "shipping_option"),
     }).toEqual(seededCounts);
 
-    expect(countRows(database, "cart")).toBe(0);
     expect(countRows(database, "order_record")).toBe(0);
     expect(countRows(database, "payment_collection")).toBe(0);
     expect(countRows(database, "fulfillment")).toBe(0);

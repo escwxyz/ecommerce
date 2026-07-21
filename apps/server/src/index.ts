@@ -2,11 +2,10 @@ import { createContext } from "@ecommerce/api/context";
 import { createAuth } from "@ecommerce/auth";
 import {
   createCustomerCartScope,
-  createD1CartRepository,
+  createInMemoryCartRepository,
   createSystemCartScope,
   createVisitorCartScope,
 } from "@ecommerce/cart";
-import type { CartD1Database, CartModuleContext } from "@ecommerce/cart";
 import { createD1Database } from "@ecommerce/db-d1";
 import { env } from "@ecommerce/env/server";
 import {
@@ -56,9 +55,7 @@ const database = createD1Database(serverEnv.DB);
 const clock = {
   now: () => new Date(),
 };
-const cartProjectionRepository = createD1CartRepository({
-  db: database.db as unknown as CartD1Database,
-});
+const cartProjectionRepository = createInMemoryCartRepository();
 const notificationEventRealtime = createNotificationEventRealtimePublisher({
   namespace: serverEnv.NOTIFICATION_EVENT_REALTIME as unknown as Parameters<
     typeof createNotificationEventRealtimePublisher
@@ -83,7 +80,10 @@ const queuedNotificationProviders = notificationEventQueue
     )
   : [];
 
-const createCartScope = (context: CartModuleContext) => {
+const createCartScope = (context: {
+  readonly session?: { readonly user?: unknown | null } | null;
+  readonly visitorId?: string;
+}) => {
   const user = context.session?.user;
 
   if (typeof user === "object" && user && "id" in user) {

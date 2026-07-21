@@ -5,7 +5,7 @@ import {
   createSystemCartScope,
   createVisitorCartScope,
 } from "@ecommerce/cart/cache";
-import { createCartId } from "@ecommerce/cart/domain";
+import { CartValidationFailure, createCartId } from "@ecommerce/cart/domain";
 import { createResettableInMemoryCartRepository } from "@ecommerce/cart/repository";
 import { createCartService } from "@ecommerce/cart/service";
 import {
@@ -22,6 +22,7 @@ import {
   createNotificationEventService,
 } from "@ecommerce/notification-event";
 import { createInMemoryNotificationEventRepository } from "@ecommerce/notification-event/repository";
+import { Effect } from "effect";
 
 import {
   activateSandboxPlugin,
@@ -382,33 +383,39 @@ describe("cloudflare cart cache adapter", () => {
       repository,
     });
 
-    const cart = await service.createCart({ currencyCode: "USD" });
-    const aggregate = await service.addLineItem({
-      cartId: cart.id,
-      correlationId: "cart_cf_line",
-      idempotencyKey: "cart_cf_line",
-      productId: "prod_hat",
-      quantity: 1,
-      title: "Hat",
-      unitPrice: 1200,
-      variantId: "variant_hat",
-    });
-    const duplicate = await service.addLineItem({
-      cartId: cart.id,
-      correlationId: "cart_cf_line",
-      idempotencyKey: "cart_cf_line",
-      productId: "prod_hat",
-      quantity: 1,
-      title: "Hat",
-      unitPrice: 1200,
-      variantId: "variant_hat",
-    });
+    const cart = await Effect.runPromise(
+      service.createCart({ currencyCode: "USD" })
+    );
+    const aggregate = await Effect.runPromise(
+      service.addLineItem({
+        cartId: cart.id,
+        correlationId: "cart_cf_line",
+        idempotencyKey: "cart_cf_line",
+        productId: "prod_hat",
+        quantity: 1,
+        title: "Hat",
+        unitPrice: 1200,
+        variantId: "variant_hat",
+      })
+    );
+    const duplicate = await Effect.runPromise(
+      service.addLineItem({
+        cartId: cart.id,
+        correlationId: "cart_cf_line",
+        idempotencyKey: "cart_cf_line",
+        productId: "prod_hat",
+        quantity: 1,
+        title: "Hat",
+        unitPrice: 1200,
+        variantId: "variant_hat",
+      })
+    );
 
     expect(cartCache.fetches.map(({ name }) => name)).toContain(
       createCartCacheDurableObjectName(cart.id)
     );
     await expect(
-      projectionRepository.getCartAggregate(cart.id)
+      Effect.runPromise(projectionRepository.getCartAggregate(cart.id))
     ).resolves.toMatchObject({
       lineItems: [
         {
@@ -432,7 +439,9 @@ describe("cloudflare cart cache adapter", () => {
       idGenerator: createSequenceIdGenerator(["cart_seed", "evt_seed"]),
       repository: seedRepository,
     });
-    const cart = await seedService.createCart({ currencyCode: "USD" });
+    const cart = await Effect.runPromise(
+      seedService.createCart({ currencyCode: "USD" })
+    );
     const emptyCache = createFakeCartCacheNamespace();
     const hydratedRepository = createCloudflareCartCacheRepository({
       namespace: emptyCache.namespace,
@@ -441,16 +450,19 @@ describe("cloudflare cart cache adapter", () => {
     });
 
     await expect(
-      hydratedRepository.getCartAggregate(cart.id)
+      Effect.runPromise(hydratedRepository.getCartAggregate(cart.id))
     ).resolves.toMatchObject({
       cart: {
         id: cart.id,
       },
     });
 
-    const failingProjection = createResettableInMemoryCartRepository();
-    failingProjection.saveCart = async () => {
-      throw new Error("projection offline");
+    const failingProjection = {
+      ...createResettableInMemoryCartRepository(),
+      saveCart: () =>
+        Effect.fail(
+          new CartValidationFailure({ message: "projection offline" })
+        ),
     };
     const failuresCache = createFakeCartCacheNamespace();
     const failingRepository = createCloudflareCartCacheRepository({
@@ -464,7 +476,7 @@ describe("cloudflare cart cache adapter", () => {
       repository: failingRepository,
     });
 
-    await failingService.createCart({ currencyCode: "USD" });
+    await Effect.runPromise(failingService.createCart({ currencyCode: "USD" }));
 
     expect(failuresCache.failures).toEqual([
       expect.objectContaining({
@@ -496,13 +508,15 @@ describe("cloudflare cart cache adapter", () => {
       idGenerator: createSequenceIdGenerator(["cart_owner", "evt_owner"]),
       repository: visitorRepository,
     });
-    const cart = await visitorService.createCart({ currencyCode: "USD" });
+    const cart = await Effect.runPromise(
+      visitorService.createCart({ currencyCode: "USD" })
+    );
 
     await expect(
-      customerRepository.getCartAggregate(cart.id)
+      Effect.runPromise(customerRepository.getCartAggregate(cart.id))
     ).resolves.toBeNull();
     await expect(
-      systemRepository.getCartAggregate(cart.id)
+      Effect.runPromise(systemRepository.getCartAggregate(cart.id))
     ).resolves.toMatchObject({
       cart: {
         id: cart.id,
@@ -513,34 +527,36 @@ describe("cloudflare cart cache adapter", () => {
   it("rejects mismatched customer scope when hydrating a projected customer cart", async () => {
     const cartCache = createFakeCartCacheNamespace();
     const projectionRepository = createResettableInMemoryCartRepository();
-    const customerCart = await projectionRepository.saveCart({
-      billingAddress: null,
-      completedAt: null,
-      createdAt: new Date("2026-06-16T10:00:00.000Z"),
-      currencyCode: "USD",
-      customerId: "cus_1",
-      email: null,
-      id: createCartId("cart_projection"),
-      metadata: {},
-      paymentCollectionId: null,
-      regionId: null,
-      salesChannelId: null,
-      shippingAddress: null,
-      shippingOptionId: null,
-      status: "active",
-      totals: {
-        adjustmentTotal: 0,
+    const customerCart = await Effect.runPromise(
+      projectionRepository.saveCart({
+        billingAddress: null,
+        completedAt: null,
+        createdAt: new Date("2026-06-16T10:00:00.000Z"),
         currencyCode: "USD",
-        discountTotal: 0,
-        giftCardTotal: 0,
-        itemSubtotal: 0,
-        shippingTotal: 0,
-        subtotal: 0,
-        taxTotal: 0,
-        total: 0,
-      },
-      updatedAt: new Date("2026-06-16T10:00:00.000Z"),
-    });
+        customerId: "cus_1",
+        email: null,
+        id: createCartId("cart_projection"),
+        metadata: {},
+        paymentCollectionId: null,
+        regionId: null,
+        salesChannelId: null,
+        shippingAddress: null,
+        shippingOptionId: null,
+        status: "active",
+        totals: {
+          adjustmentTotal: 0,
+          currencyCode: "USD",
+          discountTotal: 0,
+          giftCardTotal: 0,
+          itemSubtotal: 0,
+          shippingTotal: 0,
+          subtotal: 0,
+          taxTotal: 0,
+          total: 0,
+        },
+        updatedAt: new Date("2026-06-16T10:00:00.000Z"),
+      })
+    );
     const mismatchedRepository = createCloudflareCartCacheRepository({
       namespace: cartCache.namespace,
       projectionRepository,
@@ -548,23 +564,28 @@ describe("cloudflare cart cache adapter", () => {
     });
 
     await expect(
-      mismatchedRepository.getCartAggregate(customerCart.id)
+      Effect.runPromise(mismatchedRepository.getCartAggregate(customerCart.id))
     ).rejects.toThrow(/denied/);
 
     await expect(
-      createCloudflareCartCacheRepository({
-        namespace: cartCache.namespace,
-        projectionRepository,
-        scope: createVisitorCartScope("visitor_2"),
-      }).getCartAggregate(customerCart.id)
+      Effect.runPromise(
+        createCloudflareCartCacheRepository({
+          namespace: cartCache.namespace,
+          projectionRepository,
+          scope: createVisitorCartScope("visitor_2"),
+        }).getCartAggregate(customerCart.id)
+      )
     ).rejects.toThrow(/denied/);
   });
 
   it("reads active line items from the Durable Object when projection sync fails", async () => {
     const cartCache = createFakeCartCacheNamespace();
-    const projectionRepository = createResettableInMemoryCartRepository();
-    projectionRepository.saveLineItem = async () => {
-      throw new Error("projection unavailable");
+    const projectionRepository = {
+      ...createResettableInMemoryCartRepository(),
+      saveLineItem: () =>
+        Effect.fail(
+          new CartValidationFailure({ message: "projection unavailable" })
+        ),
     };
     const repository = createCloudflareCartCacheRepository({
       namespace: cartCache.namespace,
@@ -582,17 +603,21 @@ describe("cloudflare cart cache adapter", () => {
       repository,
     });
 
-    const cart = await service.createCart({ currencyCode: "USD" });
-    const withLineItem = await service.addLineItem({
-      cartId: cart.id,
-      correlationId: "cart_line_do",
-      idempotencyKey: "cart_line_do",
-      productId: "prod_hat",
-      quantity: 1,
-      title: "Hat",
-      unitPrice: 1200,
-      variantId: "variant_hat",
-    });
+    const cart = await Effect.runPromise(
+      service.createCart({ currencyCode: "USD" })
+    );
+    const withLineItem = await Effect.runPromise(
+      service.addLineItem({
+        cartId: cart.id,
+        correlationId: "cart_line_do",
+        idempotencyKey: "cart_line_do",
+        productId: "prod_hat",
+        quantity: 1,
+        title: "Hat",
+        unitPrice: 1200,
+        variantId: "variant_hat",
+      })
+    );
     const lineItem = withLineItem.lineItems[0];
 
     if (!lineItem) {
@@ -600,7 +625,7 @@ describe("cloudflare cart cache adapter", () => {
     }
 
     await expect(
-      repository.findLineItemById(lineItem.id, cart.id)
+      Effect.runPromise(repository.findLineItemById(lineItem.id, cart.id))
     ).resolves.toMatchObject({
       id: lineItem.id,
       cartId: cart.id,

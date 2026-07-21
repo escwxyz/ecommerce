@@ -111,6 +111,9 @@ describe("PostgreSQL migration commands", () => {
       expect.objectContaining({
         name: "20260724000000_inventory_module",
       }),
+      expect.objectContaining({
+        name: "20260725000000_cart_module",
+      }),
     ]);
   });
 
@@ -139,6 +142,9 @@ describe("PostgreSQL migration commands", () => {
 
     expect(plan.requiresConfirmation).toBe(true);
     expect(plan.statements).toEqual([
+      'DROP TABLE IF EXISTS "cart_adjustment" CASCADE',
+      'DROP TABLE IF EXISTS "cart_line_item" CASCADE',
+      'DROP TABLE IF EXISTS "cart" CASCADE',
       'DROP TABLE IF EXISTS "inventory_adjustment_event" CASCADE',
       'DROP TABLE IF EXISTS "inventory_reservation" CASCADE',
       'DROP TABLE IF EXISTS "inventory_level" CASCADE',

@@ -1,3 +1,6 @@
+import { Effect } from "effect";
+import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
+
 export interface EffectWorkerCanary {
   readonly dispose: () => Promise<void>;
   readonly fetch: (request: Request) => Promise<Response>;
@@ -17,8 +20,3 @@ export const createEffectWorkerCanary = (): EffectWorkerCanary => {
     fetch: worker.handler,
   };
 };
-import { Effect } from "effect";
-import {
-  HttpRouter,
-  HttpServerResponse,
-} from "effect/unstable/http";

@@ -1,8 +1,3 @@
-export {
-  createD1CartRepository,
-  type CartD1Database,
-  type CreateD1CartRepositoryOptions,
-} from "./adapters";
 export { cartAdminSurfaces } from "./admin";
 export {
   createCachedCartRepository,
@@ -16,30 +11,74 @@ export {
   type CartProjectionSyncFailure,
   type CreateCachedCartRepositoryOptions,
 } from "./cache";
-export { cartContractRouter } from "./contracts";
 export {
   AddCartLineItemInputSchema,
   ApplyCartAdjustmentInputSchema,
+  AssociateCartCustomerInputSchema,
+  CartAddressSchema,
   CartAggregateApiSchema,
   CartApiRecordSchema,
   CartIdentifierSchema,
+  CartInvalidIdentifier,
+  CartCacheOwnershipError,
+  CartAdjustmentApiRecordSchema,
+  CartAdjustmentRecordSchema,
+  CartAdjustmentSerializedIdSchema,
+  CartLineItemApiRecordSchema,
+  CartLineItemRecordSchema,
+  CartLineItemSerializedIdSchema,
+  CartMetadataSchema,
+  CartLineItemNotFound,
+  CartNotActive,
+  CartNotFound,
+  CartSerializedIdSchema,
+  CartStatusSchema,
+  CartTotalsSnapshotSchema,
+  CartTrimmedStringSchema,
+  CartAdjustmentTypeSchema,
   CartRecordSchema,
+  CartValidationFailure,
   CreateCartInputSchema,
+  CartRepositoryService,
+  SetCartAddressesInputSchema,
+  SetCartCheckoutReferencesInputSchema,
+  SetCartRegionChannelInputSchema,
+  UpdateCartLineItemInputSchema,
+  UpdateCartTotalsInputSchema,
+  createCartAdjustmentIdEffect,
+  createCartIdEffect,
+  serializeCartAdjustmentId,
+  serializeCartId,
+  serializeCartLineItemId,
+  createCartLineItemIdEffect,
 } from "./domain";
 export type {
   AddCartLineItemInput,
   ApplyCartAdjustmentInput,
+  AssociateCartCustomerInput,
   CartAggregate,
   CartAggregateApiRecord,
+  CartAdjustmentApiRecord,
+  CartAdjustmentRecord,
   CartApiRecord,
+  CartExpectedError,
   CartId,
+  CartLineItemApiRecord,
+  CartLineItemId,
+  CartLineItemRecord,
   CartRecord,
   CartRepository,
   CreateCartInput,
+  SetCartAddressesInput,
+  SetCartCheckoutReferencesInput,
+  SetCartRegionChannelInput,
+  UpdateCartLineItemInput,
+  UpdateCartTotalsInput,
 } from "./domain";
 export { cartModule } from "./module";
 export { cartPermissionList, cartPermissions } from "./permissions";
 export {
+  createInMemoryCartRepositoryLayer,
   createInMemoryCartRepository,
   createResettableInMemoryCartRepository,
   defaultCartRepository,
@@ -47,17 +86,13 @@ export {
   type ResettableCartRepository,
 } from "./repositories";
 export {
-  cartApiFragment,
-  cartRouter,
-  createCartRouteFragment,
-  type CartModuleContext,
-  type CreateCartRouteFragmentOptions,
-} from "./router";
-export {
   CartService,
+  createCartRepositoryLayer,
   createCartService,
+  createCartServiceFromDependenciesLayer,
   createCartServiceLayer,
   defaultCartService,
+  type CartServiceFailure,
   type CartServiceShape,
   type CreateCartServiceOptions,
 } from "./services";

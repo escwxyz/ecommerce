@@ -1,10 +1,14 @@
 import { createApiRootAssembly } from "@ecommerce/api";
-import type {
-  CartD1Database,
-  CartModuleContext,
-  CartRepository,
+import type { CartRepository, CartServiceShape } from "@ecommerce/cart";
+import {
+  createCartIdEffect,
+  createCartService,
+  createInMemoryCartRepository,
 } from "@ecommerce/cart";
-import { createCartService, createD1CartRepository } from "@ecommerce/cart";
+import type {
+  CheckoutModuleContext,
+  CreateCheckoutServiceOptions,
+} from "@ecommerce/checkout";
 import type {
   ClockServiceShape,
   EventPublisherServiceShape,
@@ -65,7 +69,7 @@ interface ServerCommerceDatabase {
 export interface ServerCommerceRuntimeOptions {
   readonly cartCoordinator?: StatefulCoordinator;
   readonly createCartRepositoryForContext?: (
-    context: CartModuleContext
+    context: CheckoutModuleContext
   ) => CartRepository;
   readonly cartRepository?: CartRepository;
   readonly clock?: ClockServiceShape;
@@ -79,6 +83,32 @@ export interface ServerCommerceRuntimeOptions {
 
 const narrowDatabase = <Database>(db: ServerCommerceDatabase): Database =>
   db as unknown as Database;
+
+type CheckoutCartContract = CreateCheckoutServiceOptions["cart"];
+
+const createCheckoutCartPromiseFacade = (
+  service: CartServiceShape
+): CheckoutCartContract => ({
+  getCart: (id) =>
+    Effect.runPromise(
+      Effect.gen(function* getCheckoutCartEffect() {
+        const cartId = yield* createCartIdEffect(id);
+        return yield* service.getCart(cartId);
+      })
+    ),
+  setCheckoutReferences: (input) =>
+    Effect.runPromise(
+      service.setCheckoutReferences(
+        input as Parameters<CartServiceShape["setCheckoutReferences"]>[0]
+      )
+    ),
+  updateTotals: (input) =>
+    Effect.runPromise(
+      service.updateTotals(
+        input as Parameters<CartServiceShape["updateTotals"]>[0]
+      )
+    ),
+});
 
 /**
  * Creates deterministic provider registries for local development and tests.
@@ -119,11 +149,7 @@ export const createServerCommerceRuntime = ({
   }
 
   const repositories = {
-    cart:
-      providedCartRepository ??
-      createD1CartRepository({
-        db: narrowDatabase<CartD1Database>(db),
-      }),
+    cart: providedCartRepository ?? createInMemoryCartRepository(),
     fulfillment: createD1FulfillmentRepository({
       db: narrowDatabase<FulfillmentD1Database>(db),
     }),
@@ -436,7 +462,7 @@ export const createServerCommerceRuntime = ({
   const checkoutServices =
     paymentProviderRegistry && fulfillmentProviderRegistry
       ? {
-          cart: services.cart,
+          cart: createCheckoutCartPromiseFacade(services.cart),
           customer: services.customer,
           fulfillment: services.fulfillment,
           inventory: services.inventory,
@@ -457,15 +483,19 @@ export const createServerCommerceRuntime = ({
         ...checkoutServices,
         ...(createCartRepositoryForContext
           ? {
-              createServiceOptionsForContext: (context: CartModuleContext) => ({
+              createServiceOptionsForContext: (
+                context: CheckoutModuleContext
+              ) => ({
                 ...checkoutServices,
-                cart: createCartService({
-                  clock,
-                  coordinator: cartCoordinator,
-                  eventPublisher,
-                  idGenerator,
-                  repository: createCartRepositoryForContext(context),
-                }),
+                cart: createCheckoutCartPromiseFacade(
+                  createCartService({
+                    clock,
+                    coordinator: cartCoordinator,
+                    eventPublisher,
+                    idGenerator,
+                    repository: createCartRepositoryForContext(context),
+                  })
+                ),
               }),
             }
           : {}),
@@ -474,24 +504,6 @@ export const createServerCommerceRuntime = ({
 
   const apiAssembly = createApiRootAssembly({
     routes: {
-      cart: {
-        clock,
-        coordinator: cartCoordinator,
-        ...(createCartRepositoryForContext
-          ? {
-              createServiceOptionsForContext: (context: CartModuleContext) => ({
-                clock,
-                coordinator: cartCoordinator,
-                eventPublisher,
-                idGenerator,
-                repository: createCartRepositoryForContext(context),
-              }),
-            }
-          : {}),
-        eventPublisher,
-        idGenerator,
-        repository: repositories.cart,
-      },
       ...(checkout ? { checkout } : {}),
       fulfillment: {
         clock,

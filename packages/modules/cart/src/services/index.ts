@@ -7,9 +7,12 @@ export {
   CART_LINE_ITEM_UPDATED_EVENT,
   CART_TOTALS_UPDATED_EVENT,
   CartService,
+  createCartRepositoryLayer,
   createCartService,
+  createCartServiceFromDependenciesLayer,
   createCartServiceLayer,
   defaultCartService,
+  type CartServiceFailure,
   type CartServiceShape,
   type CreateCartServiceOptions,
 } from "./cart.service";

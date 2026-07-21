@@ -81,7 +81,7 @@
 
 ## 8. Transactional module migration
 
-- [ ] 8.1 Migrate cart end-to-end, including cache/actor ports, and delete its legacy path
+- [x] 8.1 Migrate cart end-to-end, including cache/actor ports, and delete its legacy path
 - [ ] 8.2 Migrate promotion end-to-end and delete its legacy path
 - [ ] 8.3 Migrate tax end-to-end and delete its legacy path
 - [ ] 8.4 Migrate fulfillment and its provider boundary end-to-end and delete its legacy path

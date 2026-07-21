@@ -10,16 +10,20 @@ import type {
 import type {
   CartAdjustmentRecord,
   CartAggregate,
+  CartExpectedError,
   CartId,
   CartLineItemRecord,
   CartRecord,
   CartRepository,
 } from "@ecommerce/cart/domain";
 import {
+  CartValidationFailure,
   createCartAdjustmentId,
   createCartId,
   createCartLineItemId,
 } from "@ecommerce/cart/domain";
+import { Effect } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 
 type StoredCartRecord = Omit<
   CartRecord,
@@ -64,7 +68,7 @@ export interface CloudflareCartCacheOptions {
 export interface CloudflareCartCacheRepositoryOptions extends CloudflareCartCacheOptions {
   readonly onProjectionSyncFailure?: (
     failure: CartProjectionSyncFailure
-  ) => Promise<void> | void;
+  ) => EffectValue<void, CartExpectedError> | void;
   readonly projectionRepository: CartRepository;
   readonly scope?: CartOwnershipScope | (() => CartOwnershipScope);
 }
@@ -160,9 +164,9 @@ const requestCartCache = async <Output>({
   const body = (await response.json()) as CloudflareCartCacheResponse<Output>;
 
   if (response.status === 403) {
-    throw new CartCacheOwnershipError(
-      body.error ?? "Cart cache access denied."
-    );
+    throw new CartCacheOwnershipError({
+      message: body.error ?? "Cart cache access denied.",
+    });
   }
 
   if (!response.ok) {
@@ -172,12 +176,30 @@ const requestCartCache = async <Output>({
   return body.output;
 };
 
+const toCartCacheFailure = (error: unknown) =>
+  error instanceof CartCacheOwnershipError
+    ? error
+    : new CartValidationFailure({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Cart cache operation failed.",
+      });
+
+const requestCartCacheEffect = <Output>(
+  input: Parameters<typeof requestCartCache<Output>>[0]
+) =>
+  Effect.tryPromise({
+    catch: toCartCacheFailure,
+    try: () => requestCartCache<Output>(input),
+  });
+
 export const createCloudflareCartActiveCache = ({
   namespace,
 }: CloudflareCartCacheOptions): CartActiveCache => ({
-  findAdjustmentByIdempotencyKey: () => Promise.resolve(null),
-  findCartById: async ({ id, scope }) => {
-    const cart = await requestCartCache<StoredCartRecord | null>({
+  findAdjustmentByIdempotencyKey: () => Effect.succeed(null),
+  findCartById: ({ id, scope }) =>
+    requestCartCacheEffect<StoredCartRecord | null>({
       cartId: id,
       namespace,
       operation: {
@@ -185,16 +207,13 @@ export const createCloudflareCartActiveCache = ({
         scope,
         type: "findCartById",
       },
-    });
-
-    return cart ? deserializeCart(cart) : null;
-  },
-  findLineItemById: async ({ id, cartId, scope }) => {
+    }).pipe(Effect.map((cart) => (cart ? deserializeCart(cart) : null))),
+  findLineItemById: ({ id, cartId, scope }) => {
     if (!cartId) {
-      return null;
+      return Effect.succeed(null);
     }
 
-    const item = await requestCartCache<StoredLineItemRecord | null>({
+    return requestCartCacheEffect<StoredLineItemRecord | null>({
       cartId,
       namespace,
       operation: {
@@ -203,13 +222,11 @@ export const createCloudflareCartActiveCache = ({
         scope,
         type: "findLineItemById",
       },
-    });
-
-    return item ? deserializeLineItem(item) : null;
+    }).pipe(Effect.map((item) => (item ? deserializeLineItem(item) : null)));
   },
-  findLineItemByIdempotencyKey: () => Promise.resolve(null),
-  getCartAggregate: async ({ id, scope }) => {
-    const aggregate = await requestCartCache<StoredCartAggregate | null>({
+  findLineItemByIdempotencyKey: () => Effect.succeed(null),
+  getCartAggregate: ({ id, scope }) =>
+    requestCartCacheEffect<StoredCartAggregate | null>({
       cartId: id,
       namespace,
       operation: {
@@ -217,12 +234,13 @@ export const createCloudflareCartActiveCache = ({
         scope,
         type: "getCartAggregate",
       },
-    });
-
-    return aggregate ? deserializeAggregate(aggregate) : null;
-  },
-  hydrateCartAggregate: async ({ aggregate, scope }) => {
-    await requestCartCache<null>({
+    }).pipe(
+      Effect.map((aggregate) =>
+        aggregate ? deserializeAggregate(aggregate) : null
+      )
+    ),
+  hydrateCartAggregate: ({ aggregate, scope }) =>
+    requestCartCacheEffect<null>({
       cartId: aggregate.cart.id,
       namespace,
       operation: {
@@ -230,10 +248,9 @@ export const createCloudflareCartActiveCache = ({
         scope,
         type: "hydrateCartAggregate",
       },
-    });
-  },
-  recordProjectionSyncFailure: async (failure) => {
-    await requestCartCache<null>({
+    }).pipe(Effect.asVoid),
+  recordProjectionSyncFailure: (failure) =>
+    requestCartCacheEffect<null>({
       cartId: failure.cartId,
       namespace,
       operation: {
@@ -243,14 +260,13 @@ export const createCloudflareCartActiveCache = ({
         scope: failure.scope,
         type: "recordProjectionSyncFailure",
       },
-    });
-  },
-  removeLineItem: async ({ cartId, id, scope }) => {
+    }).pipe(Effect.asVoid),
+  removeLineItem: ({ cartId, id, scope }) => {
     if (!cartId) {
-      return null;
+      return Effect.succeed(null);
     }
 
-    const aggregate = await requestCartCache<StoredCartAggregate | null>({
+    return requestCartCacheEffect<StoredCartAggregate | null>({
       cartId,
       namespace,
       operation: {
@@ -259,12 +275,14 @@ export const createCloudflareCartActiveCache = ({
         scope,
         type: "removeLineItem",
       },
-    });
-
-    return aggregate ? deserializeAggregate(aggregate) : null;
+    }).pipe(
+      Effect.map((aggregate) =>
+        aggregate ? deserializeAggregate(aggregate) : null
+      )
+    );
   },
-  saveAdjustment: async ({ adjustment, idempotencyKey, scope }) => {
-    const saved = await requestCartCache<StoredAdjustmentRecord>({
+  saveAdjustment: ({ adjustment, idempotencyKey, scope }) =>
+    requestCartCacheEffect<StoredAdjustmentRecord>({
       cartId: adjustment.cartId,
       namespace,
       operation: {
@@ -273,12 +291,9 @@ export const createCloudflareCartActiveCache = ({
         scope,
         type: "saveAdjustment",
       },
-    });
-
-    return deserializeAdjustment(saved);
-  },
-  saveCart: async ({ cart, scope }) => {
-    const saved = await requestCartCache<StoredCartRecord>({
+    }).pipe(Effect.map(deserializeAdjustment)),
+  saveCart: ({ cart, scope }) =>
+    requestCartCacheEffect<StoredCartRecord>({
       cartId: cart.id,
       namespace,
       operation: {
@@ -286,12 +301,9 @@ export const createCloudflareCartActiveCache = ({
         scope,
         type: "saveCart",
       },
-    });
-
-    return deserializeCart(saved);
-  },
-  saveLineItem: async ({ idempotencyKey, item, scope }) => {
-    const saved = await requestCartCache<StoredLineItemRecord>({
+    }).pipe(Effect.map(deserializeCart)),
+  saveLineItem: ({ idempotencyKey, item, scope }) =>
+    requestCartCacheEffect<StoredLineItemRecord>({
       cartId: item.cartId,
       namespace,
       operation: {
@@ -300,10 +312,7 @@ export const createCloudflareCartActiveCache = ({
         scope,
         type: "saveLineItem",
       },
-    });
-
-    return deserializeLineItem(saved);
-  },
+    }).pipe(Effect.map(deserializeLineItem)),
 });
 
 export const createCloudflareCartCacheRepository = ({

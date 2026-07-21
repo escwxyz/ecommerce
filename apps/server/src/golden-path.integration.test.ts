@@ -6,12 +6,12 @@ import { join } from "node:path";
 import { authorizationEvaluator } from "@ecommerce/api";
 import type { AuthService } from "@ecommerce/auth";
 import { createStoreAdminAuthSession } from "@ecommerce/auth/testing";
-import { createD1CartRepository, type CartD1Database } from "@ecommerce/cart";
 import { createD1Database } from "@ecommerce/db-d1";
 import {
   developmentSeedIds,
   generateDevelopmentSeedSql,
 } from "@ecommerce/db-d1/seed";
+import { Effect } from "effect";
 
 import { createServerApp } from "./app";
 import {
@@ -146,14 +146,9 @@ describe("server golden checkout path", () => {
     const database = createD1Database(
       createFakeD1Binding(sqlite) as unknown as D1Database
     );
-    const cartRepository = createD1CartRepository({
-      db: database.db as unknown as CartD1Database,
-    });
     const runtime = createServerCommerceRuntime({
       ...createDevelopmentCommerceProviderRegistries(),
-      cartRepository,
       clock: { now: () => new Date("2026-01-02T00:00:00.000Z") },
-      createCartRepositoryForContext: () => cartRepository,
       db: database.db,
       idGenerator: createDeterministicIdGenerator(),
     });
@@ -168,21 +163,17 @@ describe("server golden checkout path", () => {
       }),
     });
     try {
-      const cart = await callRpc<{ readonly id: string }>({
-        app,
-        operation: "cartCreate",
-        input: {
+      const cart = await Effect.runPromise(
+        runtime.services.cart.createCart({
           currencyCode: "USD",
           customerId: developmentSeedIds.customer,
           email: "ada.dev@example.com",
           regionId: developmentSeedIds.region,
           salesChannelId: developmentSeedIds.salesChannel,
-        },
-      });
-      await callRpc({
-        app,
-        operation: "cartSetAddresses",
-        input: {
+        })
+      );
+      await Effect.runPromise(
+        runtime.services.cart.setAddresses({
           cartId: cart.id,
           correlationId: "golden-address",
           idempotencyKey: "golden-address",
@@ -195,12 +186,10 @@ describe("server golden checkout path", () => {
             postalCode: "10001",
             province: "NY",
           },
-        },
-      });
-      await callRpc({
-        app,
-        operation: "cartAddLineItem",
-        input: {
+        })
+      );
+      await Effect.runPromise(
+        runtime.services.cart.addLineItem({
           cartId: cart.id,
           correlationId: "golden-line",
           idempotencyKey: "golden-line",
@@ -216,8 +205,8 @@ describe("server golden checkout path", () => {
           title: "Development T-Shirt - Black",
           unitPrice: 2500,
           variantId: developmentSeedIds.productVariant,
-        },
-      });
+        })
+      );
 
       const checkout = await callRpc<{
         readonly cartId: string;
@@ -289,12 +278,6 @@ describe("server golden checkout path", () => {
       const persisted = sqlite
         .query<
           {
-            cart_customer_id: string;
-            cart_currency_code: string;
-            cart_payment_collection_id: string;
-            cart_region_id: string;
-            cart_sales_channel_id: string;
-            cart_shipping_option_id: string;
             capture_status: string;
             event_name: string;
             fulfillment_id: string;
@@ -313,12 +296,6 @@ describe("server golden checkout path", () => {
           [string]
         >(
           `SELECT
-            c.customer_id AS cart_customer_id,
-            c.currency_code AS cart_currency_code,
-            c.payment_collection_id AS cart_payment_collection_id,
-            c.region_id AS cart_region_id,
-            c.sales_channel_id AS cart_sales_channel_id,
-            c.shipping_option_id AS cart_shipping_option_id,
             o.id AS order_id,
             o.cart_id AS order_cart_id,
             o.customer_id AS order_customer_id,
@@ -333,28 +310,50 @@ describe("server golden checkout path", () => {
             f.shipping_option_id AS fulfillment_shipping_option_id,
             f.status AS fulfillment_status,
             eo.event_name AS event_name
-          FROM cart c
-          JOIN order_record o ON o.cart_id = c.id
+          FROM order_record o
           JOIN order_line_item oli ON oli.order_id = o.id
-          JOIN payment_collection pcl ON pcl.id = c.payment_collection_id
+          JOIN payment_collection pcl ON pcl.cart_id = o.cart_id
           JOIN payment_session ps ON ps.collection_id = pcl.id
           JOIN payment p ON p.collection_id = pcl.id AND p.session_id = ps.id
           JOIN payment_capture pc ON pc.payment_id = p.id
           JOIN fulfillment f ON f.order_id = o.id
           JOIN event_outbox eo ON eo.workflow_run_id = 'golden-checkout'
             AND eo.event_name = 'checkout.completed'
-          WHERE c.id = ?`
+          WHERE o.cart_id = ?`
         )
         .get(cart.id);
 
-      expect(persisted?.cart_payment_collection_id).toStartWith("paycol_");
+      const completedCart = await Effect.runPromise(
+        runtime.services.cart.getCart(cart.id)
+      );
+
+      expect(completedCart?.cart.paymentCollectionId).toStartWith("paycol_");
+      expect(completedCart?.cart).toMatchObject({
+        customerId: developmentSeedIds.customer,
+        currencyCode: "USD",
+        regionId: developmentSeedIds.region,
+        salesChannelId: developmentSeedIds.salesChannel,
+        shippingOptionId: developmentSeedIds.fulfillmentOption,
+      });
+      expect({
+        ...completedCart?.cart.totals,
+        adjustmentTotal: Math.abs(
+          completedCart?.cart.totals.adjustmentTotal ?? 0
+        ),
+      }).toEqual({
+        adjustmentTotal: 0,
+        currencyCode: "USD",
+        discountTotal: 0,
+        giftCardTotal: 0,
+        itemSubtotal: 2500,
+        shippingTotal: 500,
+        subtotal: 2500,
+        taxTotal: 206,
+        total: 3206,
+      });
+
       expect(persisted).toMatchObject({
         capture_status: "succeeded",
-        cart_customer_id: developmentSeedIds.customer,
-        cart_currency_code: "USD",
-        cart_region_id: developmentSeedIds.region,
-        cart_sales_channel_id: developmentSeedIds.salesChannel,
-        cart_shipping_option_id: developmentSeedIds.fulfillmentOption,
         event_name: "checkout.completed",
         fulfillment_id: checkout.fulfillmentIds[0],
         fulfillment_order_id: checkout.orderId,
@@ -368,23 +367,6 @@ describe("server golden checkout path", () => {
         payment_id: checkout.paymentId,
         payment_session_status: "authorized",
         payment_status: "captured",
-      });
-
-      const totals = sqlite
-        .query<{ totals_json: string }, [string]>(
-          "SELECT totals_json FROM cart WHERE id = ?"
-        )
-        .get(cart.id);
-      expect(JSON.parse(totals?.totals_json ?? "{}")).toEqual({
-        adjustmentTotal: 0,
-        currencyCode: "USD",
-        discountTotal: 0,
-        giftCardTotal: 0,
-        itemSubtotal: 2500,
-        shippingTotal: 500,
-        subtotal: 2500,
-        taxTotal: 206,
-        total: 3206,
       });
     } finally {
       await database.db.destroy();

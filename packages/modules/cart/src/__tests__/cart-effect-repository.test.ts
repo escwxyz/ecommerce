@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
 import { createStaticClock } from "@ecommerce/core/testing";
+import { Effect } from "effect";
 
-import { createCartId, createCartLineItemId, type CartRecord } from "../domain";
+import { createCartId, createCartLineItemId } from "../domain";
+import type { CartRecord } from "../domain";
 import { createResettableInMemoryCartRepository } from "../repositories";
 
 const clock = createStaticClock(new Date("2026-01-01T00:00:00.000Z"));
@@ -36,10 +38,10 @@ const createCart = (): CartRecord => ({
   updatedAt: clock.now(),
 });
 
-describe("cart repository contract", () => {
+describe("cart Effect repository contract", () => {
   it("persists cart aggregates and replays line item idempotency keys", async () => {
     const repository = createResettableInMemoryCartRepository();
-    const cart = await repository.saveCart(createCart());
+    const cart = await Effect.runPromise(repository.saveCart(createCart()));
     const lineItem = {
       cartId: cart.id,
       createdAt: clock.now(),
@@ -53,16 +55,20 @@ describe("cart repository contract", () => {
       variantId: "variant_1",
     };
 
-    await repository.saveLineItem(lineItem, "line_item_key");
-    const duplicate = await repository.saveLineItem(
-      {
-        ...lineItem,
-        id: createCartLineItemId("clitem_duplicate"),
-        quantity: 2,
-      },
-      "line_item_key"
+    await Effect.runPromise(repository.saveLineItem(lineItem, "line_item_key"));
+    const duplicate = await Effect.runPromise(
+      repository.saveLineItem(
+        {
+          ...lineItem,
+          id: createCartLineItemId("clitem_duplicate"),
+          quantity: 2,
+        },
+        "line_item_key"
+      )
     );
-    const aggregate = await repository.getCartAggregate(cart.id);
+    const aggregate = await Effect.runPromise(
+      repository.getCartAggregate(cart.id)
+    );
 
     expect(duplicate.id).toBe(lineItem.id);
     expect(aggregate?.cart.id).toBe(cart.id);

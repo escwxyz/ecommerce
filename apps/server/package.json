@@ -12,6 +12,7 @@
     "@ecommerce/api": "workspace:*",
     "@ecommerce/auth": "workspace:*",
     "@ecommerce/cart": "workspace:*",
+    "@ecommerce/checkout": "workspace:*",
     "@ecommerce/core": "workspace:*",
     "@ecommerce/customer": "workspace:*",
     "@ecommerce/db": "workspace:*",

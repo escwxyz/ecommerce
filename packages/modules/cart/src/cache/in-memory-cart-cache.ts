@@ -1,6 +1,11 @@
+import { Effect } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
+
+import { CartCacheOwnershipError } from "../domain";
 import type {
   CartAdjustmentRecord,
   CartAggregate,
+  CartExpectedError,
   CartId,
   CartLineItemId,
   CartLineItemRecord,
@@ -8,10 +13,7 @@ import type {
 } from "../domain";
 import { createInMemoryCartRepository } from "../repositories";
 import type { CartActiveCache, CartOwnershipScope } from "./cart-cache.types";
-import {
-  CartCacheOwnershipError,
-  serializeCartOwnershipScope,
-} from "./cart-cache.types";
+import { serializeCartOwnershipScope } from "./cart-cache.types";
 
 const isSameScope = (
   current: CartOwnershipScope,
@@ -42,37 +44,35 @@ export class InMemoryCartActiveCache implements CartActiveCache {
   readonly #owners = new Map<string, CartOwnershipScope>();
   readonly #repository = createInMemoryCartRepository();
 
-  findAdjustmentByIdempotencyKey({
+  readonly findAdjustmentByIdempotencyKey = ({
     idempotencyKey,
     scope,
   }: {
     readonly idempotencyKey: string;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartAdjustmentRecord | null> {
-    const adjustment = this.#adjustmentIdempotency.get(idempotencyKey) ?? null;
+  }): EffectValue<CartAdjustmentRecord | null, CartExpectedError> =>
+    Effect.flatMap(
+      Effect.succeed(this.#adjustmentIdempotency.get(idempotencyKey) ?? null),
+      (adjustment) =>
+        adjustment
+          ? this.#assertCartAccess(adjustment.cartId, scope).pipe(
+              Effect.as(adjustment)
+            )
+          : Effect.succeed(null)
+    );
 
-    if (!adjustment) {
-      return Promise.resolve(null);
-    }
-
-    this.#assertCartAccess(adjustment.cartId, scope);
-
-    return Promise.resolve(adjustment);
-  }
-
-  findCartById({
+  readonly findCartById = ({
     id,
     scope,
   }: {
     readonly id: CartId;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartRecord | null> {
-    this.#assertCartAccess(id, scope);
+  }): EffectValue<CartRecord | null, CartExpectedError> =>
+    this.#assertCartAccess(id, scope).pipe(
+      Effect.flatMap(() => this.#repository.findCartById(id))
+    );
 
-    return this.#repository.findCartById(id);
-  }
-
-  async findLineItemById({
+  readonly findLineItemById = ({
     id,
     cartId,
     scope,
@@ -80,63 +80,53 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     readonly id: CartLineItemId;
     readonly cartId?: CartId;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartLineItemRecord | null> {
-    const item = await this.#repository.findLineItemById(id);
+  }): EffectValue<CartLineItemRecord | null, CartExpectedError> =>
+    this.#repository.findLineItemById(id).pipe(
+      Effect.flatMap((item) => {
+        if (!item || (cartId && item.cartId !== cartId)) {
+          return Effect.succeed(null);
+        }
 
-    if (!item) {
-      return null;
-    }
+        return this.#assertCartAccess(item.cartId, scope).pipe(Effect.as(item));
+      })
+    );
 
-    if (cartId && item.cartId !== cartId) {
-      return null;
-    }
-
-    this.#assertCartAccess(item.cartId, scope);
-
-    return item;
-  }
-
-  findLineItemByIdempotencyKey({
+  readonly findLineItemByIdempotencyKey = ({
     idempotencyKey,
     scope,
   }: {
     readonly idempotencyKey: string;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartLineItemRecord | null> {
-    const item = this.#lineItemIdempotency.get(idempotencyKey) ?? null;
+  }): EffectValue<CartLineItemRecord | null, CartExpectedError> =>
+    Effect.flatMap(
+      Effect.succeed(this.#lineItemIdempotency.get(idempotencyKey) ?? null),
+      (item) =>
+        item
+          ? this.#assertCartAccess(item.cartId, scope).pipe(Effect.as(item))
+          : Effect.succeed(null)
+    );
 
-    if (!item) {
-      return Promise.resolve(null);
-    }
-
-    this.#assertCartAccess(item.cartId, scope);
-
-    return Promise.resolve(item);
-  }
-
-  getCartAggregate({
+  readonly getCartAggregate = ({
     id,
     scope,
   }: {
     readonly id: CartId;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartAggregate | null> {
-    this.#assertCartAccess(id, scope);
+  }): EffectValue<CartAggregate | null, CartExpectedError> =>
+    this.#assertCartAccess(id, scope).pipe(
+      Effect.flatMap(() => this.#repository.getCartAggregate(id))
+    );
 
-    return this.#repository.getCartAggregate(id);
-  }
-
-  async hydrateCartAggregate({
+  readonly hydrateCartAggregate = ({
     aggregate,
     scope,
   }: {
     readonly aggregate: CartAggregate;
     readonly scope: CartOwnershipScope;
-  }): Promise<void> {
-    await this.#upsertAggregate(aggregate, scope);
-  }
+  }): EffectValue<void, CartExpectedError> =>
+    this.#upsertAggregate(aggregate, scope);
 
-  async removeLineItem({
+  readonly removeLineItem = ({
     cartId,
     id,
     scope,
@@ -144,19 +134,22 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     readonly cartId?: CartId;
     readonly id: CartLineItemId;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartAggregate | null> {
-    const item = await this.findLineItemById({ cartId, id, scope });
+  }): EffectValue<CartAggregate | null, CartExpectedError> =>
+    this.findLineItemById({ cartId, id, scope }).pipe(
+      Effect.flatMap((item) => {
+        if (!item) {
+          return Effect.succeed(null);
+        }
 
-    if (!item) {
-      return null;
-    }
+        return this.#repository
+          .removeLineItem(id)
+          .pipe(
+            Effect.flatMap(() => this.#repository.getCartAggregate(item.cartId))
+          );
+      })
+    );
 
-    await this.#repository.removeLineItem(id);
-
-    return this.#repository.getCartAggregate(item.cartId);
-  }
-
-  async saveAdjustment({
+  readonly saveAdjustment = ({
     adjustment,
     idempotencyKey,
     scope,
@@ -164,39 +157,38 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     readonly adjustment: CartAdjustmentRecord;
     readonly idempotencyKey: string;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartAdjustmentRecord> {
-    const duplicate = await this.findAdjustmentByIdempotencyKey({
-      idempotencyKey,
-      scope,
-    });
+  }): EffectValue<CartAdjustmentRecord, CartExpectedError> =>
+    this.findAdjustmentByIdempotencyKey({ idempotencyKey, scope }).pipe(
+      Effect.flatMap((duplicate) => {
+        if (duplicate) {
+          return Effect.succeed(duplicate);
+        }
 
-    if (duplicate) {
-      return duplicate;
-    }
-
-    this.#assertCartAccess(adjustment.cartId, scope);
-    const saved = await this.#repository.saveAdjustment(
-      adjustment,
-      idempotencyKey
+        return this.#assertCartAccess(adjustment.cartId, scope).pipe(
+          Effect.flatMap(() =>
+            this.#repository.saveAdjustment(adjustment, idempotencyKey)
+          ),
+          Effect.tap((saved) =>
+            Effect.sync(() => {
+              this.#adjustmentIdempotency.set(idempotencyKey, saved);
+            })
+          )
+        );
+      })
     );
-    this.#adjustmentIdempotency.set(idempotencyKey, saved);
 
-    return saved;
-  }
-
-  saveCart({
+  readonly saveCart = ({
     cart,
     scope,
   }: {
     readonly cart: CartRecord;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartRecord> {
-    this.#assignOwner(cart, scope);
+  }): EffectValue<CartRecord, CartExpectedError> =>
+    this.#assignOwner(cart, scope).pipe(
+      Effect.flatMap(() => this.#repository.saveCart(cart))
+    );
 
-    return this.#repository.saveCart(cart);
-  }
-
-  async saveLineItem({
+  readonly saveLineItem = ({
     idempotencyKey,
     item,
     scope,
@@ -204,39 +196,52 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     readonly idempotencyKey?: string;
     readonly item: CartLineItemRecord;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartLineItemRecord> {
-    if (idempotencyKey) {
-      const duplicate = await this.findLineItemByIdempotencyKey({
-        idempotencyKey,
-        scope,
-      });
+  }): EffectValue<CartLineItemRecord, CartExpectedError> => {
+    const duplicate = idempotencyKey
+      ? this.findLineItemByIdempotencyKey({ idempotencyKey, scope })
+      : Effect.succeed(null);
 
-      if (duplicate) {
-        return duplicate;
-      }
-    }
+    return duplicate.pipe(
+      Effect.flatMap((existing) => {
+        if (existing) {
+          return Effect.succeed(existing);
+        }
 
-    this.#assertCartAccess(item.cartId, scope);
-    const saved = await this.#repository.saveLineItem(item, idempotencyKey);
+        return this.#assertCartAccess(item.cartId, scope).pipe(
+          Effect.flatMap(() =>
+            this.#repository.saveLineItem(item, idempotencyKey)
+          ),
+          Effect.tap((saved) =>
+            Effect.sync(() => {
+              if (idempotencyKey) {
+                this.#lineItemIdempotency.set(idempotencyKey, saved);
+              }
+            })
+          )
+        );
+      })
+    );
+  };
 
-    if (idempotencyKey) {
-      this.#lineItemIdempotency.set(idempotencyKey, saved);
-    }
-
-    return saved;
+  #assertCartAccess(
+    cartId: CartId,
+    scope: CartOwnershipScope
+  ): EffectValue<void, CartCacheOwnershipError> {
+    return this.#canAccessCart(cartId, scope)
+      ? Effect.void
+      : Effect.fail(
+          new CartCacheOwnershipError({
+            message: `Cart "${cartId}" is not accessible for ${serializeCartOwnershipScope(
+              scope
+            )}.`,
+          })
+        );
   }
 
-  #assertCartAccess(cartId: CartId, scope: CartOwnershipScope): void {
-    if (!this.#canAccessCart(cartId, scope)) {
-      throw new CartCacheOwnershipError(
-        `Cart "${cartId}" is not accessible for ${serializeCartOwnershipScope(
-          scope
-        )}.`
-      );
-    }
-  }
-
-  #assignOwner(cart: CartRecord, scope: CartOwnershipScope): void {
+  #assignOwner(
+    cart: CartRecord,
+    scope: CartOwnershipScope
+  ): EffectValue<void, CartCacheOwnershipError> {
     const nextOwner = scopeFromCart(cart, scope);
     const currentOwner = this.#owners.get(cart.id);
 
@@ -245,14 +250,18 @@ export class InMemoryCartActiveCache implements CartActiveCache {
       !canAccessScope(currentOwner, nextOwner) &&
       !canClaimScope(currentOwner, nextOwner)
     ) {
-      throw new CartCacheOwnershipError(
-        `Cart "${cart.id}" is owned by ${serializeCartOwnershipScope(
-          currentOwner
-        )}.`
+      return Effect.fail(
+        new CartCacheOwnershipError({
+          message: `Cart "${cart.id}" is owned by ${serializeCartOwnershipScope(
+            currentOwner
+          )}.`,
+        })
       );
     }
 
-    this.#owners.set(cart.id, nextOwner);
+    return Effect.sync(() => {
+      this.#owners.set(cart.id, nextOwner);
+    });
   }
 
   #canAccessCart(cartId: CartId, scope: CartOwnershipScope): boolean {
@@ -261,23 +270,29 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     return !owner || canAccessScope(owner, scope);
   }
 
-  async #upsertAggregate(
+  #upsertAggregate(
     aggregate: CartAggregate,
     scope: CartOwnershipScope
-  ): Promise<void> {
-    await this.saveCart({ cart: aggregate.cart, scope });
-
-    for (const item of aggregate.lineItems) {
-      await this.saveLineItem({ item, scope });
-    }
-
-    for (const adjustment of aggregate.adjustments) {
-      await this.saveAdjustment({
-        adjustment,
-        idempotencyKey: `projection:${adjustment.id}`,
-        scope,
-      });
-    }
+  ): EffectValue<void, CartExpectedError> {
+    return this.#assignOwner(aggregate.cart, scope).pipe(
+      Effect.flatMap(() => this.#repository.saveCart(aggregate.cart)),
+      Effect.flatMap(() =>
+        Effect.all(
+          aggregate.lineItems.map((item) => this.#repository.saveLineItem(item))
+        )
+      ),
+      Effect.flatMap(() =>
+        Effect.all(
+          aggregate.adjustments.map((adjustment) =>
+            this.#repository.saveAdjustment(
+              adjustment,
+              `hydrate:${adjustment.id}`
+            )
+          )
+        )
+      ),
+      Effect.asVoid
+    );
   }
 }
 

@@ -1,4 +1,5 @@
 export {
+  createInMemoryCartRepositoryLayer,
   createInMemoryCartRepository,
   createResettableInMemoryCartRepository,
   defaultCartRepository,

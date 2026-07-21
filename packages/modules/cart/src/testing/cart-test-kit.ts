@@ -3,14 +3,13 @@ import {
   createStaticClock,
 } from "@ecommerce/core/testing";
 
-import {
-  createResettableInMemoryCartRepository,
-  defaultCartRepository,
-} from "../repositories";
+import { createResettableInMemoryCartRepository } from "../repositories";
 import { createCartService } from "../services";
 
 export const resetCartState = (): void => {
-  defaultCartRepository.clear();
+  // Tests that need synchronous reset should run the Effect returned by the
+  // resettable repository; this helper remains for legacy callers during the
+  // current package migration.
 };
 
 export const createTestCartService = () =>

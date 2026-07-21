@@ -22,7 +22,8 @@
   "dependencies": {
     "@ecommerce/cart": "workspace:*",
     "@ecommerce/core": "workspace:*",
-    "@ecommerce/notification-event": "workspace:*"
+    "@ecommerce/notification-event": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",

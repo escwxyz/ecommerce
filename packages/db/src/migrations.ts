@@ -1,7 +1,6 @@
 import type { Migration, MigrationProvider } from "kysely";
 
 import { authMigration } from "./schema/auth";
-import { cartMigration } from "./schema/cart";
 import { fulfillmentMigration } from "./schema/fulfillment";
 import { notificationEventMigration } from "./schema/notification-event";
 import { orderMigration } from "./schema/order";
@@ -37,6 +36,5 @@ export const commerceMigrations = defineCommerceMigrations({
   "009_payment": paymentMigration,
   "010_fulfillment": fulfillmentMigration,
   "011_notification_event": notificationEventMigration,
-  "012_cart": cartMigration,
   "013_order": orderMigration,
 });

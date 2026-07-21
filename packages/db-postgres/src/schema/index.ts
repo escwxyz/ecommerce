@@ -15,6 +15,26 @@ export {
   type CommerceOutboxRow,
 } from "./foundation";
 export {
+  CartAdjustmentPostgresInsertSchema,
+  CartAdjustmentPostgresRowSchema,
+  CartLineItemPostgresInsertSchema,
+  CartLineItemPostgresRowSchema,
+  CartPostgresInsertSchema,
+  CartPostgresRowSchema,
+  postgresCart,
+  postgresCartAdjustment,
+  postgresCartAdjustmentTableName,
+  postgresCartLineItem,
+  postgresCartLineItemTableName,
+  postgresCartTableName,
+  type CartAdjustmentPostgresInsert,
+  type CartAdjustmentPostgresRow,
+  type CartLineItemPostgresInsert,
+  type CartLineItemPostgresRow,
+  type CartPostgresInsert,
+  type CartPostgresRow,
+} from "../modules/cart/schema";
+export {
   CustomerAddressPostgresInsertSchema,
   CustomerAddressPostgresRowSchema,
   CustomerGroupPostgresInsertSchema,
