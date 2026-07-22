@@ -9,7 +9,9 @@ const importPattern =
 const forbiddenImport = (specifier: string): boolean =>
   specifier === "cloudflare:workers" ||
   specifier.startsWith("hono") ||
-  specifier.startsWith("@ecommerce/ui") ||
+  specifier.startsWith("@orpc/") ||
+  specifier.startsWith("zod") ||
+  specifier.startsWith("kysely") ||
   specifier.startsWith("@ecommerce/db-d1") ||
   specifier.startsWith("@ecommerce/env/server") ||
   specifier.startsWith("../../../apps/server") ||
@@ -41,7 +43,7 @@ const listSourceFiles = (directory: string): string[] => {
 };
 
 describe("payment module boundaries", () => {
-  it("does not import runtime-specific modules or concrete payment SDKs", () => {
+  it("does not import legacy API, schema, database, runtime-specific modules, or concrete payment SDKs", () => {
     const violations = listSourceFiles(sourceRoot).flatMap((filePath) => {
       const source = readFileSync(filePath, "utf8");
       const matched: string[] = [];

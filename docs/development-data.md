@@ -16,16 +16,16 @@ region records, sales-channel records, pricing records, inventory records,
 auth users, carts, orders, payments, fulfillments, or notification history.
 
 The store tracer slice, customer/product/region-sales-channel/pricing/inventory
-foundational slices, and cart/promotion/tax/fulfillment transactional slices
-have migrated off the legacy D1/Kysely path. Local checkout smoke tests still
+foundational slices, and cart/promotion/tax/fulfillment/payment transactional
+slices have migrated off the legacy D1/Kysely path. Local checkout smoke tests still
 need store defaults, customer payment-identity lookup, product variant
 validation, region constraints, sales-channel publishability, pricing
-calculation, inventory availability/reservation, tax, and fulfillment behavior
-while checkout remains on the legacy runtime. The server composition therefore
-provides temporary deterministic compatibility facades for that path. Those
-facades are owned by the checkout migration gap and must be deleted in task
-8.6, when checkout orchestration moves to Effect and consumes migrated module
-service Layers directly.
+calculation, inventory availability/reservation, tax, payment, and fulfillment
+behavior while checkout remains on the legacy runtime. The server composition
+therefore provides temporary deterministic compatibility facades for that path.
+Those facades are owned by the checkout migration gap and must be deleted in
+task 8.6, when checkout orchestration moves to Effect and consumes migrated
+module service Layers directly.
 
 Do not reintroduce D1 `store`, `customer`, `product`, `product_variant`,
 `region`, `region_country`, `sales_channel`, `sales_channel_product`,
@@ -34,8 +34,10 @@ Do not reintroduce D1 `store`, `customer`, `product`, `product_variant`,
 `inventory_item`, `inventory_stock_location`, `inventory_level`,
 `inventory_reservation`, `inventory_adjustment_event`, `fulfillment_provider`,
 `fulfillment_set`, `shipping_profile`, `service_zone`, `shipping_option`,
-`fulfillment`, `shipment`, or `return_shipment_link` tables or seed rows for
-migrated behavior.
+`fulfillment`, `shipment`, `return_shipment_link`, `payment_provider`,
+`payment_account_holder`, `payment_method`, `payment_collection`,
+`payment_session`, `payment`, `payment_capture`, or `payment_refund` tables or
+seed rows for migrated behavior.
 
 The command is idempotent. Rerunning it converges records under reserved
 development IDs without duplicating entities or relationship rows.
@@ -46,9 +48,9 @@ The server package includes a credential-free integration test that applies the
 same D1 migrations and seed artifact to isolated SQLite storage, drives cart and
 checkout operations through the Hono/oRPC transport, and verifies persisted
 order, payment, fulfillment, and event outcomes. Inventory
-availability/reservation, tax behavior, and fulfillment behavior are supplied
-by temporary server-owned checkout facades until task 8.6 removes the legacy
-checkout path:
+availability/reservation, tax behavior, payment behavior, and fulfillment
+behavior are supplied by temporary server-owned checkout facades until task 8.6
+removes the legacy checkout path:
 
 ```sh
 cd apps/server

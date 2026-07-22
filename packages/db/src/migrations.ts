@@ -3,7 +3,6 @@ import type { Migration, MigrationProvider } from "kysely";
 import { authMigration } from "./schema/auth";
 import { notificationEventMigration } from "./schema/notification-event";
 import { orderMigration } from "./schema/order";
-import { paymentMigration } from "./schema/payment";
 
 export type CommerceMigration = Migration;
 export type CommerceMigrationMap = Readonly<Record<string, CommerceMigration>>;
@@ -28,7 +27,6 @@ export const defineCommerceMigrations = <
 
 export const commerceMigrations = defineCommerceMigrations({
   "000_auth": authMigration,
-  "009_payment": paymentMigration,
   "011_notification_event": notificationEventMigration,
   "013_order": orderMigration,
 });

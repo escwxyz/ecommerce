@@ -3,7 +3,6 @@ import { Effect } from "effect";
 
 import { paymentAdminSurfaces } from "../admin";
 import { paymentPermissionList } from "../permissions";
-import { paymentApiFragment } from "../router";
 import {
   PAYMENT_AUTHORIZED_EVENT,
   PAYMENT_CAPTURED_EVENT,
@@ -22,7 +21,7 @@ export const paymentExtensionPoints = {
 export const paymentModule = defineCommerceModule({
   contributions: {
     adminSurfaces: paymentAdminSurfaces,
-    apiFragments: [paymentApiFragment],
+    apiFragments: [],
     eventTypes: [
       PAYMENT_COLLECTION_CREATED_EVENT,
       PAYMENT_SESSION_CREATED_EVENT,
@@ -49,16 +48,5 @@ export const paymentModule = defineCommerceModule({
   },
   key: "payment",
   providedServices: [{ key: "payment-service", service: PaymentService }],
-  schema: {
-    tables: [
-      "payment_provider",
-      "payment_account_holder",
-      "payment_method",
-      "payment_collection",
-      "payment_session",
-      "payment",
-      "payment_capture",
-      "payment_refund",
-    ],
-  },
+  schema: { tables: [] },
 });

@@ -366,6 +366,33 @@ export {
 export { resetPostgresFulfillmentTables } from "./modules/fulfillment/reset";
 
 export {
+  PostgresPaymentRepositoryLayer,
+  createPostgresPaymentRepository,
+  createPostgresPaymentRepositoryLayer,
+  withPostgresPaymentTransaction,
+} from "./modules/payment/repository";
+export { resetPostgresPaymentTables } from "./modules/payment/reset";
+
+export {
+  postgresPayment,
+  postgresPaymentAccountHolder,
+  postgresPaymentAccountHolderTableName,
+  postgresPaymentCapture,
+  postgresPaymentCaptureTableName,
+  postgresPaymentCollection,
+  postgresPaymentCollectionTableName,
+  postgresPaymentMethod,
+  postgresPaymentMethodTableName,
+  postgresPaymentProvider,
+  postgresPaymentProviderTableName,
+  postgresPaymentRefund,
+  postgresPaymentRefundTableName,
+  postgresPaymentSession,
+  postgresPaymentSessionTableName,
+  postgresPaymentTableName,
+} from "./modules/payment/schema";
+
+export {
   PostgresTaxRepositoryLayer,
   createPostgresTaxRepository,
   createPostgresTaxRepositoryLayer,

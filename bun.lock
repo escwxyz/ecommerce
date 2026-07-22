@@ -184,7 +184,6 @@
         "@ecommerce/cart": "workspace:*",
         "@ecommerce/notification-event": "workspace:*",
         "@ecommerce/order": "workspace:*",
-        "@ecommerce/payment": "workspace:*",
         "@ecommerce/promotion": "workspace:*",
         "@ecommerce/tax": "workspace:*",
         "kysely": "catalog:",
@@ -219,6 +218,7 @@
         "@ecommerce/customer": "workspace:*",
         "@ecommerce/fulfillment": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
+        "@ecommerce/payment": "workspace:*",
         "@ecommerce/pricing": "workspace:*",
         "@ecommerce/product": "workspace:*",
         "@ecommerce/promotion": "workspace:*",
@@ -418,20 +418,14 @@
       "name": "@ecommerce/payment",
       "version": "0.0.0",
       "dependencies": {
-        "@ecommerce/auth": "workspace:*",
         "@ecommerce/core": "workspace:*",
-        "@ecommerce/module-contracts": "workspace:*",
         "@ecommerce/payment-provider": "workspace:*",
-        "@orpc/server": "catalog:",
         "effect": "catalog:",
-        "kysely": "catalog:",
         "nanoid": "^5.1.6",
-        "zod": "catalog:",
       },
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",
-        "kysely-d1": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -522,6 +516,9 @@
     },
     "packages/payment-provider": {
       "name": "@ecommerce/payment-provider",
+      "dependencies": {
+        "effect": "catalog:",
+      },
       "devDependencies": {
         "@ecommerce/config": "workspace:*",
         "bun-types": "catalog:",

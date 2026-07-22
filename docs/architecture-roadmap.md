@@ -58,10 +58,10 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
-As of 2026-07-22, tasks 1.1 through 8.4 of
+As of 2026-07-22, tasks 1.1 through 8.5 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
 customer/product/region-sales-channel/pricing/inventory foundational slices,
-plus the cart, promotion, tax, and fulfillment transactional slices, have
+plus the cart, promotion, tax, fulfillment, and payment transactional slices, have
 migrated to the Effect backend architecture:
 
 - `@ecommerce/store` owns Effect Schema domain/API contracts, schema-backed
@@ -143,18 +143,31 @@ migrated to the Effect backend architecture:
   router, and related public exports have been removed.
 - `@ecommerce/api` exposes fulfillment admin operations through an Effect
   `HttpApi` group instead of the legacy fulfillment oRPC router.
+- `@ecommerce/payment-provider` is an Effect-native provider boundary with a
+  temporary Promise-provider bridge for external SDK adapters that have not yet
+  migrated.
+- `@ecommerce/payment` owns Effect Schema domain/API contracts, schema-backed
+  tagged errors, Effect-native services, provider registry integration,
+  repository contracts, in-memory test Layers, and PostgreSQL Drizzle
+  persistence for providers, account holders, methods, collections, sessions,
+  payments, captures, and refunds. Its legacy Zod contracts, Kysely/D1
+  repository, shared-D1 migration, oRPC router, and related public exports have
+  been removed.
+- `@ecommerce/api` exposes payment admin operations through an Effect `HttpApi`
+  group instead of the legacy payment oRPC router.
 - The legacy D1 seed no longer creates `store`, `customer`, `product`,
   `product_variant`, `region`, `region_country`, `sales_channel`, or
   `sales_channel_product`, pricing records, inventory records, cart tables, or
-  promotion/tax/fulfillment tables. Checkout smoke tests still run against the remaining
-  legacy D1 modules by
+  promotion/tax/fulfillment/payment tables. Checkout smoke tests still run
+  against the remaining legacy D1 modules by
   using temporary server-owned store defaults, customer payment-identity,
   deterministic product-variant validation, deterministic region/sales-channel
   validation, deterministic pricing calculation and inventory
   availability/reservation facades, and Promise facades over the Effect cart
-  promotion, tax, and fulfillment services until checkout itself migrates. The
-  tax facade translates the legacy checkout commerce-region ID into the seeded
-  tax-region ID rather than weakening migrated tax identifier schemas.
+  promotion, tax, fulfillment, and payment services until checkout itself
+  migrates. The tax facade translates the legacy checkout commerce-region ID
+  into the seeded tax-region ID rather than weakening migrated tax identifier
+  schemas.
 - The checkout compatibility facades are intentionally not new module adapters:
   they preserve only the development golden-path invariants formerly supplied
   by deleted D1 seed rows. Task 8.6 owns their removal when checkout
@@ -168,27 +181,28 @@ migrated to the Effect backend architecture:
 
 ## Current Gaps
 
-- Live PostgreSQL store/customer/product/region-sales-channel/pricing/inventory/cart/promotion/tax/fulfillment
+- Live PostgreSQL store/customer/product/region-sales-channel/pricing/inventory/cart/promotion/tax/fulfillment/payment
   contract verification is opt-in and still requires `POSTGRES_URL`.
   Credential-free
   suites validate the in-memory contract, package type shape, migrations as
   checked-in files, API contracts, SDK transports, and Worker composition.
-- Payment, checkout, order, and notification-event still have legacy
-  D1/Kysely/oRPC paths until their vertical-slice tasks run.
+- Checkout, order, and notification-event still have legacy D1/Kysely/oRPC
+  paths until their vertical-slice tasks run.
 - The server-owned checkout compatibility facades remain a known temporary
   bridge until task 8.6; newly migrated module code must not depend on them.
-  Cart, promotion, tax, and fulfillment have checkout-only Promise facades in
-  `apps/server` because checkout has not yet migrated to Effect.
+  Cart, promotion, tax, fulfillment, and payment have checkout-only Promise
+  facades in `apps/server` because checkout has not yet migrated to Effect.
 - The Hono Worker remains the deployed compatibility entrypoint while the
   Effect Worker foundation accumulates migrated module groups. Cart, promotion,
-  tax, and fulfillment are registered in the native Effect Worker with in-memory
-  Layers until the Cloudflare PostgreSQL/cache-backed runtime Layer is composed.
-- Tasks 8.1 through 8.4 did not make the cart, promotion, tax, or fulfillment
-  Effect Worker paths production-backed. The authoritative PostgreSQL
+  tax, fulfillment, and payment are registered in the native Effect Worker with
+  in-memory Layers until the Cloudflare PostgreSQL/cache-backed runtime Layer is
+  composed.
+- Tasks 8.1 through 8.5 did not make the cart, promotion, tax, fulfillment, or
+  payment Effect Worker paths production-backed. The authoritative PostgreSQL
   repositories and cart Durable Object cache port exist, but the deployed
   Cloudflare runtime still needs a request/runtime Layer that wires those
-  adapters together before cart, promotion, tax, or fulfillment traffic should
-  rely on that path.
+  adapters together before cart, promotion, tax, fulfillment, or payment traffic
+  should rely on that path.
 - The cart Durable Object cache is a hot aggregate and ownership/idempotency
   coordination primitive, not the durable source of truth. PostgreSQL remains
   authoritative for cart, line-item, and adjustment persistence.

@@ -135,14 +135,14 @@ describe("db d1 adapter", () => {
     await expect(tableExists(database.db, "tax_region")).resolves.toBe(false);
     await expect(tableExists(database.db, "tax_rate")).resolves.toBe(false);
     await expect(tableExists(database.db, "payment_collection")).resolves.toBe(
-      true
+      false
     );
     await expect(tableExists(database.db, "payment_session")).resolves.toBe(
-      true
+      false
     );
     await expect(
       indexExists(database.db, "payment_provider_intent_idx")
-    ).resolves.toBe(true);
+    ).resolves.toBe(false);
     await expect(tableExists(database.db, "fulfillment_set")).resolves.toBe(
       false
     );
@@ -214,48 +214,10 @@ describe("db d1 adapter", () => {
     expect(readdirSync(migrationsDir)).not.toContain("0011_fulfillment.sql");
   });
 
-  it("ships SQL migrations for payment tables", () => {
-    const sqlite = new Database(":memory:");
+  it("does not ship a legacy D1 payment migration after the Effect slice migration", () => {
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
-    sqlite.exec(readFileSync(join(migrationsDir, "0010_payment.sql"), "utf8"));
-
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'table'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "payment_provider",
-        "payment_account_holder",
-        "payment_method",
-        "payment_collection",
-        "payment_session",
-        "payment",
-        "payment_capture",
-        "payment_refund",
-      ])
-    );
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'index'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "payment_provider_key_idx",
-        "payment_account_holder_provider_idx",
-        "payment_method_account_holder_idx",
-        "payment_collection_status_idx",
-        "payment_session_collection_idx",
-        "payment_provider_intent_idx",
-        "payment_capture_idempotency_idx",
-        "payment_refund_idempotency_idx",
-      ])
-    );
-
-    sqlite.close();
+    expect(readdirSync(migrationsDir)).not.toContain("0010_payment.sql");
   });
 
   it("ships SQL migrations for notification-event tables", () => {
@@ -352,14 +314,6 @@ describe("db d1 adapter", () => {
         .map((row) => (row as { name: string }).name)
     ).toEqual(
       expect.arrayContaining([
-        "payment_provider",
-        "payment_account_holder",
-        "payment_method",
-        "payment_collection",
-        "payment_session",
-        "payment",
-        "payment_capture",
-        "payment_refund",
         "event_outbox",
         "event_dead_letter",
         "notification_template",

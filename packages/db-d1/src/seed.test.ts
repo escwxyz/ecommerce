@@ -145,7 +145,7 @@ describe("deterministic development seed", () => {
     }).toEqual(seededCounts);
 
     expect(countRows(database, "order_record")).toBe(0);
-    expect(countRows(database, "payment_collection")).toBe(0);
+    expect(() => countRows(database, "payment_collection")).toThrow();
     expect(countRows(database, "event_outbox")).toBe(0);
     expect(countRows(database, "user")).toBe(0);
 

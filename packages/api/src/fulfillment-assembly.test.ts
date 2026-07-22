@@ -23,7 +23,6 @@ describe("fulfillment API and admin assembly", () => {
     ).toEqual([
       "builtin:core",
       "module:notification-event",
-      "module:payment",
       "module:order",
       "module:checkout",
     ]);

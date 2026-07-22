@@ -123,6 +123,9 @@ describe("PostgreSQL migration commands", () => {
       expect.objectContaining({
         name: "20260728000000_fulfillment_module",
       }),
+      expect.objectContaining({
+        name: "20260729000000_payment_module",
+      }),
     ]);
   });
 

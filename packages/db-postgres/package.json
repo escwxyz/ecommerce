@@ -30,6 +30,7 @@
     "@ecommerce/customer": "workspace:*",
     "@ecommerce/fulfillment": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
+    "@ecommerce/payment": "workspace:*",
     "@ecommerce/pricing": "workspace:*",
     "@ecommerce/product": "workspace:*",
     "@ecommerce/promotion": "workspace:*",

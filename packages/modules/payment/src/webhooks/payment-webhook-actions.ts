@@ -1,38 +1,9 @@
 import type { PaymentProviderEvent } from "@ecommerce/payment-provider";
 
-export type PaymentWebhookAction =
-  | {
-      readonly idempotencyKey?: string;
-      readonly paymentIntentId: string;
-      readonly providerKey: string;
-      readonly type:
-        | "payment.authorized"
-        | "payment.captured"
-        | "payment.failed";
-    }
-  | {
-      readonly idempotencyKey?: string;
-      readonly paymentIntentId: string;
-      readonly providerKey: string;
-      readonly refundId: string;
-      readonly type: "refund.succeeded";
-    }
-  | {
-      readonly checkoutSessionId: string;
-      readonly idempotencyKey?: string;
-      readonly paymentIntentId?: string;
-      readonly providerKey: string;
-      readonly type: "checkout.completed";
-    }
-  | {
-      readonly idempotencyKey?: string;
-      readonly providerKey: string;
-      readonly type: "ignored";
-    };
-
-export interface PaymentWebhookActionResult {
-  readonly actions: readonly PaymentWebhookAction[];
-}
+import type {
+  PaymentWebhookAction,
+  PaymentWebhookActionResult,
+} from "../domain";
 
 export const mapProviderEventToPaymentAction = (
   event: PaymentProviderEvent

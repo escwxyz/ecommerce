@@ -2,10 +2,9 @@ import { definePaymentProvider } from "@ecommerce/payment-provider";
 import type {
   PaymentProvider,
   PaymentProviderEvent,
-  PaymentProviderIntent,
-  PaymentProviderRefund,
   PaymentProviderWebhookResult,
 } from "@ecommerce/payment-provider";
+import { Effect } from "effect";
 
 export interface FakePaymentProviderOptions {
   readonly id?: string;
@@ -42,7 +41,7 @@ export const createFakePaymentProvider = ({
       "webhooks",
     ],
     attachPaymentMethod: (input) =>
-      Promise.resolve({
+      Effect.succeed({
         customerId: input.customerId,
         displayName: "Fake card",
         id: nextId("method"),
@@ -50,15 +49,15 @@ export const createFakePaymentProvider = ({
         reusable: true,
         type: "card",
       }),
-    capturePaymentIntent: (input): Promise<PaymentProviderIntent> =>
-      Promise.resolve({
+    capturePaymentIntent: (input) =>
+      Effect.succeed({
         amount: input.amount ?? { amount: 0, currencyCode: "USD" },
         id: input.paymentIntentId,
         providerId: id,
         status: "captured",
       }),
     createCheckoutSession: (input) =>
-      Promise.resolve({
+      Effect.succeed({
         amount: input.amount,
         customerId: input.customerId,
         id: nextId("checkout"),
@@ -70,7 +69,7 @@ export const createFakePaymentProvider = ({
         url: `https://payments.example/${id}/checkout`,
       }),
     createCustomer: (input) =>
-      Promise.resolve({
+      Effect.succeed({
         email: input.email,
         id: nextId("customer"),
         metadata: input.metadata,
@@ -78,7 +77,7 @@ export const createFakePaymentProvider = ({
         providerId: id,
       }),
     createPaymentIntent: (input) =>
-      Promise.resolve({
+      Effect.succeed({
         amount: input.amount,
         customerId: input.customerId,
         id: nextId("intent"),
@@ -87,8 +86,8 @@ export const createFakePaymentProvider = ({
         providerId: id,
         status: input.captureMethod === "automatic" ? "captured" : "authorized",
       }),
-    parseWebhook: (): Promise<PaymentProviderWebhookResult> =>
-      Promise.resolve({
+    parseWebhook: (): Effect.Effect<PaymentProviderWebhookResult> =>
+      Effect.succeed({
         events: queuedWebhookEvents.splice(0),
       }),
     queueWebhookEvent: (event) => {
@@ -97,8 +96,8 @@ export const createFakePaymentProvider = ({
         occurredAt: event.occurredAt ?? now(),
       });
     },
-    refundPayment: (input): Promise<PaymentProviderRefund> =>
-      Promise.resolve({
+    refundPayment: (input) =>
+      Effect.succeed({
         amount: input.amount ?? { amount: 0, currencyCode: "USD" },
         id: nextId("refund"),
         paymentIntentId: input.paymentIntentId,

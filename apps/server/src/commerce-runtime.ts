@@ -46,12 +46,12 @@ import { createD1OrderRepository, createOrderService } from "@ecommerce/order";
 import type { OrderD1Database } from "@ecommerce/order";
 import {
   createFakePaymentProvider,
+  createInMemoryPaymentRepository,
+  createPaymentPromiseServiceFromEffectService,
   createPaymentProviderRegistry,
   createPaymentService,
 } from "@ecommerce/payment";
 import type { PaymentProviderRegistry } from "@ecommerce/payment";
-import { createD1PaymentRepository } from "@ecommerce/payment/adapters/d1";
-import type { PaymentD1Database } from "@ecommerce/payment/adapters/d1";
 import { createProductIdEffect } from "@ecommerce/product";
 import {
   CalculatePromotionAdjustmentsInputSchema,
@@ -340,9 +340,9 @@ export const createServerCommerceRuntime = ({
       db: narrowDatabase<NotificationEventD1Database>(db),
     }),
     order: createD1OrderRepository({ db: narrowDatabase<OrderD1Database>(db) }),
-    payment: createD1PaymentRepository({
-      db: narrowDatabase<PaymentD1Database>(db),
-    }),
+    // Temporary checkout-only bridge until task 8.6 moves checkout onto
+    // Effect module Layers directly. New payment traffic uses Effect HTTP.
+    payment: createInMemoryPaymentRepository(),
     // Temporary checkout-only bridge until task 8.6 moves checkout onto
     // Effect module Layers directly. New promotion traffic uses Effect HTTP.
     promotion: createInMemoryPromotionRepository(),
@@ -658,7 +658,9 @@ export const createServerCommerceRuntime = ({
           inventory: services.inventory,
           notificationEvent: services.notificationEvent,
           order: services.order,
-          payment: services.payment,
+          payment: createPaymentPromiseServiceFromEffectService(
+            services.payment
+          ),
           pricing: services.pricing,
           product: services.product,
           promotion: createCheckoutPromotionPromiseFacade(services.promotion),
@@ -705,12 +707,6 @@ export const createServerCommerceRuntime = ({
       order: {
         ...sharedServiceOptions,
         repository: repositories.order,
-      },
-      payment: {
-        clock,
-        idGenerator,
-        providerRegistry: paymentProviderRegistry,
-        repository: repositories.payment,
       },
     },
   });

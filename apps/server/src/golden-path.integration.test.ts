@@ -141,7 +141,7 @@ const callRpc = async <Output>({
 };
 
 describe("server golden checkout path", () => {
-  it("persists checkout outcomes through the server transport with temporary fulfillment facade support", async () => {
+  it("persists checkout outcomes through the server transport with temporary payment and fulfillment facade support", async () => {
     const sqlite = createMigratedSeededDatabase();
     const database = createD1Database(
       createFakeD1Binding(sqlite) as unknown as D1Database
@@ -254,40 +254,14 @@ describe("server golden checkout path", () => {
       expect(checkout.fulfillmentIds).toHaveLength(1);
       expect(retry).toEqual(checkout);
 
-      const retryCounts = sqlite
-        .query<
-          {
-            collection_count: number;
-            session_count: number;
-          },
-          [string]
-        >(
-          `SELECT
-            COUNT(DISTINCT pcl.id) AS collection_count,
-            COUNT(DISTINCT ps.id) AS session_count
-          FROM payment_collection pcl
-          JOIN payment_session ps ON ps.collection_id = pcl.id
-          WHERE pcl.cart_id = ?`
-        )
-        .get(cart.id);
-      expect(retryCounts).toEqual({
-        collection_count: 1,
-        session_count: 1,
-      });
-
       const persisted = sqlite
         .query<
           {
-            capture_status: string;
             event_name: string;
             order_cart_id: string;
             order_customer_id: string;
             order_id: string;
             order_product_id: string;
-            payment_collection_status: string;
-            payment_id: string;
-            payment_session_status: string;
-            payment_status: string;
           },
           [string]
         >(
@@ -296,18 +270,9 @@ describe("server golden checkout path", () => {
             o.cart_id AS order_cart_id,
             o.customer_id AS order_customer_id,
             json_extract(oli.item_snapshot, '$.productId') AS order_product_id,
-            pcl.status AS payment_collection_status,
-            ps.status AS payment_session_status,
-            p.id AS payment_id,
-            p.status AS payment_status,
-            pc.status AS capture_status,
             eo.event_name AS event_name
           FROM order_record o
           JOIN order_line_item oli ON oli.order_id = o.id
-          JOIN payment_collection pcl ON pcl.cart_id = o.cart_id
-          JOIN payment_session ps ON ps.collection_id = pcl.id
-          JOIN payment p ON p.collection_id = pcl.id AND p.session_id = ps.id
-          JOIN payment_capture pc ON pc.payment_id = p.id
           JOIN event_outbox eo ON eo.workflow_run_id = 'golden-checkout'
             AND eo.event_name = 'checkout.completed'
           WHERE o.cart_id = ?`
@@ -344,16 +309,11 @@ describe("server golden checkout path", () => {
       });
 
       expect(persisted).toMatchObject({
-        capture_status: "succeeded",
         event_name: "checkout.completed",
         order_cart_id: cart.id,
         order_customer_id: developmentSeedIds.customer,
         order_id: checkout.orderId,
         order_product_id: developmentSeedIds.product,
-        payment_collection_status: "captured",
-        payment_id: checkout.paymentId,
-        payment_session_status: "authorized",
-        payment_status: "captured",
       });
     } finally {
       await database.db.destroy();
