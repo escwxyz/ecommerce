@@ -1,11 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
 import { createEventCollector } from "@ecommerce/core/testing";
-import { call } from "@orpc/server";
+import { Effect } from "effect";
 
 import { checkoutAdminMetadata } from "../admin";
 import { checkoutModule } from "../module";
-import { createCheckoutRouteFragment } from "../router";
 import {
   CHECKOUT_COMPLETED_EVENT,
   CHECKOUT_FAILED_EVENT,
@@ -441,9 +440,7 @@ describe("checkout workflow orchestration", () => {
     expect(checkoutModule.contributions?.workflows?.[0]?.key).toBe(
       "checkout.complete"
     );
-    expect(checkoutModule.contributions?.apiFragments?.[0]?.key).toBe(
-      "module:checkout"
-    );
+    expect(checkoutModule.contributions?.apiFragments).toEqual([]);
     expect(checkoutAdminMetadata.surfaces[0]?.operations?.complete?.key).toBe(
       "checkoutComplete"
     );
@@ -457,7 +454,9 @@ describe("checkout workflow orchestration", () => {
       eventPublisher: eventCollector.publisher,
     });
 
-    const result = await service.completeCheckout(checkoutInput);
+    const result = await Effect.runPromise(
+      service.completeCheckout(checkoutInput)
+    );
 
     expect(result.status).toBe("completed");
     expect(result.orderId).toBe("ord_1");
@@ -575,7 +574,7 @@ describe("checkout workflow orchestration", () => {
       },
     });
 
-    await service.completeCheckout(checkoutInput);
+    await Effect.runPromise(service.completeCheckout(checkoutInput));
 
     expect(orderInput).toMatchObject({
       lineItems: [
@@ -595,8 +594,10 @@ describe("checkout workflow orchestration", () => {
     const calls: string[] = [];
     const service = createCheckoutService(createDependencyStubs(calls));
 
-    await service.completeCheckout(checkoutInput);
-    const duplicate = await service.completeCheckout(checkoutInput);
+    await Effect.runPromise(service.completeCheckout(checkoutInput));
+    const duplicate = await Effect.runPromise(
+      service.completeCheckout(checkoutInput)
+    );
 
     expect(duplicate.status).toBe("completed");
     expect(
@@ -644,7 +645,7 @@ describe("checkout workflow orchestration", () => {
       },
     });
 
-    await service.completeCheckout(checkoutInput);
+    await Effect.runPromise(service.completeCheckout(checkoutInput));
 
     expect(reserveInputs[0]?.stockLocationId).toBe("sloc_1");
   });
@@ -664,9 +665,12 @@ describe("checkout workflow orchestration", () => {
       },
     });
 
-    await expect(service.completeCheckout(checkoutInput)).rejects.toThrow(
-      "order unavailable"
-    );
+    await expect(
+      Effect.runPromise(service.completeCheckout(checkoutInput))
+    ).rejects.toMatchObject({
+      _tag: "CheckoutCompletionFailure",
+      message: "order unavailable",
+    });
 
     expect(calls).toContain("inventory.adjustInventory");
     expect(eventCollector.events.map((event) => event.name)).toEqual([
@@ -687,41 +691,14 @@ describe("checkout workflow orchestration", () => {
       },
     });
 
-    await expect(service.completeCheckout(checkoutInput)).rejects.toThrow(
-      "order unavailable"
-    );
+    await expect(
+      Effect.runPromise(service.completeCheckout(checkoutInput))
+    ).rejects.toMatchObject({
+      _tag: "CheckoutCompletionFailure",
+      message: "order unavailable",
+    });
 
     expect(calls).toContain("payment.authorizePaymentSession");
     expect(calls).not.toContain("payment.capturePayment");
-  });
-
-  it("builds checkout routes from direct service options", async () => {
-    const calls: string[] = [];
-    const fragment = createCheckoutRouteFragment(createDependencyStubs(calls));
-
-    if (!("checkoutComplete" in fragment.router)) {
-      throw new Error("Expected checkoutComplete route to be registered.");
-    }
-
-    const result = await call(fragment.router.checkoutComplete, checkoutInput, {
-      context: {
-        auth: {},
-        authorization: {
-          evaluatePermission: () => ({ allowed: true as const }),
-        },
-        session: {
-          user: {
-            permissions: ["checkout:execute"],
-          },
-        },
-      },
-    });
-
-    expect(result.orderId).toBe("ord_1");
-    expect(calls).toContain("order.createOrderFromCheckout");
-  });
-
-  it("does not register checkoutComplete without service options", () => {
-    expect(createCheckoutRouteFragment().router).toEqual({});
   });
 });

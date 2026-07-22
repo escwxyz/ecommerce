@@ -23,14 +23,14 @@ describe("server commerce runtime", () => {
     expect(routeKeys).not.toContain("checkoutComplete");
   });
 
-  it("registers checkout when explicit development providers are supplied", () => {
+  it("configures checkout service without restoring the legacy oRPC route", () => {
     const runtime = createServerCommerceRuntime({
       ...createDevelopmentCommerceProviderRegistries(),
       db: unusedDatabase,
     });
 
     expect(runtime.checkoutConfigured).toBe(true);
-    expect(Object.keys(runtime.apiAssembly.router)).toContain(
+    expect(Object.keys(runtime.apiAssembly.router)).not.toContain(
       "checkoutComplete"
     );
   });

@@ -4,6 +4,11 @@ import { createStoreAdminAuthSession } from "@ecommerce/auth/testing";
 
 import { createAdminMetadataModel } from "./admin-metadata";
 import {
+  adminHttpApi,
+  checkoutEffectHttpApiContribution,
+  createEffectHttpApiAssembly,
+} from "./index";
+import {
   authorizationEvaluator,
   builtinPermissionStatement,
 } from "./permissions";
@@ -17,26 +22,28 @@ describe("checkout API and admin assembly", () => {
     ]);
   });
 
-  it("does not register checkout route handlers without service options", () => {
+  it("keeps migrated checkout operations out of legacy oRPC composition", () => {
     const checkoutFragment = createBuiltinRouteFragments().find(
       (fragment) => fragment.key === "module:checkout"
     );
 
-    expect(checkoutFragment?.router).toEqual({});
+    expect(checkoutFragment).toBeUndefined();
   });
 
-  it("includes checkout route handlers when service options are configured", () => {
-    const checkoutFragment = createBuiltinRouteFragments({
-      checkout: {
-        createServiceOptionsForContext: () => {
-          throw new Error("Factory should not be called during assembly.");
-        },
-      },
-    }).find((fragment) => fragment.key === "module:checkout");
+  it("includes checkout Effect HTTP operations in canonical admin composition", () => {
+    const assembly = createEffectHttpApiAssembly({
+      contributions: checkoutEffectHttpApiContribution.groups,
+      root: adminHttpApi,
+      surface: "admin",
+    });
 
-    expect(Object.keys(checkoutFragment?.router ?? {})).toContain(
-      "checkoutComplete"
-    );
+    expect(assembly.contributions.map((group) => group.key)).toEqual([
+      "module:checkout.admin",
+    ]);
+    expect(assembly.routes.map((route) => route.routeKey)).toEqual([
+      "POST /admin/checkout/complete",
+    ]);
+    expect(checkoutEffectHttpApiContribution.moduleName).toBe("checkout");
   });
 
   it("exposes checkout admin metadata through shared module contracts", () => {

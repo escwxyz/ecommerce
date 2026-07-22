@@ -301,7 +301,6 @@
         "@ecommerce/customer": "workspace:*",
         "@ecommerce/fulfillment": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
-        "@ecommerce/module-contracts": "workspace:*",
         "@ecommerce/notification-event": "workspace:*",
         "@ecommerce/order": "workspace:*",
         "@ecommerce/payment": "workspace:*",
@@ -311,9 +310,7 @@
         "@ecommerce/region-sales-channel": "workspace:*",
         "@ecommerce/store": "workspace:*",
         "@ecommerce/tax": "workspace:*",
-        "@orpc/server": "catalog:",
         "effect": "catalog:",
-        "zod": "catalog:",
       },
       "devDependencies": {
         "@ecommerce/auth": "workspace:*",

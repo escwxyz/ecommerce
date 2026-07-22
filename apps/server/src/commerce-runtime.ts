@@ -5,10 +5,8 @@ import {
   createCartService,
   createInMemoryCartRepository,
 } from "@ecommerce/cart";
-import type {
-  CheckoutModuleContext,
-  CreateCheckoutServiceOptions,
-} from "@ecommerce/checkout";
+import type { CreateCheckoutServiceOptions } from "@ecommerce/checkout";
+import { createCheckoutService } from "@ecommerce/checkout";
 import type {
   ClockServiceShape,
   EventPublisherServiceShape,
@@ -82,9 +80,6 @@ interface ServerCommerceDatabase {
 
 export interface ServerCommerceRuntimeOptions {
   readonly cartCoordinator?: StatefulCoordinator;
-  readonly createCartRepositoryForContext?: (
-    context: CheckoutModuleContext
-  ) => CartRepository;
   readonly cartRepository?: CartRepository;
   readonly clock?: ClockServiceShape;
   readonly db: ServerCommerceDatabase;
@@ -314,7 +309,6 @@ export const createServerCommerceRuntime = ({
   cartCoordinator,
   cartRepository: providedCartRepository,
   clock,
-  createCartRepositoryForContext,
   db,
   fulfillmentProviderRegistry,
   idGenerator,
@@ -673,30 +667,14 @@ export const createServerCommerceRuntime = ({
   const checkout = checkoutServices
     ? {
         ...checkoutServices,
-        ...(createCartRepositoryForContext
-          ? {
-              createServiceOptionsForContext: (
-                context: CheckoutModuleContext
-              ) => ({
-                ...checkoutServices,
-                cart: createCheckoutCartPromiseFacade(
-                  createCartService({
-                    clock,
-                    coordinator: cartCoordinator,
-                    eventPublisher,
-                    idGenerator,
-                    repository: createCartRepositoryForContext(context),
-                  })
-                ),
-              }),
-            }
-          : {}),
       }
+    : undefined;
+  const checkoutService = checkout
+    ? createCheckoutService(checkout)
     : undefined;
 
   const apiAssembly = createApiRootAssembly({
     routes: {
-      ...(checkout ? { checkout } : {}),
       notificationEvent: {
         clock,
         idGenerator,
@@ -715,6 +693,9 @@ export const createServerCommerceRuntime = ({
     apiAssembly,
     checkoutConfigured: checkout !== undefined,
     repositories,
-    services,
+    services: {
+      ...services,
+      ...(checkoutService ? { checkout: checkoutService } : {}),
+    },
   };
 };

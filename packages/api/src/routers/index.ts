@@ -1,5 +1,3 @@
-import type { CreateCheckoutRouteFragmentOptions } from "@ecommerce/checkout/router";
-import { createCheckoutRouteFragment } from "@ecommerce/checkout/router";
 import type { AdminMetadataModel } from "@ecommerce/core/admin";
 import type { CreateNotificationEventRouteFragmentOptions } from "@ecommerce/notification-event/router";
 import { createNotificationEventRouteFragment } from "@ecommerce/notification-event/router";
@@ -117,13 +115,11 @@ export const coreRouteFragment = createApiRouteFragment({
 });
 
 export interface CreateBuiltinRouteFragmentsOptions {
-  readonly checkout?: CreateCheckoutRouteFragmentOptions;
   readonly notificationEvent?: CreateNotificationEventRouteFragmentOptions;
   readonly order?: CreateOrderRouteFragmentOptions;
 }
 
 export const createBuiltinRouteFragments = ({
-  checkout,
   notificationEvent,
   order,
 }: CreateBuiltinRouteFragmentsOptions = {}) =>
@@ -135,10 +131,6 @@ export const createBuiltinRouteFragments = ({
     }),
     createApiRouteFragment({
       ...createOrderRouteFragment(order),
-      owner: "module",
-    }),
-    createApiRouteFragment({
-      ...createCheckoutRouteFragment(checkout),
       owner: "module",
     }),
   ] as const satisfies readonly ApiRouteFragment[];

@@ -1,15 +1,9 @@
 import { createContext } from "@ecommerce/api/context";
 import { createAuth } from "@ecommerce/auth";
-import {
-  createCustomerCartScope,
-  createInMemoryCartRepository,
-  createSystemCartScope,
-  createVisitorCartScope,
-} from "@ecommerce/cart";
+import { createInMemoryCartRepository } from "@ecommerce/cart";
 import { createD1Database } from "@ecommerce/db-d1";
 import { env } from "@ecommerce/env/server";
 import {
-  createCloudflareCartCacheRepository,
   createCloudflareQueuedNotificationProvider,
   createNotificationEventQueuePublisher,
   createNotificationEventRealtimePublisher,
@@ -80,44 +74,14 @@ const queuedNotificationProviders = notificationEventQueue
     )
   : [];
 
-const createCartScope = (context: {
-  readonly session?: { readonly user?: unknown | null } | null;
-  readonly visitorId?: string;
-}) => {
-  const user = context.session?.user;
-
-  if (typeof user === "object" && user && "id" in user) {
-    return createCustomerCartScope(String(user.id));
-  }
-
-  if (typeof user === "object" && user && "email" in user) {
-    return createCustomerCartScope(String(user.email));
-  }
-
-  if (context.session) {
-    return createSystemCartScope();
-  }
-
-  if (!context.visitorId) {
-    throw new Error("Guest cart requests require a visitor identity.");
-  }
-
-  return createVisitorCartScope(context.visitorId);
-};
-
 const developmentProviderRegistries =
   serverEnv.COMMERCE_PROVIDER_MODE === "development"
     ? createDevelopmentCommerceProviderRegistries()
     : {};
 const runtime = createServerCommerceRuntime({
   ...developmentProviderRegistries,
+  cartRepository: cartProjectionRepository,
   clock,
-  createCartRepositoryForContext: (context) =>
-    createCloudflareCartCacheRepository({
-      namespace: serverEnv.CART_CACHE,
-      projectionRepository: cartProjectionRepository,
-      scope: createCartScope(context),
-    }),
   db: database.db,
   notificationProviders: queuedNotificationProviders,
   notificationRuntime: notificationEventQueuePublisher,

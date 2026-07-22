@@ -6,6 +6,9 @@ const sourceRoot = join(import.meta.dir, "..");
 const forbiddenImports = [
   "cloudflare:workers",
   "hono",
+  "@orpc/",
+  "zod",
+  "kysely",
   "kysely-d1",
   "@ecommerce/db-d1",
   "@ecommerce/platform-cloudflare",

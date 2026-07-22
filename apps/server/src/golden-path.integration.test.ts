@@ -3,7 +3,6 @@ import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { authorizationEvaluator } from "@ecommerce/api";
 import type { AuthService } from "@ecommerce/auth";
 import { createStoreAdminAuthSession } from "@ecommerce/auth/testing";
 import { createD1Database } from "@ecommerce/db-d1";
@@ -13,7 +12,6 @@ import {
 } from "@ecommerce/db-d1/seed";
 import { Effect } from "effect";
 
-import { createServerApp } from "./app";
 import {
   createDevelopmentCommerceProviderRegistries,
   createServerCommerceRuntime,
@@ -115,33 +113,8 @@ const createDeterministicIdGenerator = () => {
   };
 };
 
-const callRpc = async <Output>({
-  app,
-  input,
-  operation,
-}: {
-  readonly app: ReturnType<typeof createServerApp>;
-  readonly input: unknown;
-  readonly operation: string;
-}): Promise<Output> => {
-  const response = await app.request(`/rpc/${operation}`, {
-    body: JSON.stringify({ json: input }),
-    headers: { "Content-Type": "application/json" },
-    method: "POST",
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `RPC ${operation} failed with ${response.status}: ${await response.text()}`
-    );
-  }
-
-  const payload = (await response.json()) as { readonly json: Output };
-  return payload.json;
-};
-
 describe("server golden checkout path", () => {
-  it("persists checkout outcomes through the server transport with temporary payment and fulfillment facade support", async () => {
+  it("persists checkout outcomes through the Effect checkout boundary with temporary downstream facade support", async () => {
     const sqlite = createMigratedSeededDatabase();
     const database = createD1Database(
       createFakeD1Binding(sqlite) as unknown as D1Database
@@ -152,16 +125,14 @@ describe("server golden checkout path", () => {
       db: database.db,
       idGenerator: createDeterministicIdGenerator(),
     });
-    const app = createServerApp({
-      apiAssembly: runtime.apiAssembly,
-      auth,
-      corsOrigin: "http://localhost:3001",
-      createContext: async ({ auth: requestAuth }) => ({
-        auth: requestAuth,
-        authorization: authorizationEvaluator,
-        session: adminSession,
-      }),
-    });
+    expect(
+      auth.handler(new Request("https://commerce.example/auth"))
+    ).toBeInstanceOf(Response);
+    expect(adminSession.user.permissions).toContain("checkout:execute");
+    const checkoutService = runtime.services.checkout;
+    if (!checkoutService) {
+      throw new Error("Expected checkout service to be configured.");
+    }
     try {
       const cart = await Effect.runPromise(
         runtime.services.cart.createCart({
@@ -208,17 +179,8 @@ describe("server golden checkout path", () => {
         })
       );
 
-      const checkout = await callRpc<{
-        readonly cartId: string;
-        readonly fulfillmentIds: readonly string[];
-        readonly orderId: string;
-        readonly paymentId: string;
-        readonly status: string;
-        readonly workflowRunId: string;
-      }>({
-        app,
-        operation: "checkoutComplete",
-        input: {
+      const checkout = await Effect.runPromise(
+        checkoutService.completeCheckout({
           cartId: cart.id,
           correlationId: "golden-checkout",
           idempotencyKey: "golden-checkout",
@@ -227,12 +189,10 @@ describe("server golden checkout path", () => {
             providerKey: "manual",
           },
           shippingOptionId: developmentSeedIds.fulfillmentOption,
-        },
-      });
-      const retry = await callRpc<typeof checkout>({
-        app,
-        operation: "checkoutComplete",
-        input: {
+        })
+      );
+      const retry = await Effect.runPromise(
+        checkoutService.completeCheckout({
           cartId: cart.id,
           correlationId: "golden-checkout-retry",
           idempotencyKey: "golden-checkout",
@@ -241,8 +201,8 @@ describe("server golden checkout path", () => {
             providerKey: "manual",
           },
           shippingOptionId: developmentSeedIds.fulfillmentOption,
-        },
-      });
+        })
+      );
 
       expect(checkout).toMatchObject({
         cartId: cart.id,

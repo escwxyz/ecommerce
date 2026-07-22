@@ -10,12 +10,7 @@ describe("tax API and admin assembly", () => {
   it("keeps migrated tax operations out of legacy oRPC composition", () => {
     expect(
       createBuiltinRouteFragments().map((fragment) => fragment.key)
-    ).toEqual([
-      "builtin:core",
-      "module:notification-event",
-      "module:order",
-      "module:checkout",
-    ]);
+    ).toEqual(["builtin:core", "module:notification-event", "module:order"]);
   });
 
   it("includes tax Effect HTTP operations in canonical admin composition", () => {

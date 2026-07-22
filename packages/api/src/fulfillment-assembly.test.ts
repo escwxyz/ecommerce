@@ -20,12 +20,7 @@ describe("fulfillment API and admin assembly", () => {
   it("keeps migrated fulfillment operations out of legacy oRPC composition", () => {
     expect(
       createBuiltinRouteFragments().map((fragment) => fragment.key)
-    ).toEqual([
-      "builtin:core",
-      "module:notification-event",
-      "module:order",
-      "module:checkout",
-    ]);
+    ).toEqual(["builtin:core", "module:notification-event", "module:order"]);
   });
 
   it("includes fulfillment Effect HTTP operations in canonical admin composition", () => {

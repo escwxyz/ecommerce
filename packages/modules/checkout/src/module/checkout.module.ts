@@ -3,7 +3,6 @@ import { Effect } from "effect";
 
 import { checkoutAdminSurfaces } from "../admin";
 import { checkoutPermissionList } from "../permissions";
-import { checkoutApiFragment } from "../router";
 import {
   CHECKOUT_COMPLETED_EVENT,
   CHECKOUT_FAILED_EVENT,
@@ -65,7 +64,7 @@ export const checkoutWorkflow = {
 export const checkoutModule = defineCommerceModule({
   contributions: {
     adminSurfaces: checkoutAdminSurfaces,
-    apiFragments: [checkoutApiFragment],
+    apiFragments: [],
     eventTypes: [CHECKOUT_COMPLETED_EVENT, CHECKOUT_FAILED_EVENT],
     permissions: checkoutPermissionList,
     workflows: [checkoutWorkflow],

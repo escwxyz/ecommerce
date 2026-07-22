@@ -89,9 +89,10 @@ promotion, tax, fulfillment, and payment follow this split:
 - Payment has no Durable Object or actor-local state owner yet; PostgreSQL is
   authoritative for the migrated payment slice. Provider calls remain behind the
   Effect-native payment-provider boundary rather than actor-local state.
-- The server still uses temporary checkout-only Promise facades over the Effect
-  cart, promotion, tax, fulfillment, and payment services until checkout
-  migrates in task 8.6.
+- Checkout now has an Effect-facing service and admin Effect HTTP contract, but
+  the server golden-path composition still uses temporary checkout-only Promise
+  facades over cart, promotion, tax, fulfillment, and payment while order and
+  notification-event remain legacy downstream slices.
 
 Workflow steps must be idempotent, persist replay-relevant outcomes, and define
 retry, terminal rejection, and compensation behavior. Module mutations and

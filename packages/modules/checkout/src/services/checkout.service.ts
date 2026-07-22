@@ -3,20 +3,23 @@ import type {
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import { Context, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 
 import type {
+  CheckoutExpectedError,
   CheckoutCompletionResult,
   CompleteCheckoutInput,
 } from "../domain";
+import { CheckoutCompletionFailure } from "../domain";
 
 export const CHECKOUT_COMPLETED_EVENT = "checkout.completed" as const;
 export const CHECKOUT_FAILED_EVENT = "checkout.failed" as const;
 
 export interface CheckoutServiceShape {
-  completeCheckout(
+  readonly completeCheckout: (
     input: CompleteCheckoutInput
-  ): Promise<CheckoutCompletionResult>;
+  ) => EffectValue<CheckoutCompletionResult, CheckoutExpectedError>;
 }
 
 export interface CheckoutCompletionStore {
@@ -342,6 +345,17 @@ const assertCartReady = (aggregate: CheckoutCartAggregate): void => {
 const createWorkflowRunId = (input: CompleteCheckoutInput): string =>
   input.idempotencyKey;
 
+const toCheckoutCompletionFailure = (
+  cause: unknown,
+  workflowRunId: string
+): CheckoutCompletionFailure =>
+  cause instanceof CheckoutCompletionFailure
+    ? cause
+    : new CheckoutCompletionFailure({
+        message: cause instanceof Error ? cause.message : String(cause),
+        workflowRunId,
+      });
+
 const buildMetadata = ({
   input,
   workflowRunId,
@@ -420,395 +434,402 @@ export const createCheckoutService = ({
   };
 
   return {
-    // eslint-disable-next-line complexity
-    completeCheckout: async (input) => {
+    completeCheckout: (input) => {
       const duplicate = completionStore.get(input);
 
       if (duplicate) {
-        return duplicate;
+        return Effect.succeed(duplicate);
       }
 
       const workflowRunId = createWorkflowRunId(input);
-      const metadata = buildMetadata({ input, workflowRunId });
-      const state: CheckoutRunState = {
-        fulfillmentIds: [],
-        inventoryReservations: [],
-      };
+      return Effect.tryPromise({
+        catch: (cause) => toCheckoutCompletionFailure(cause, workflowRunId),
+        // eslint-disable-next-line complexity
+        try: async () => {
+          const metadata = buildMetadata({ input, workflowRunId });
+          const state: CheckoutRunState = {
+            fulfillmentIds: [],
+            inventoryReservations: [],
+          };
 
-      try {
-        const aggregate = await cart.getCart(input.cartId);
+          try {
+            const aggregate = await cart.getCart(input.cartId);
 
-        if (!aggregate) {
-          throw new Error(`Cart "${input.cartId}" was not found.`);
-        }
+            if (!aggregate) {
+              throw new Error(`Cart "${input.cartId}" was not found.`);
+            }
 
-        assertCartReady(aggregate);
+            assertCartReady(aggregate);
 
-        const defaults = await store.getStoreDefaults();
+            const defaults = await store.getStoreDefaults();
 
-        if (aggregate.cart.customerId) {
-          await customer.getPaymentIdentity(aggregate.cart.customerId);
-        }
+            if (aggregate.cart.customerId) {
+              await customer.getPaymentIdentity(aggregate.cart.customerId);
+            }
 
-        for (const lineItem of aggregate.lineItems) {
-          const variantValidation = await product.validateProductVariant({
-            productId: lineItem.productId,
-            variantId: lineItem.variantId,
-          });
-
-          if (!variantValidation.valid) {
-            throw new Error(
-              `Product variant "${lineItem.variantId}" is not valid for checkout.`
-            );
-          }
-
-          const salesChannelId =
-            aggregate.cart.salesChannelId ?? defaults.defaultSalesChannelId;
-
-          if (salesChannelId) {
-            const publishability =
-              await salesChannel.checkProductPublishability({
+            for (const lineItem of aggregate.lineItems) {
+              const variantValidation = await product.validateProductVariant({
                 productId: lineItem.productId,
-                salesChannelId,
+                variantId: lineItem.variantId,
               });
 
-            if (!publishability.publishable) {
+              if (!variantValidation.valid) {
+                throw new Error(
+                  `Product variant "${lineItem.variantId}" is not valid for checkout.`
+                );
+              }
+
+              const salesChannelId =
+                aggregate.cart.salesChannelId ?? defaults.defaultSalesChannelId;
+
+              if (salesChannelId) {
+                const publishability =
+                  await salesChannel.checkProductPublishability({
+                    productId: lineItem.productId,
+                    salesChannelId,
+                  });
+
+                if (!publishability.publishable) {
+                  throw new Error(
+                    `Product "${lineItem.productId}" is not publishable for sales channel "${salesChannelId}".`
+                  );
+                }
+              }
+            }
+
+            const regionId =
+              aggregate.cart.regionId ?? defaults.defaultRegionId;
+            const validation = await region.validateRegionConstraints({
+              countryCode: aggregate.cart.shippingAddress?.countryCode,
+              currencyCode: aggregate.cart.currencyCode,
+              fulfillmentOptionId: input.shippingOptionId,
+              paymentProviderId: input.payment.providerKey,
+              regionId: regionId ?? "",
+            });
+
+            if (!validation.allowed) {
               throw new Error(
-                `Product "${lineItem.productId}" is not publishable for sales channel "${salesChannelId}".`
+                `Region constraints rejected checkout: ${validation.reasons.join(", ")}.`
               );
             }
-          }
-        }
 
-        const regionId = aggregate.cart.regionId ?? defaults.defaultRegionId;
-        const validation = await region.validateRegionConstraints({
-          countryCode: aggregate.cart.shippingAddress?.countryCode,
-          currencyCode: aggregate.cart.currencyCode,
-          fulfillmentOptionId: input.shippingOptionId,
-          paymentProviderId: input.payment.providerKey,
-          regionId: regionId ?? "",
-        });
+            const calculatedLines: {
+              readonly lineItem: CheckoutCartAggregate["lineItems"][number];
+              readonly price: { readonly subtotal: number };
+            }[] = [];
 
-        if (!validation.allowed) {
-          throw new Error(
-            `Region constraints rejected checkout: ${validation.reasons.join(", ")}.`
-          );
-        }
+            for (const lineItem of aggregate.lineItems) {
+              const priceSetId = getLineMetadataValue(
+                lineItem.metadata,
+                "priceSetId"
+              );
 
-        const calculatedLines: {
-          readonly lineItem: CheckoutCartAggregate["lineItems"][number];
-          readonly price: { readonly subtotal: number };
-        }[] = [];
+              if (!priceSetId) {
+                throw new Error(
+                  `Line item "${lineItem.id}" is missing priceSetId.`
+                );
+              }
 
-        for (const lineItem of aggregate.lineItems) {
-          const priceSetId = getLineMetadataValue(
-            lineItem.metadata,
-            "priceSetId"
-          );
+              const calculatedPrice = await pricing.calculatePrice({
+                context: {
+                  ...(aggregate.cart.salesChannelId
+                    ? { salesChannelId: aggregate.cart.salesChannelId }
+                    : {}),
+                  ...(regionId ? { regionId } : {}),
+                },
+                currencyCode: aggregate.cart.currencyCode,
+                priceSetId,
+                quantity: lineItem.quantity,
+              });
+              calculatedLines.push({
+                lineItem,
+                price: calculatedPrice,
+              });
+            }
 
-          if (!priceSetId) {
-            throw new Error(
-              `Line item "${lineItem.id}" is missing priceSetId.`
-            );
-          }
-
-          const calculatedPrice = await pricing.calculatePrice({
-            context: {
-              ...(aggregate.cart.salesChannelId
-                ? { salesChannelId: aggregate.cart.salesChannelId }
-                : {}),
-              ...(regionId ? { regionId } : {}),
-            },
-            currencyCode: aggregate.cart.currencyCode,
-            priceSetId,
-            quantity: lineItem.quantity,
-          });
-          calculatedLines.push({
-            lineItem,
-            price: calculatedPrice,
-          });
-        }
-
-        const promotionResult = await promotion.calculateAdjustments({
-          cart: {
-            currencyCode: aggregate.cart.currencyCode,
-            id: aggregate.cart.id,
-            lines: aggregate.lineItems.map((lineItem) => ({
-              id: lineItem.id,
-              quantity: lineItem.quantity,
-              subtotal:
-                calculatedLines.find(
-                  (calculated) => calculated.lineItem.id === lineItem.id
-                )?.price.subtotal ?? lineItem.unitPrice * lineItem.quantity,
-            })),
-            subtotal: calculatedLines.reduce(
-              (sum, calculated) => sum + calculated.price.subtotal,
-              0
-            ),
-          },
-          context: {},
-        });
-        const discountedSubtotal =
-          calculatedLines.reduce(
-            (sum, calculated) => sum + calculated.price.subtotal,
-            0
-          ) - promotionResult.totalDiscount;
-        const taxResult = await tax.calculateTax({
-          currencyCode: aggregate.cart.currencyCode,
-          address: {
-            countryCode: aggregate.cart.shippingAddress?.countryCode ?? "US",
-          },
-          items: calculatedLines.map(({ lineItem, price }) => ({
-            id: lineItem.id,
-            quantity: lineItem.quantity,
-            taxCategoryId:
-              getLineMetadataValue(lineItem.metadata, "taxCategoryId") ??
-              "default",
-            subtotal: Math.max(price.subtotal, 0),
-          })),
-          policy: {
-            pricesIncludeTax: false,
-          },
-          regionId: regionId ?? "",
-        });
-        const shippingOptions = await fulfillment.listShippingOptions({
-          countryCode: aggregate.cart.shippingAddress?.countryCode,
-          regionId: regionId ?? undefined,
-          salesChannelId: aggregate.cart.salesChannelId ?? undefined,
-        });
-        const shippingOption = shippingOptions.find(
-          (option) => option.id === input.shippingOptionId
-        );
-
-        if (!shippingOption || !shippingOption.isEnabled) {
-          throw new Error(
-            `Shipping option "${input.shippingOptionId}" is not available.`
-          );
-        }
-
-        const shippingTotal = shippingOption.priceAmount ?? 0;
-        const totals = {
-          adjustmentTotal: -promotionResult.totalDiscount,
-          currencyCode: aggregate.cart.currencyCode,
-          discountTotal: promotionResult.totalDiscount,
-          giftCardTotal: aggregate.cart.totals.giftCardTotal,
-          itemSubtotal: calculatedLines.reduce(
-            (sum, calculated) => sum + calculated.price.subtotal,
-            0
-          ),
-          shippingTotal,
-          subtotal: Math.max(discountedSubtotal, 0),
-          taxTotal: taxResult.totalTax,
-          total:
-            Math.max(discountedSubtotal, 0) +
-            taxResult.totalTax +
-            shippingTotal,
-        };
-
-        await cart.updateTotals({
-          ...metadata,
-          cartId: aggregate.cart.id,
-          totals,
-        });
-
-        for (const lineItem of aggregate.lineItems) {
-          const inventoryItemId = getLineMetadataValue(
-            lineItem.metadata,
-            "inventoryItemId"
-          );
-
-          if (!inventoryItemId) {
-            continue;
-          }
-
-          const metadataStockLocationId = getLineMetadataValue(
-            lineItem.metadata,
-            "stockLocationId"
-          );
-          const availability = await inventory.checkAvailability({
-            inventoryItemId,
-            salesChannelId: aggregate.cart.salesChannelId ?? undefined,
-            stockLocationId: metadataStockLocationId,
-          });
-
-          if (availability.availableQuantity < lineItem.quantity) {
-            throw new Error(
-              `Insufficient inventory for line item "${lineItem.id}".`
-            );
-          }
-
-          const stockLocationId = requireReservationStockLocationId({
-            availability,
-            lineItemId: lineItem.id,
-            metadataStockLocationId,
-          });
-          const reservationResult = await inventory.reserveInventory({
-            ...metadata,
-            inventoryItemId,
-            quantity: lineItem.quantity,
-            salesChannelId: aggregate.cart.salesChannelId ?? undefined,
-            stockLocationId,
-          });
-
-          const reservations =
-            reservationResult.reservations ??
-            (reservationResult.reservation
-              ? [reservationResult.reservation]
-              : []);
-
-          for (const reservation of reservations) {
-            state.inventoryReservations.push({
-              inventoryItemId: reservation.inventoryItemId,
-              quantity: reservation.quantity,
-              stockLocationId: reservation.stockLocationId,
-            });
-          }
-        }
-
-        const collection = await payment.createCollection({
-          amount: totals.total,
-          cartId: aggregate.cart.id,
-          currencyCode: totals.currencyCode,
-          metadata: input.metadata,
-        });
-        const session = await payment.createSession({
-          collectionId: collection.id,
-          idempotencyKey: `${input.idempotencyKey}:payment:session`,
-          metadata: input.metadata,
-          providerKey: input.payment.providerKey,
-        });
-
-        await cart.setCheckoutReferences({
-          ...metadata,
-          cartId: aggregate.cart.id,
-          paymentCollectionId: collection.id,
-          shippingOptionId: input.shippingOptionId,
-        });
-
-        const authorizedPayment = await payment.authorizePaymentSession({
-          idempotencyKey: `${input.idempotencyKey}:payment:authorize`,
-          paymentMethodId: input.payment.paymentMethodId,
-          sessionId: session.id,
-        });
-
-        const orderAggregate = await order.createOrderFromCheckout({
-          ...metadata,
-          billingAddress: aggregate.cart.billingAddress,
-          cartId: aggregate.cart.id,
-          customerId: aggregate.cart.customerId ?? undefined,
-          email: aggregate.cart.email ?? undefined,
-          lineItems: aggregate.lineItems.map((lineItem) => {
-            const pricedLine = calculatedLines.find(
-              (calculated) => calculated.lineItem.id === lineItem.id
-            );
-
-            return {
-              itemSnapshot: {
-                metadata: lineItem.metadata,
-                productId: lineItem.productId,
-                productTitle: lineItem.title,
-                sku: getLineMetadataValue(lineItem.metadata, "sku"),
-                variantId: lineItem.variantId,
-                variantTitle: lineItem.title,
+            const promotionResult = await promotion.calculateAdjustments({
+              cart: {
+                currencyCode: aggregate.cart.currencyCode,
+                id: aggregate.cart.id,
+                lines: aggregate.lineItems.map((lineItem) => ({
+                  id: lineItem.id,
+                  quantity: lineItem.quantity,
+                  subtotal:
+                    calculatedLines.find(
+                      (calculated) => calculated.lineItem.id === lineItem.id
+                    )?.price.subtotal ?? lineItem.unitPrice * lineItem.quantity,
+                })),
+                subtotal: calculatedLines.reduce(
+                  (sum, calculated) => sum + calculated.price.subtotal,
+                  0
+                ),
               },
-              quantity: lineItem.quantity,
-              title: lineItem.title,
+              context: {},
+            });
+            const discountedSubtotal =
+              calculatedLines.reduce(
+                (sum, calculated) => sum + calculated.price.subtotal,
+                0
+              ) - promotionResult.totalDiscount;
+            const taxResult = await tax.calculateTax({
+              currencyCode: aggregate.cart.currencyCode,
+              address: {
+                countryCode:
+                  aggregate.cart.shippingAddress?.countryCode ?? "US",
+              },
+              items: calculatedLines.map(({ lineItem, price }) => ({
+                id: lineItem.id,
+                quantity: lineItem.quantity,
+                taxCategoryId:
+                  getLineMetadataValue(lineItem.metadata, "taxCategoryId") ??
+                  "default",
+                subtotal: Math.max(price.subtotal, 0),
+              })),
+              policy: {
+                pricesIncludeTax: false,
+              },
+              regionId: regionId ?? "",
+            });
+            const shippingOptions = await fulfillment.listShippingOptions({
+              countryCode: aggregate.cart.shippingAddress?.countryCode,
+              regionId: regionId ?? undefined,
+              salesChannelId: aggregate.cart.salesChannelId ?? undefined,
+            });
+            const shippingOption = shippingOptions.find(
+              (option) => option.id === input.shippingOptionId
+            );
+
+            if (!shippingOption || !shippingOption.isEnabled) {
+              throw new Error(
+                `Shipping option "${input.shippingOptionId}" is not available.`
+              );
+            }
+
+            const shippingTotal = shippingOption.priceAmount ?? 0;
+            const totals = {
+              adjustmentTotal: -promotionResult.totalDiscount,
+              currencyCode: aggregate.cart.currencyCode,
+              discountTotal: promotionResult.totalDiscount,
+              giftCardTotal: aggregate.cart.totals.giftCardTotal,
+              itemSubtotal: calculatedLines.reduce(
+                (sum, calculated) => sum + calculated.price.subtotal,
+                0
+              ),
+              shippingTotal,
+              subtotal: Math.max(discountedSubtotal, 0),
+              taxTotal: taxResult.totalTax,
               total:
-                pricedLine?.price.subtotal ??
-                lineItem.unitPrice * lineItem.quantity,
-              unitPrice: pricedLine?.price.subtotal
-                ? pricedLine.price.subtotal / lineItem.quantity
-                : lineItem.unitPrice,
+                Math.max(discountedSubtotal, 0) +
+                taxResult.totalTax +
+                shippingTotal,
             };
-          }),
-          metadata: input.metadata,
-          paymentReferences: [
-            {
+
+            await cart.updateTotals({
+              ...metadata,
+              cartId: aggregate.cart.id,
+              totals,
+            });
+
+            for (const lineItem of aggregate.lineItems) {
+              const inventoryItemId = getLineMetadataValue(
+                lineItem.metadata,
+                "inventoryItemId"
+              );
+
+              if (!inventoryItemId) {
+                continue;
+              }
+
+              const metadataStockLocationId = getLineMetadataValue(
+                lineItem.metadata,
+                "stockLocationId"
+              );
+              const availability = await inventory.checkAvailability({
+                inventoryItemId,
+                salesChannelId: aggregate.cart.salesChannelId ?? undefined,
+                stockLocationId: metadataStockLocationId,
+              });
+
+              if (availability.availableQuantity < lineItem.quantity) {
+                throw new Error(
+                  `Insufficient inventory for line item "${lineItem.id}".`
+                );
+              }
+
+              const stockLocationId = requireReservationStockLocationId({
+                availability,
+                lineItemId: lineItem.id,
+                metadataStockLocationId,
+              });
+              const reservationResult = await inventory.reserveInventory({
+                ...metadata,
+                inventoryItemId,
+                quantity: lineItem.quantity,
+                salesChannelId: aggregate.cart.salesChannelId ?? undefined,
+                stockLocationId,
+              });
+
+              const reservations =
+                reservationResult.reservations ??
+                (reservationResult.reservation
+                  ? [reservationResult.reservation]
+                  : []);
+
+              for (const reservation of reservations) {
+                state.inventoryReservations.push({
+                  inventoryItemId: reservation.inventoryItemId,
+                  quantity: reservation.quantity,
+                  stockLocationId: reservation.stockLocationId,
+                });
+              }
+            }
+
+            const collection = await payment.createCollection({
               amount: totals.total,
+              cartId: aggregate.cart.id,
               currencyCode: totals.currencyCode,
+              metadata: input.metadata,
+            });
+            const session = await payment.createSession({
+              collectionId: collection.id,
+              idempotencyKey: `${input.idempotencyKey}:payment:session`,
+              metadata: input.metadata,
+              providerKey: input.payment.providerKey,
+            });
+
+            await cart.setCheckoutReferences({
+              ...metadata,
+              cartId: aggregate.cart.id,
               paymentCollectionId: collection.id,
+              shippingOptionId: input.shippingOptionId,
+            });
+
+            const authorizedPayment = await payment.authorizePaymentSession({
+              idempotencyKey: `${input.idempotencyKey}:payment:authorize`,
+              paymentMethodId: input.payment.paymentMethodId,
+              sessionId: session.id,
+            });
+
+            const orderAggregate = await order.createOrderFromCheckout({
+              ...metadata,
+              billingAddress: aggregate.cart.billingAddress,
+              cartId: aggregate.cart.id,
+              customerId: aggregate.cart.customerId ?? undefined,
+              email: aggregate.cart.email ?? undefined,
+              lineItems: aggregate.lineItems.map((lineItem) => {
+                const pricedLine = calculatedLines.find(
+                  (calculated) => calculated.lineItem.id === lineItem.id
+                );
+
+                return {
+                  itemSnapshot: {
+                    metadata: lineItem.metadata,
+                    productId: lineItem.productId,
+                    productTitle: lineItem.title,
+                    sku: getLineMetadataValue(lineItem.metadata, "sku"),
+                    variantId: lineItem.variantId,
+                    variantTitle: lineItem.title,
+                  },
+                  quantity: lineItem.quantity,
+                  title: lineItem.title,
+                  total:
+                    pricedLine?.price.subtotal ??
+                    lineItem.unitPrice * lineItem.quantity,
+                  unitPrice: pricedLine?.price.subtotal
+                    ? pricedLine.price.subtotal / lineItem.quantity
+                    : lineItem.unitPrice,
+                };
+              }),
+              metadata: input.metadata,
+              paymentReferences: [
+                {
+                  amount: totals.total,
+                  currencyCode: totals.currencyCode,
+                  paymentCollectionId: collection.id,
+                  paymentId: authorizedPayment.id,
+                  providerId: authorizedPayment.providerKey,
+                  status: authorizedPayment.status,
+                },
+              ],
+              shippingAddress: aggregate.cart.shippingAddress,
+              totals,
+            });
+
+            const fulfillmentDetail = await fulfillment.createFulfillment({
+              address: toFulfillmentAddress(aggregate.cart.shippingAddress),
+              idempotencyKey: `${input.idempotencyKey}:fulfillment:create`,
+              items: aggregate.lineItems.map((lineItem) => ({
+                lineItemId: lineItem.id,
+                quantity: lineItem.quantity,
+                sku: getLineMetadataValue(lineItem.metadata, "sku"),
+              })),
+              metadata: input.metadata,
+              orderId: orderAggregate.order.id,
+              shippingOptionId: input.shippingOptionId,
+            });
+            const fulfillmentId = fulfillmentDetail.fulfillment.id;
+            state.fulfillmentIds.push(fulfillmentId);
+
+            if (input.payment.capture) {
+              await payment.capturePayment({
+                amount: totals.total,
+                idempotencyKey: `${input.idempotencyKey}:payment:capture`,
+                paymentId: authorizedPayment.id,
+              });
+            }
+
+            const result: CheckoutCompletionResult = {
+              cartId: aggregate.cart.id,
+              fulfillmentIds: [...state.fulfillmentIds],
+              orderId: orderAggregate.order.id,
               paymentId: authorizedPayment.id,
-              providerId: authorizedPayment.providerKey,
-              status: authorizedPayment.status,
-            },
-          ],
-          shippingAddress: aggregate.cart.shippingAddress,
-          totals,
-        });
+              status: "completed",
+              workflowRunId,
+            };
 
-        const fulfillmentDetail = await fulfillment.createFulfillment({
-          address: toFulfillmentAddress(aggregate.cart.shippingAddress),
-          idempotencyKey: `${input.idempotencyKey}:fulfillment:create`,
-          items: aggregate.lineItems.map((lineItem) => ({
-            lineItemId: lineItem.id,
-            quantity: lineItem.quantity,
-            sku: getLineMetadataValue(lineItem.metadata, "sku"),
-          })),
-          metadata: input.metadata,
-          orderId: orderAggregate.order.id,
-          shippingOptionId: input.shippingOptionId,
-        });
-        const fulfillmentId = fulfillmentDetail.fulfillment.id;
-        state.fulfillmentIds.push(fulfillmentId);
+            await publishEvent(
+              CHECKOUT_COMPLETED_EVENT,
+              result,
+              input,
+              workflowRunId
+            );
 
-        if (input.payment.capture) {
-          await payment.capturePayment({
-            amount: totals.total,
-            idempotencyKey: `${input.idempotencyKey}:payment:capture`,
-            paymentId: authorizedPayment.id,
-          });
-        }
+            completionStore.set(input, result);
 
-        const result: CheckoutCompletionResult = {
-          cartId: aggregate.cart.id,
-          fulfillmentIds: [...state.fulfillmentIds],
-          orderId: orderAggregate.order.id,
-          paymentId: authorizedPayment.id,
-          status: "completed",
-          workflowRunId,
-        };
+            return result;
+          } catch (error) {
+            for (const fulfillmentId of state.fulfillmentIds) {
+              await fulfillment.cancelFulfillment({
+                fulfillmentId,
+                reason: "checkout-compensation",
+              });
+            }
 
-        await publishEvent(
-          CHECKOUT_COMPLETED_EVENT,
-          result,
-          input,
-          workflowRunId
-        );
+            for (const reservation of state.inventoryReservations) {
+              await inventory.adjustInventory({
+                adjustment: reservation.quantity,
+                idempotencyKey: `${input.idempotencyKey}:inventory:release:${reservation.inventoryItemId}`,
+                inventoryItemId: reservation.inventoryItemId,
+                reason: "restock",
+                stockLocationId: reservation.stockLocationId,
+              });
+            }
 
-        completionStore.set(input, result);
+            await publishEvent(
+              CHECKOUT_FAILED_EVENT,
+              {
+                cartId: input.cartId,
+                error: error instanceof Error ? error.message : String(error),
+                workflowRunId,
+              },
+              input,
+              workflowRunId
+            );
 
-        return result;
-      } catch (error) {
-        for (const fulfillmentId of state.fulfillmentIds) {
-          await fulfillment.cancelFulfillment({
-            fulfillmentId,
-            reason: "checkout-compensation",
-          });
-        }
-
-        for (const reservation of state.inventoryReservations) {
-          await inventory.adjustInventory({
-            adjustment: reservation.quantity,
-            idempotencyKey: `${input.idempotencyKey}:inventory:release:${reservation.inventoryItemId}`,
-            inventoryItemId: reservation.inventoryItemId,
-            reason: "restock",
-            stockLocationId: reservation.stockLocationId,
-          });
-        }
-
-        await publishEvent(
-          CHECKOUT_FAILED_EVENT,
-          {
-            cartId: input.cartId,
-            error: error instanceof Error ? error.message : String(error),
-            workflowRunId,
-          },
-          input,
-          workflowRunId
-        );
-
-        throw error;
-      }
+            throw error;
+          }
+        },
+      });
     },
   };
 };

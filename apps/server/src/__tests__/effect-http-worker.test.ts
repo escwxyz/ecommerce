@@ -5,12 +5,15 @@ import {
   EffectHttpAuthMiddleware,
   EffectHttpForbidden,
   adminHttpApi,
+  checkoutEffectHttpApiContribution,
   defineAdminHttpApiGroupContribution,
   defineStorefrontHttpApiGroupContribution,
   EffectHttpRequestContextMiddleware,
   storefrontHttpApi,
   withEffectHttpPermission,
 } from "@ecommerce/api";
+import { CheckoutService } from "@ecommerce/checkout";
+import type { CheckoutServiceShape } from "@ecommerce/checkout";
 import { Context, Effect, Layer, Schema } from "effect";
 import {
   HttpApi,
@@ -99,6 +102,14 @@ const createBetterAuthSessionWithoutProductRead = () => ({
   user: {
     ...createBetterAuthSession().user,
     permissions: [],
+  },
+});
+
+const createBetterAuthSessionWithCheckoutExecute = () => ({
+  ...createBetterAuthSession(),
+  user: {
+    ...createBetterAuthSession().user,
+    permissions: ["checkout:execute"],
   },
 });
 
@@ -301,6 +312,73 @@ describe("Cloudflare Effect HTTP Worker runtime", () => {
       permission: "product:read",
     });
     expect(result.text).not.toContain("better-auth");
+  });
+
+  it("serves migrated checkout through the admin Effect HTTP group", async () => {
+    const checkoutService: CheckoutServiceShape = {
+      completeCheckout: (input) =>
+        Effect.succeed({
+          cartId: input.cartId,
+          fulfillmentIds: ["ful_1"],
+          orderId: "ord_1",
+          paymentId: "pay_1",
+          status: "completed",
+          workflowRunId: input.idempotencyKey,
+        }),
+    };
+    const runtime = createEffectHttpWorkerRuntime({
+      adminRoot: adminHttpApi,
+      auth: {
+        api: {
+          getSession: () =>
+            Promise.resolve(createBetterAuthSessionWithCheckoutExecute()),
+        },
+      },
+      contributions: [...checkoutEffectHttpApiContribution.groups],
+      runtimeLayers: [Layer.succeed(CheckoutService, checkoutService)],
+      storefrontRoot: storefrontHttpApi,
+    });
+
+    try {
+      const response = await runtime.fetch(
+        new Request("https://commerce.example/admin/checkout/complete", {
+          body: JSON.stringify({
+            cartId: "cart_1",
+            correlationId: "checkout-http",
+            idempotencyKey: "checkout-http",
+            payment: {
+              capture: true,
+              providerKey: "manual",
+            },
+            shippingOptionId: "shipopt_1",
+          }),
+          headers: {
+            "content-type": "application/json",
+            cookie: "better-auth.session=token",
+          },
+          method: "POST",
+        })
+      );
+
+      const body = await response.text();
+      if (response.status !== 200) {
+        throw new Error(body);
+      }
+
+      expect(JSON.parse(body)).toMatchObject({
+        data: {
+          cartId: "cart_1",
+          fulfillmentIds: ["ful_1"],
+          orderId: "ord_1",
+          paymentId: "pay_1",
+          status: "completed",
+          workflowRunId: "checkout-http",
+        },
+        success: true,
+      });
+    } finally {
+      await runtime.dispose();
+    }
   });
 
   it("sanitizes rejected Better Auth adapter failures at the protected Worker boundary", async () => {

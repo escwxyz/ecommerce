@@ -86,7 +86,7 @@
 - [x] 8.3 Migrate tax end-to-end and delete its legacy path
 - [x] 8.4 Migrate fulfillment and its provider boundary end-to-end and delete its legacy path
 - [x] 8.5 Migrate payment and its provider boundary end-to-end and delete its legacy path
-- [ ] 8.6 Migrate checkout orchestration boundaries and delete its legacy API/schema path
+- [x] 8.6 Migrate checkout orchestration boundaries and delete its legacy API/schema path
 - [ ] 8.7 Migrate order end-to-end and delete its legacy path
 - [ ] 8.8 Migrate notification-event end-to-end and delete its legacy path
 - [ ] 8.9 Run cross-module commerce golden-path, failure, permission, and concurrency suites

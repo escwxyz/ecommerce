@@ -10,17 +10,11 @@
     "./admin": {
       "default": "./src/admin/index.ts"
     },
-    "./contracts": {
-      "default": "./src/contracts/index.ts"
-    },
     "./domain": {
       "default": "./src/domain/index.ts"
     },
     "./module": {
       "default": "./src/module/index.ts"
-    },
-    "./router": {
-      "default": "./src/router/index.ts"
     },
     "./service": {
       "default": "./src/services/index.ts"
@@ -28,7 +22,7 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "test": "bun test ./src/_tests"
+    "test": "bun test ./src/__tests__"
   },
   "dependencies": {
     "@ecommerce/cart": "workspace:*",
@@ -36,7 +30,6 @@
     "@ecommerce/customer": "workspace:*",
     "@ecommerce/fulfillment": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
-    "@ecommerce/module-contracts": "workspace:*",
     "@ecommerce/notification-event": "workspace:*",
     "@ecommerce/order": "workspace:*",
     "@ecommerce/payment": "workspace:*",
@@ -46,9 +39,7 @@
     "@ecommerce/region-sales-channel": "workspace:*",
     "@ecommerce/store": "workspace:*",
     "@ecommerce/tax": "workspace:*",
-    "@orpc/server": "catalog:",
-    "effect": "catalog:",
-    "zod": "catalog:"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@ecommerce/auth": "workspace:*",
