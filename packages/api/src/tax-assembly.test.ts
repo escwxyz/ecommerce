@@ -14,7 +14,6 @@ describe("tax API and admin assembly", () => {
       "builtin:core",
       "module:notification-event",
       "module:payment",
-      "module:fulfillment",
       "module:order",
       "module:checkout",
     ]);

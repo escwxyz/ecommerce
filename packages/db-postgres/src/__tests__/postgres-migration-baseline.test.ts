@@ -14,6 +14,7 @@ import {
   postgresCartTableName,
   postgresCustomerTableName,
   postgresInventoryItemTableName,
+  postgresFulfillmentTableName,
   postgresProductTableName,
   postgresPromotionTableName,
   postgresTaxRegionTableName,
@@ -30,6 +31,7 @@ const inventoryMigrationFolder = "20260724000000_inventory_module";
 const cartMigrationFolder = "20260725000000_cart_module";
 const promotionMigrationFolder = "20260726000000_promotion_module";
 const taxMigrationFolder = "20260727000000_tax_module";
+const fulfillmentMigrationFolder = "20260728000000_fulfillment_module";
 
 describe("PostgreSQL Drizzle migration baseline", () => {
   it("exports the clean foundation schema tables", () => {
@@ -188,6 +190,27 @@ describe("PostgreSQL Drizzle migration baseline", () => {
     expect(sql).toContain('CREATE TABLE "tax_provider_config"');
     expect(sql).toContain('CREATE TABLE "tax_region"');
     expect(sql).toContain('CREATE TABLE "tax_rate"');
+    expect(sql).toContain("--> statement-breakpoint");
+    expect(sql).not.toContain("kysely");
+  });
+
+  it("ships the fulfillment module PostgreSQL migration", () => {
+    const migrationPath = join(
+      defaultPostgresMigrationsFolder,
+      fulfillmentMigrationFolder,
+      "migration.sql"
+    );
+
+    expect(existsSync(migrationPath)).toBe(true);
+
+    const sql = readFileSync(migrationPath, "utf8");
+
+    expect(postgresFulfillmentTableName).toBe("fulfillment");
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "fulfillment_provider"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "fulfillment_set"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "shipping_option"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "fulfillment"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "shipment"');
     expect(sql).toContain("--> statement-breakpoint");
     expect(sql).not.toContain("kysely");
   });

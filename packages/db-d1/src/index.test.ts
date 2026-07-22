@@ -144,15 +144,12 @@ describe("db d1 adapter", () => {
       indexExists(database.db, "payment_provider_intent_idx")
     ).resolves.toBe(true);
     await expect(tableExists(database.db, "fulfillment_set")).resolves.toBe(
-      true
+      false
     );
     await expect(tableExists(database.db, "shipping_option")).resolves.toBe(
-      true
+      false
     );
-    await expect(tableExists(database.db, "shipment")).resolves.toBe(true);
-    await expect(
-      indexExists(database.db, "fulfillment_idempotency_idx")
-    ).resolves.toBe(true);
+    await expect(tableExists(database.db, "shipment")).resolves.toBe(false);
     await expect(tableExists(database.db, "event_outbox")).resolves.toBe(true);
     await expect(tableExists(database.db, "event_dead_letter")).resolves.toBe(
       true
@@ -211,6 +208,12 @@ describe("db d1 adapter", () => {
     expect(readdirSync(migrationsDir)).not.toContain("0009_tax.sql");
   });
 
+  it("does not ship a legacy D1 fulfillment migration after the Effect slice migration", () => {
+    const migrationsDir = join(import.meta.dir, "migrations", "sql");
+
+    expect(readdirSync(migrationsDir)).not.toContain("0011_fulfillment.sql");
+  });
+
   it("ships SQL migrations for payment tables", () => {
     const sqlite = new Database(":memory:");
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
@@ -249,53 +252,6 @@ describe("db d1 adapter", () => {
         "payment_provider_intent_idx",
         "payment_capture_idempotency_idx",
         "payment_refund_idempotency_idx",
-      ])
-    );
-
-    sqlite.close();
-  });
-
-  it("ships SQL migrations for fulfillment tables", () => {
-    const sqlite = new Database(":memory:");
-    const migrationsDir = join(import.meta.dir, "migrations", "sql");
-
-    sqlite.exec(
-      readFileSync(join(migrationsDir, "0011_fulfillment.sql"), "utf8")
-    );
-
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'table'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "fulfillment_provider",
-        "fulfillment_set",
-        "shipping_profile",
-        "service_zone",
-        "shipping_option",
-        "fulfillment",
-        "shipment",
-        "return_shipment_link",
-      ])
-    );
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'index'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "fulfillment_provider_key_idx",
-        "shipping_profile_set_idx",
-        "service_zone_set_idx",
-        "shipping_option_set_idx",
-        "shipping_option_provider_idx",
-        "fulfillment_idempotency_idx",
-        "fulfillment_order_idx",
-        "shipment_fulfillment_idx",
-        "return_shipment_fulfillment_idx",
       ])
     );
 
@@ -404,14 +360,6 @@ describe("db d1 adapter", () => {
         "payment",
         "payment_capture",
         "payment_refund",
-        "fulfillment_provider",
-        "fulfillment_set",
-        "shipping_profile",
-        "service_zone",
-        "shipping_option",
-        "fulfillment",
-        "shipment",
-        "return_shipment_link",
         "event_outbox",
         "event_dead_letter",
         "notification_template",
@@ -434,6 +382,11 @@ describe("db d1 adapter", () => {
         "inventory_item",
         "inventory_level",
         "inventory_reservation",
+        "fulfillment_provider",
+        "fulfillment_set",
+        "shipping_option",
+        "fulfillment",
+        "shipment",
       ])
     );
 

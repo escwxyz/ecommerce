@@ -1,7 +1,8 @@
+import { Effect } from "effect";
+
 import { defineFulfillmentProvider } from "./fulfillment-provider";
 import type {
   FulfillmentProvider,
-  FulfillmentProviderFulfillment,
   FulfillmentProviderShipment,
 } from "./fulfillment-provider";
 
@@ -10,10 +11,10 @@ export interface FakeFulfillmentProviderOptions {
 }
 
 export interface FakeFulfillmentProvider extends FulfillmentProvider {
-  setShipment(
+  readonly setShipment: (
     providerFulfillmentId: string,
     shipment: FulfillmentProviderShipment
-  ): void;
+  ) => void;
 }
 
 export const createFakeFulfillmentProvider = ({
@@ -28,30 +29,31 @@ export const createFakeFulfillmentProvider = ({
   };
 
   return defineFulfillmentProvider({
-    id,
-    cancelFulfillment: (input) => {
-      shipments.delete(input.providerFulfillmentId);
-      return Promise.resolve();
-    },
-    createFulfillment: (input): Promise<FulfillmentProviderFulfillment> => {
-      const providerFulfillmentId = nextId("fulfillment");
-      const shipment: FulfillmentProviderShipment = {
-        carrier: "Fake Carrier",
-        providerShipmentId: nextId("shipment"),
-        status: "shipped",
-        trackingNumber: `TRACK-${input.orderId}`,
-        trackingUrl: `https://fulfillment.example/${id}/track/${input.orderId}`,
-      };
-      shipments.set(providerFulfillmentId, shipment);
+    cancelFulfillment: (input) =>
+      Effect.sync(() => {
+        shipments.delete(input.providerFulfillmentId);
+      }),
+    createFulfillment: (input) =>
+      Effect.sync(() => {
+        const providerFulfillmentId = nextId("fulfillment");
+        const shipment: FulfillmentProviderShipment = {
+          carrier: "Fake Carrier",
+          providerShipmentId: nextId("shipment"),
+          status: "shipped",
+          trackingNumber: `TRACK-${input.orderId}`,
+          trackingUrl: `https://fulfillment.example/${id}/track/${input.orderId}`,
+        };
+        shipments.set(providerFulfillmentId, shipment);
 
-      return Promise.resolve({
-        providerFulfillmentId,
-        shipment,
-        status: "shipped",
-      });
-    },
+        return {
+          providerFulfillmentId,
+          shipment,
+          status: "shipped" as const,
+        };
+      }),
+    id,
     rate: (input) =>
-      Promise.resolve({
+      Effect.succeed({
         amount: {
           amount: input.items?.length ? input.items.length * 500 : 500,
           currencyCode: "USD",
@@ -63,7 +65,7 @@ export const createFakeFulfillmentProvider = ({
       shipments.set(providerFulfillmentId, shipment);
     },
     trackShipment: (input) =>
-      Promise.resolve(shipments.get(input.providerFulfillmentId) ?? null),
-    validateOption: () => Promise.resolve({ valid: true }),
+      Effect.sync(() => shipments.get(input.providerFulfillmentId) ?? null),
+    validateOption: () => Effect.succeed({ valid: true }),
   });
 };

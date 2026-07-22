@@ -64,14 +64,17 @@ authoritative relational store and
 may persist workflow metadata or transactional outbox records, but it is not by
 itself the workflow execution engine.
 
-As of tasks 8.1 through 8.3 in `adopt-effect-4-backend-architecture`, cart,
-promotion, and tax follow this split:
+As of tasks 8.1 through 8.4 in `adopt-effect-4-backend-architecture`, cart,
+promotion, tax, and fulfillment follow this split:
 
 - PostgreSQL Drizzle owns durable cart, line-item, and adjustment persistence.
 - PostgreSQL Drizzle owns durable promotion campaign, promotion, rule, usage
   limit, and redemption persistence.
 - PostgreSQL Drizzle owns durable tax category, provider configuration, region,
   and rate persistence.
+- PostgreSQL Drizzle owns durable fulfillment provider, fulfillment set,
+  shipping profile, service zone, shipping option, fulfillment, shipment, and
+  return-shipment-link persistence.
 - The Cloudflare Durable Object cart cache implements the Effect-native
   active-cache port for hot aggregate reads, ownership checks, idempotency maps,
   and projection-sync failure recording.
@@ -79,8 +82,11 @@ promotion, and tax follow this split:
   authoritative for the migrated promotion slice.
 - Tax has no Durable Object or actor-local state owner yet; PostgreSQL is
   authoritative for the migrated tax slice.
+- Fulfillment has no Durable Object or actor-local state owner yet; PostgreSQL
+  is authoritative for the migrated fulfillment slice.
 - The server still uses temporary checkout-only Promise facades over the Effect
-  cart, promotion, and tax services until checkout migrates in task 8.6.
+  cart, promotion, tax, and fulfillment services until checkout migrates in
+  task 8.6.
 
 Workflow steps must be idempotent, persist replay-relevant outcomes, and define
 retry, terminal rejection, and compensation behavior. Module mutations and

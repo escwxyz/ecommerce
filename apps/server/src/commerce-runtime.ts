@@ -22,12 +22,17 @@ import {
 import { developmentSeedIds } from "@ecommerce/db-d1/seed";
 import {
   createFakeFulfillmentProvider,
+  createFulfillmentPromiseServiceFromEffectService,
   createFulfillmentProviderRegistry,
   createFulfillmentService,
+  createInMemoryFulfillmentRepository,
+  createFulfillmentProviderRecordId,
+  createFulfillmentSetId,
+  createServiceZoneId,
+  createShippingOptionId,
+  createShippingProfileId,
 } from "@ecommerce/fulfillment";
 import type { FulfillmentProviderRegistry } from "@ecommerce/fulfillment";
-import { createD1FulfillmentRepository } from "@ecommerce/fulfillment/adapters/d1";
-import type { FulfillmentD1Database } from "@ecommerce/fulfillment/adapters/d1";
 import {
   createD1NotificationEventRepository,
   createNotificationEventService,
@@ -222,6 +227,72 @@ const seedDevelopmentTaxRepository = (
     })
   );
 
+const seedDevelopmentFulfillmentRepository = (
+  repository: ReturnType<typeof createInMemoryFulfillmentRepository>
+) => {
+  const timestamp = new Date("2026-01-01T00:00:00.000Z");
+  Effect.runSync(
+    Effect.gen(function* seedDevelopmentFulfillmentEffect() {
+      yield* repository.saveProviderRecord({
+        createdAt: timestamp,
+        id: createFulfillmentProviderRecordId(
+          developmentSeedIds.fulfillmentProvider
+        ),
+        isEnabled: true,
+        providerKey: "manual",
+        providerRecordId: "manual",
+        updatedAt: timestamp,
+      });
+      yield* repository.saveFulfillmentSet({
+        createdAt: timestamp,
+        id: createFulfillmentSetId(developmentSeedIds.fulfillmentSet),
+        metadata: {},
+        name: "US fulfillment",
+        updatedAt: timestamp,
+      });
+      yield* repository.saveShippingProfile({
+        createdAt: timestamp,
+        fulfillmentSetId: createFulfillmentSetId(
+          developmentSeedIds.fulfillmentSet
+        ),
+        id: createShippingProfileId("shprof_dev_default"),
+        metadata: {},
+        name: "Default profile",
+        updatedAt: timestamp,
+      });
+      yield* repository.saveServiceZone({
+        countryCodes: ["US"],
+        createdAt: timestamp,
+        fulfillmentSetId: createFulfillmentSetId(
+          developmentSeedIds.fulfillmentSet
+        ),
+        id: createServiceZoneId("fzone_dev_us"),
+        metadata: {},
+        name: "United States",
+        regionIds: [developmentSeedIds.region],
+        updatedAt: timestamp,
+      });
+      yield* repository.saveShippingOption({
+        createdAt: timestamp,
+        currencyCode: "USD",
+        fulfillmentSetId: createFulfillmentSetId(
+          developmentSeedIds.fulfillmentSet
+        ),
+        id: createShippingOptionId(developmentSeedIds.fulfillmentOption),
+        isEnabled: true,
+        metadata: {},
+        name: "Ground shipping",
+        priceAmount: 500,
+        profileId: createShippingProfileId("shprof_dev_default"),
+        providerKey: "manual",
+        providerServiceId: "ground",
+        serviceZoneId: createServiceZoneId("fzone_dev_us"),
+        updatedAt: timestamp,
+      });
+    })
+  );
+};
+
 /**
  * Creates deterministic provider registries for local development and tests.
  * Callers must opt in; production composition never receives these implicitly.
@@ -262,9 +333,9 @@ export const createServerCommerceRuntime = ({
 
   const repositories = {
     cart: providedCartRepository ?? createInMemoryCartRepository(),
-    fulfillment: createD1FulfillmentRepository({
-      db: narrowDatabase<FulfillmentD1Database>(db),
-    }),
+    // Temporary checkout-only bridge until task 8.6 moves checkout onto
+    // Effect module Layers directly. New fulfillment traffic uses Effect HTTP.
+    fulfillment: createInMemoryFulfillmentRepository(),
     notificationEvent: createD1NotificationEventRepository({
       db: narrowDatabase<NotificationEventD1Database>(db),
     }),
@@ -279,6 +350,7 @@ export const createServerCommerceRuntime = ({
     // Effect module Layers directly. New tax traffic uses Effect HTTP.
     tax: createInMemoryTaxRepository(),
   };
+  seedDevelopmentFulfillmentRepository(repositories.fulfillment);
   seedDevelopmentTaxRepository(repositories.tax);
 
   const notificationEvent = createNotificationEventService({
@@ -544,6 +616,7 @@ export const createServerCommerceRuntime = ({
     customer: checkoutCustomerService,
     fulfillment: createFulfillmentService({
       clock,
+      eventPublisher,
       idGenerator,
       providerRegistry: fulfillmentProviderRegistry,
       repository: repositories.fulfillment,
@@ -579,7 +652,9 @@ export const createServerCommerceRuntime = ({
       ? {
           cart: createCheckoutCartPromiseFacade(services.cart),
           customer: services.customer,
-          fulfillment: services.fulfillment,
+          fulfillment: createFulfillmentPromiseServiceFromEffectService(
+            services.fulfillment
+          ),
           inventory: services.inventory,
           notificationEvent: services.notificationEvent,
           order: services.order,
@@ -620,12 +695,6 @@ export const createServerCommerceRuntime = ({
   const apiAssembly = createApiRootAssembly({
     routes: {
       ...(checkout ? { checkout } : {}),
-      fulfillment: {
-        clock,
-        idGenerator,
-        providerRegistry: fulfillmentProviderRegistry,
-        repository: repositories.fulfillment,
-      },
       notificationEvent: {
         clock,
         idGenerator,

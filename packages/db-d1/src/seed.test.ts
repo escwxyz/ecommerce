@@ -105,7 +105,7 @@ describe("deterministic development seed", () => {
     expect(wranglerConfig).toContain('"migrations_dir": "src/migrations/sql"');
   });
 
-  it("creates connected golden checkout prerequisites", async () => {
+  it("keeps migrated fulfillment prerequisites out of D1 seed data", async () => {
     const seedModule = await loadSeedModule();
     expect(seedModule).not.toBeNull();
     if (!seedModule) {
@@ -115,23 +115,10 @@ describe("deterministic development seed", () => {
     const database = createMigratedDatabase();
     database.exec(seedModule.generateDevelopmentSeedSql());
 
-    const checkoutFixture = database
-      .query<
-        {
-          shipping_option_id: string;
-        },
-        []
-      >(
-        `SELECT
-          so.id AS shipping_option_id
-        FROM shipping_option so
-        WHERE so.id = 'shipopt_dev_ground'`
-      )
-      .get();
-
-    expect(checkoutFixture).toEqual({
-      shipping_option_id: seedModule.developmentSeedIds.fulfillmentOption,
-    });
+    expect(seedModule.developmentSeedIds.fulfillmentOption).toBe(
+      "shipopt_dev_ground"
+    );
+    expect(() => countRows(database, "shipping_option")).toThrow();
 
     database.close();
   });
@@ -148,18 +135,17 @@ describe("deterministic development seed", () => {
     database.exec(seedSql);
 
     const seededCounts = {
-      shippingOption: countRows(database, "shipping_option"),
+      eventOutbox: countRows(database, "event_outbox"),
     };
 
     database.exec(seedSql);
 
     expect({
-      shippingOption: countRows(database, "shipping_option"),
+      eventOutbox: countRows(database, "event_outbox"),
     }).toEqual(seededCounts);
 
     expect(countRows(database, "order_record")).toBe(0);
     expect(countRows(database, "payment_collection")).toBe(0);
-    expect(countRows(database, "fulfillment")).toBe(0);
     expect(countRows(database, "event_outbox")).toBe(0);
     expect(countRows(database, "user")).toBe(0);
 

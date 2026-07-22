@@ -28,6 +28,7 @@
     "@ecommerce/cart": "workspace:*",
     "@ecommerce/core": "workspace:*",
     "@ecommerce/customer": "workspace:*",
+    "@ecommerce/fulfillment": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
     "@ecommerce/pricing": "workspace:*",
     "@ecommerce/product": "workspace:*",

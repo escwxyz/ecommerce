@@ -1,5 +1,8 @@
+import { Effect, Layer } from "effect";
+
 import type {
   Fulfillment,
+  FulfillmentExpectedError,
   FulfillmentId,
   FulfillmentProviderRecord,
   FulfillmentRepository,
@@ -15,34 +18,40 @@ import type {
   ShippingProfile,
   ShippingProfileId,
 } from "../domain";
+import { FulfillmentRepositoryService } from "../domain";
 
 export interface ResettableFulfillmentRepository extends FulfillmentRepository {
-  clear(): void;
+  readonly clear: Effect.Effect<void>;
 }
 
-const sortByCreatedAtDesc = <Record extends { readonly createdAt: Date }>(
-  records: Iterable<Record>
-): Record[] => {
-  const sorted: Record[] = [];
+const sortByCreatedAtDescending = <
+  TRecord extends { readonly createdAt: Date },
+>(
+  records: Iterable<TRecord>
+): TRecord[] => {
+  const sortedRecords: TRecord[] = [];
 
   for (const record of records) {
-    const timestamp = record.createdAt.getTime();
+    const recordTimestamp = record.createdAt.getTime();
     let insertAt = 0;
 
-    while (insertAt < sorted.length) {
-      const current = sorted[insertAt];
+    while (insertAt < sortedRecords.length) {
+      const currentRecord = sortedRecords[insertAt];
 
-      if (!current || current.createdAt.getTime() < timestamp) {
+      if (
+        !currentRecord ||
+        currentRecord.createdAt.getTime() < recordTimestamp
+      ) {
         break;
       }
 
       insertAt += 1;
     }
 
-    sorted.splice(insertAt, 0, record);
+    sortedRecords.splice(insertAt, 0, record);
   }
 
-  return sorted;
+  return sortedRecords;
 };
 
 const matchesLookup = (
@@ -82,7 +91,7 @@ export class InMemoryFulfillmentRepository implements ResettableFulfillmentRepos
   readonly #shippingOptions = new Map<string, ShippingOption>();
   readonly #shippingProfiles = new Map<string, ShippingProfile>();
 
-  clear(): void {
+  readonly clear = Effect.sync(() => {
     this.#fulfillmentSets.clear();
     this.#fulfillments.clear();
     this.#fulfillmentsByIdempotencyKey.clear();
@@ -92,133 +101,162 @@ export class InMemoryFulfillmentRepository implements ResettableFulfillmentRepos
     this.#shipments.clear();
     this.#shippingOptions.clear();
     this.#shippingProfiles.clear();
-  }
+  });
 
-  findFulfillmentById(id: FulfillmentId): Promise<Fulfillment | null> {
-    return Promise.resolve(this.#fulfillments.get(id) ?? null);
-  }
+  readonly findFulfillmentById = (
+    id: FulfillmentId
+  ): Effect.Effect<Fulfillment | null, FulfillmentExpectedError> =>
+    Effect.sync(() => this.#fulfillments.get(id) ?? null);
 
-  findFulfillmentByIdempotencyKey(
+  readonly findFulfillmentByIdempotencyKey = (
     idempotencyKey: string
-  ): Promise<Fulfillment | null> {
-    return Promise.resolve(
-      this.#fulfillmentsByIdempotencyKey.get(idempotencyKey) ?? null
+  ): Effect.Effect<Fulfillment | null, FulfillmentExpectedError> =>
+    Effect.sync(
+      () => this.#fulfillmentsByIdempotencyKey.get(idempotencyKey) ?? null
     );
-  }
 
-  findFulfillmentSetById(id: FulfillmentSetId): Promise<FulfillmentSet | null> {
-    return Promise.resolve(this.#fulfillmentSets.get(id) ?? null);
-  }
+  readonly findFulfillmentSetById = (
+    id: FulfillmentSetId
+  ): Effect.Effect<FulfillmentSet | null, FulfillmentExpectedError> =>
+    Effect.sync(() => this.#fulfillmentSets.get(id) ?? null);
 
-  findServiceZoneById(id: ServiceZoneId): Promise<ServiceZone | null> {
-    return Promise.resolve(this.#serviceZones.get(id) ?? null);
-  }
+  readonly findServiceZoneById = (
+    id: ServiceZoneId
+  ): Effect.Effect<ServiceZone | null, FulfillmentExpectedError> =>
+    Effect.sync(() => this.#serviceZones.get(id) ?? null);
 
-  findShipmentByFulfillmentId(
+  readonly findShipmentByFulfillmentId = (
     fulfillmentId: FulfillmentId
-  ): Promise<ShipmentRecord | null> {
-    for (const shipment of this.#shipments.values()) {
-      if (shipment.fulfillmentId === fulfillmentId) {
-        return Promise.resolve(shipment);
+  ): Effect.Effect<ShipmentRecord | null, FulfillmentExpectedError> =>
+    Effect.sync(() => {
+      for (const shipment of this.#shipments.values()) {
+        if (shipment.fulfillmentId === fulfillmentId) {
+          return shipment;
+        }
       }
-    }
 
-    return Promise.resolve(null);
-  }
+      return null;
+    });
 
-  findShippingOptionById(id: ShippingOptionId): Promise<ShippingOption | null> {
-    return Promise.resolve(this.#shippingOptions.get(id) ?? null);
-  }
+  readonly findShippingOptionById = (
+    id: ShippingOptionId
+  ): Effect.Effect<ShippingOption | null, FulfillmentExpectedError> =>
+    Effect.sync(() => this.#shippingOptions.get(id) ?? null);
 
-  findShippingProfileById(
+  readonly findShippingProfileById = (
     id: ShippingProfileId
-  ): Promise<ShippingProfile | null> {
-    return Promise.resolve(this.#shippingProfiles.get(id) ?? null);
-  }
+  ): Effect.Effect<ShippingProfile | null, FulfillmentExpectedError> =>
+    Effect.sync(() => this.#shippingProfiles.get(id) ?? null);
 
-  listFulfillments(): Promise<readonly Fulfillment[]> {
-    return Promise.resolve(sortByCreatedAtDesc(this.#fulfillments.values()));
-  }
+  readonly listFulfillments: Effect.Effect<
+    readonly Fulfillment[],
+    FulfillmentExpectedError
+  > = Effect.sync(() => sortByCreatedAtDescending(this.#fulfillments.values()));
 
-  listServiceZonesForSet(
+  readonly listServiceZonesForSet = (
     fulfillmentSetId: FulfillmentSetId
-  ): Promise<readonly ServiceZone[]> {
-    const zones = [...this.#serviceZones.values()].filter(
-      (zone) => zone.fulfillmentSetId === fulfillmentSetId
+  ): Effect.Effect<readonly ServiceZone[], FulfillmentExpectedError> =>
+    Effect.sync(() =>
+      sortByCreatedAtDescending(
+        [...this.#serviceZones.values()].filter(
+          (zone) => zone.fulfillmentSetId === fulfillmentSetId
+        )
+      )
     );
 
-    return Promise.resolve(sortByCreatedAtDesc(zones));
-  }
-
-  listShipmentsForFulfillment(
+  readonly listShipmentsForFulfillment = (
     fulfillmentId: FulfillmentId
-  ): Promise<readonly ShipmentRecord[]> {
-    const shipments = [...this.#shipments.values()].filter(
-      (shipment) => shipment.fulfillmentId === fulfillmentId
+  ): Effect.Effect<readonly ShipmentRecord[], FulfillmentExpectedError> =>
+    Effect.sync(() =>
+      sortByCreatedAtDescending(
+        [...this.#shipments.values()].filter(
+          (shipment) => shipment.fulfillmentId === fulfillmentId
+        )
+      )
     );
 
-    return Promise.resolve(sortByCreatedAtDesc(shipments));
-  }
-
-  listShippingOptions(
+  readonly listShippingOptions = (
     input: ShippingOptionLookupInput = {}
-  ): Promise<readonly ShippingOption[]> {
-    const options = [...this.#shippingOptions.values()].filter((option) =>
-      matchesLookup(option, this.#serviceZones.get(option.serviceZoneId), input)
+  ): Effect.Effect<readonly ShippingOption[], FulfillmentExpectedError> =>
+    Effect.sync(() =>
+      sortByCreatedAtDescending(
+        [...this.#shippingOptions.values()].filter((option) =>
+          matchesLookup(
+            option,
+            this.#serviceZones.get(option.serviceZoneId),
+            input
+          )
+        )
+      )
     );
 
-    return Promise.resolve(sortByCreatedAtDesc(options));
-  }
+  readonly saveFulfillment = (
+    fulfillment: Fulfillment
+  ): Effect.Effect<Fulfillment, FulfillmentExpectedError> =>
+    Effect.sync(() => {
+      this.#fulfillments.set(fulfillment.id, fulfillment);
+      this.#fulfillmentsByIdempotencyKey.set(
+        fulfillment.idempotencyKey,
+        fulfillment
+      );
+      return fulfillment;
+    });
 
-  saveFulfillment(fulfillment: Fulfillment): Promise<Fulfillment> {
-    this.#fulfillments.set(fulfillment.id, fulfillment);
-    this.#fulfillmentsByIdempotencyKey.set(
-      fulfillment.idempotencyKey,
-      fulfillment
-    );
-    return Promise.resolve(fulfillment);
-  }
+  readonly saveFulfillmentSet = (
+    fulfillmentSet: FulfillmentSet
+  ): Effect.Effect<FulfillmentSet, FulfillmentExpectedError> =>
+    Effect.sync(() => {
+      this.#fulfillmentSets.set(fulfillmentSet.id, fulfillmentSet);
+      return fulfillmentSet;
+    });
 
-  saveFulfillmentSet(fulfillmentSet: FulfillmentSet): Promise<FulfillmentSet> {
-    this.#fulfillmentSets.set(fulfillmentSet.id, fulfillmentSet);
-    return Promise.resolve(fulfillmentSet);
-  }
-
-  saveProviderRecord(
+  readonly saveProviderRecord = (
     providerRecord: FulfillmentProviderRecord
-  ): Promise<FulfillmentProviderRecord> {
-    this.#providerRecords.set(providerRecord.id, providerRecord);
-    return Promise.resolve(providerRecord);
-  }
+  ): Effect.Effect<FulfillmentProviderRecord, FulfillmentExpectedError> =>
+    Effect.sync(() => {
+      this.#providerRecords.set(providerRecord.id, providerRecord);
+      return providerRecord;
+    });
 
-  saveReturnShipmentLink(
+  readonly saveReturnShipmentLink = (
     link: ReturnShipmentLink
-  ): Promise<ReturnShipmentLink> {
-    this.#returnShipmentLinks.set(link.id, link);
-    return Promise.resolve(link);
-  }
+  ): Effect.Effect<ReturnShipmentLink, FulfillmentExpectedError> =>
+    Effect.sync(() => {
+      this.#returnShipmentLinks.set(link.id, link);
+      return link;
+    });
 
-  saveServiceZone(serviceZone: ServiceZone): Promise<ServiceZone> {
-    this.#serviceZones.set(serviceZone.id, serviceZone);
-    return Promise.resolve(serviceZone);
-  }
+  readonly saveServiceZone = (
+    serviceZone: ServiceZone
+  ): Effect.Effect<ServiceZone, FulfillmentExpectedError> =>
+    Effect.sync(() => {
+      this.#serviceZones.set(serviceZone.id, serviceZone);
+      return serviceZone;
+    });
 
-  saveShipment(shipment: ShipmentRecord): Promise<ShipmentRecord> {
-    this.#shipments.set(shipment.id, shipment);
-    return Promise.resolve(shipment);
-  }
+  readonly saveShipment = (
+    shipment: ShipmentRecord
+  ): Effect.Effect<ShipmentRecord, FulfillmentExpectedError> =>
+    Effect.sync(() => {
+      this.#shipments.set(shipment.id, shipment);
+      return shipment;
+    });
 
-  saveShippingOption(shippingOption: ShippingOption): Promise<ShippingOption> {
-    this.#shippingOptions.set(shippingOption.id, shippingOption);
-    return Promise.resolve(shippingOption);
-  }
+  readonly saveShippingOption = (
+    shippingOption: ShippingOption
+  ): Effect.Effect<ShippingOption, FulfillmentExpectedError> =>
+    Effect.sync(() => {
+      this.#shippingOptions.set(shippingOption.id, shippingOption);
+      return shippingOption;
+    });
 
-  saveShippingProfile(
+  readonly saveShippingProfile = (
     shippingProfile: ShippingProfile
-  ): Promise<ShippingProfile> {
-    this.#shippingProfiles.set(shippingProfile.id, shippingProfile);
-    return Promise.resolve(shippingProfile);
-  }
+  ): Effect.Effect<ShippingProfile, FulfillmentExpectedError> =>
+    Effect.sync(() => {
+      this.#shippingProfiles.set(shippingProfile.id, shippingProfile);
+      return shippingProfile;
+    });
 }
 
 export const defaultFulfillmentRepository = new InMemoryFulfillmentRepository();
@@ -228,3 +266,55 @@ export const createInMemoryFulfillmentRepository = (): FulfillmentRepository =>
 
 export const createResettableInMemoryFulfillmentRepository =
   (): ResettableFulfillmentRepository => new InMemoryFulfillmentRepository();
+
+export const createInMemoryFulfillmentRepositoryLayer = (
+  repository: FulfillmentRepository = createInMemoryFulfillmentRepository()
+) => Layer.succeed(FulfillmentRepositoryService, repository);
+
+/**
+ * Temporary Promise facade for legacy checkout call sites until task 8.6 moves
+ * checkout orchestration onto Effect services.
+ */
+export const createFulfillmentPromiseRepositoryFromEffectRepository = (
+  repository: FulfillmentRepository
+) => ({
+  findFulfillmentById: (id: FulfillmentId) =>
+    Effect.runPromise(repository.findFulfillmentById(id)),
+  findFulfillmentByIdempotencyKey: (idempotencyKey: string) =>
+    Effect.runPromise(
+      repository.findFulfillmentByIdempotencyKey(idempotencyKey)
+    ),
+  findFulfillmentSetById: (id: FulfillmentSetId) =>
+    Effect.runPromise(repository.findFulfillmentSetById(id)),
+  findServiceZoneById: (id: ServiceZoneId) =>
+    Effect.runPromise(repository.findServiceZoneById(id)),
+  findShipmentByFulfillmentId: (fulfillmentId: FulfillmentId) =>
+    Effect.runPromise(repository.findShipmentByFulfillmentId(fulfillmentId)),
+  findShippingOptionById: (id: ShippingOptionId) =>
+    Effect.runPromise(repository.findShippingOptionById(id)),
+  findShippingProfileById: (id: ShippingProfileId) =>
+    Effect.runPromise(repository.findShippingProfileById(id)),
+  listFulfillments: () => Effect.runPromise(repository.listFulfillments),
+  listServiceZonesForSet: (fulfillmentSetId: FulfillmentSetId) =>
+    Effect.runPromise(repository.listServiceZonesForSet(fulfillmentSetId)),
+  listShipmentsForFulfillment: (fulfillmentId: FulfillmentId) =>
+    Effect.runPromise(repository.listShipmentsForFulfillment(fulfillmentId)),
+  listShippingOptions: (input?: ShippingOptionLookupInput) =>
+    Effect.runPromise(repository.listShippingOptions(input)),
+  saveFulfillment: (fulfillment: Fulfillment) =>
+    Effect.runPromise(repository.saveFulfillment(fulfillment)),
+  saveFulfillmentSet: (fulfillmentSet: FulfillmentSet) =>
+    Effect.runPromise(repository.saveFulfillmentSet(fulfillmentSet)),
+  saveProviderRecord: (providerRecord: FulfillmentProviderRecord) =>
+    Effect.runPromise(repository.saveProviderRecord(providerRecord)),
+  saveReturnShipmentLink: (link: ReturnShipmentLink) =>
+    Effect.runPromise(repository.saveReturnShipmentLink(link)),
+  saveServiceZone: (serviceZone: ServiceZone) =>
+    Effect.runPromise(repository.saveServiceZone(serviceZone)),
+  saveShipment: (shipment: ShipmentRecord) =>
+    Effect.runPromise(repository.saveShipment(shipment)),
+  saveShippingOption: (shippingOption: ShippingOption) =>
+    Effect.runPromise(repository.saveShippingOption(shippingOption)),
+  saveShippingProfile: (shippingProfile: ShippingProfile) =>
+    Effect.runPromise(repository.saveShippingProfile(shippingProfile)),
+});

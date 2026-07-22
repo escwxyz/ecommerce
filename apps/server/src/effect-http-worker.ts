@@ -1,9 +1,14 @@
 import {
   cartEffectHttpApiContribution,
+  fulfillmentEffectHttpApiContribution,
   promotionEffectHttpApiContribution,
   taxEffectHttpApiContribution,
 } from "@ecommerce/api";
 import { createCartServiceLayer, defaultCartService } from "@ecommerce/cart";
+import {
+  createFulfillmentServiceLayer,
+  defaultFulfillmentService,
+} from "@ecommerce/fulfillment";
 import {
   createPromotionServiceLayer,
   defaultPromotionService,
@@ -17,7 +22,7 @@ import { createEffectHttpWorkerHttpEffect } from "./effect-http-worker-runtime";
 /**
  * Native Alchemy v2 entrypoint for the canonical Effect HTTP application.
  * Module and plugin contributions are added here as their vertical migrations
- * complete. Cart, promotion, and tax start with in-memory Layers until
+ * complete. Cart, fulfillment, promotion, and tax start with in-memory Layers until
  * Cloudflare runtime composition can provide PostgreSQL/cache-backed Layers
  * explicitly.
  */
@@ -28,11 +33,13 @@ const effectHttpWorker = Cloudflare.Worker(
     fetch: createEffectHttpWorkerHttpEffect({
       contributions: [
         ...cartEffectHttpApiContribution.groups,
+        ...fulfillmentEffectHttpApiContribution.groups,
         ...promotionEffectHttpApiContribution.groups,
         ...taxEffectHttpApiContribution.groups,
       ],
       runtimeLayers: [
         createCartServiceLayer(defaultCartService),
+        createFulfillmentServiceLayer(defaultFulfillmentService),
         createPromotionServiceLayer(defaultPromotionService),
         createTaxServiceLayer(defaultTaxService),
       ],

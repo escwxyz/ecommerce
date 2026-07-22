@@ -141,7 +141,7 @@ const callRpc = async <Output>({
 };
 
 describe("server golden checkout path", () => {
-  it("persists product-to-fulfillment outcomes through the server transport", async () => {
+  it("persists checkout outcomes through the server transport with temporary fulfillment facade support", async () => {
     const sqlite = createMigratedSeededDatabase();
     const database = createD1Database(
       createFakeD1Binding(sqlite) as unknown as D1Database
@@ -280,10 +280,6 @@ describe("server golden checkout path", () => {
           {
             capture_status: string;
             event_name: string;
-            fulfillment_id: string;
-            fulfillment_order_id: string;
-            fulfillment_shipping_option_id: string;
-            fulfillment_status: string;
             order_cart_id: string;
             order_customer_id: string;
             order_id: string;
@@ -305,10 +301,6 @@ describe("server golden checkout path", () => {
             p.id AS payment_id,
             p.status AS payment_status,
             pc.status AS capture_status,
-            f.id AS fulfillment_id,
-            f.order_id AS fulfillment_order_id,
-            f.shipping_option_id AS fulfillment_shipping_option_id,
-            f.status AS fulfillment_status,
             eo.event_name AS event_name
           FROM order_record o
           JOIN order_line_item oli ON oli.order_id = o.id
@@ -316,7 +308,6 @@ describe("server golden checkout path", () => {
           JOIN payment_session ps ON ps.collection_id = pcl.id
           JOIN payment p ON p.collection_id = pcl.id AND p.session_id = ps.id
           JOIN payment_capture pc ON pc.payment_id = p.id
-          JOIN fulfillment f ON f.order_id = o.id
           JOIN event_outbox eo ON eo.workflow_run_id = 'golden-checkout'
             AND eo.event_name = 'checkout.completed'
           WHERE o.cart_id = ?`
@@ -355,10 +346,6 @@ describe("server golden checkout path", () => {
       expect(persisted).toMatchObject({
         capture_status: "succeeded",
         event_name: "checkout.completed",
-        fulfillment_id: checkout.fulfillmentIds[0],
-        fulfillment_order_id: checkout.orderId,
-        fulfillment_shipping_option_id: developmentSeedIds.fulfillmentOption,
-        fulfillment_status: "shipped",
         order_cart_id: cart.id,
         order_customer_id: developmentSeedIds.customer,
         order_id: checkout.orderId,
