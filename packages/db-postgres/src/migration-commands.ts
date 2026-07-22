@@ -37,6 +37,10 @@ import {
   postgresPromotionRuleTableName,
   postgresPromotionTableName,
   postgresPromotionUsageLimitTableName,
+  postgresTaxCategoryTableName,
+  postgresTaxProviderConfigTableName,
+  postgresTaxRateTableName,
+  postgresTaxRegionTableName,
   postgresProductTableName,
   postgresRegionCountryTableName,
   postgresRegionTableName,
@@ -339,6 +343,18 @@ export const createPostgresDevelopmentResetPlan = (
       )} CASCADE`,
       `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
         postgresPromotionCampaignTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresTaxRateTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresTaxRegionTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresTaxProviderConfigTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresTaxCategoryTableName
       )} CASCADE`,
       `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
         postgresInventoryAdjustmentEventTableName

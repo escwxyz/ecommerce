@@ -3,8 +3,14 @@ import type {
   EventPublisherServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
-import { createEventEnvelope } from "@ecommerce/core/events";
-import { Context, Layer } from "effect";
+import {
+  ClockService,
+  EventPublisherService,
+  IdGeneratorService,
+  createEventEnvelope,
+} from "@ecommerce/core";
+import { Context, Effect, Layer } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
 import type {
@@ -15,6 +21,7 @@ import type {
   CreateTaxRegionInput,
   TaxCalculationResult,
   TaxCategoryRecord,
+  TaxExpectedError,
   TaxProviderConfigRecord,
   TaxRateRecord,
   TaxRegionRecord,
@@ -27,12 +34,18 @@ import {
   TAX_PROVIDER_CONFIG_ID_PREFIX,
   TAX_RATE_ID_PREFIX,
   TAX_REGION_ID_PREFIX,
-  createTaxCalculationId,
-  createTaxCategoryId,
-  createTaxLineId,
-  createTaxProviderConfigId,
-  createTaxRateId,
-  createTaxRegionId,
+  TaxCategoryNotFound,
+  TaxProviderConfigNotFound,
+  TaxProviderUnavailable,
+  TaxRegionNotFound,
+  TaxRepositoryService,
+  TaxValidationFailure,
+  createTaxCalculationIdEffect,
+  createTaxCategoryIdEffect,
+  createTaxLineIdEffect,
+  createTaxProviderConfigIdEffect,
+  createTaxRateIdEffect,
+  createTaxRegionIdEffect,
 } from "../domain";
 import { defaultTaxProviders, findTaxProvider } from "../providers";
 import type { TaxProvider } from "../providers";
@@ -74,13 +87,21 @@ export interface TaxCalculatedEventPayload {
 }
 
 export interface TaxServiceShape {
-  calculateTax(input: CalculateTaxInput): Promise<TaxCalculationResult>;
-  createCategory(input: CreateTaxCategoryInput): Promise<TaxCategoryRecord>;
-  createProviderConfig(
+  readonly calculateTax: (
+    input: CalculateTaxInput
+  ) => EffectValue<TaxCalculationResult, TaxExpectedError>;
+  readonly createCategory: (
+    input: CreateTaxCategoryInput
+  ) => EffectValue<TaxCategoryRecord, TaxExpectedError>;
+  readonly createProviderConfig: (
     input: CreateTaxProviderConfigInput
-  ): Promise<TaxProviderConfigRecord>;
-  createRate(input: CreateTaxRateInput): Promise<TaxRateRecord>;
-  createRegion(input: CreateTaxRegionInput): Promise<TaxRegionRecord>;
+  ) => EffectValue<TaxProviderConfigRecord, TaxExpectedError>;
+  readonly createRate: (
+    input: CreateTaxRateInput
+  ) => EffectValue<TaxRateRecord, TaxExpectedError>;
+  readonly createRegion: (
+    input: CreateTaxRegionInput
+  ) => EffectValue<TaxRegionRecord, TaxExpectedError>;
 }
 
 export const TaxService = Context.Service<TaxServiceShape>(
@@ -109,7 +130,10 @@ const createNoopEventPublisher = (): EventPublisherServiceShape => ({
   },
 });
 
-const createId = (prefix: string, idGenerator: IdGeneratorServiceShape) => {
+const createId = (
+  prefix: string,
+  idGenerator: IdGeneratorServiceShape
+): string => {
   const rawId = idGenerator.nextId();
   return rawId.startsWith(prefix) ? rawId : `${prefix}${rawId}`;
 };
@@ -117,19 +141,34 @@ const createId = (prefix: string, idGenerator: IdGeneratorServiceShape) => {
 const normalizeCode = (value: string): string => value.trim().toUpperCase();
 const normalizeText = (value: string): string => value.trim();
 
+const publishTaxEvent = (
+  eventPublisher: EventPublisherServiceShape,
+  event: Parameters<EventPublisherServiceShape["publish"]>[0]
+) =>
+  Effect.tryPromise({
+    catch: () =>
+      new TaxValidationFailure({
+        message: "Tax event publication failed.",
+      }),
+    try: async () => {
+      await eventPublisher.publish(event);
+    },
+  });
+
 const getProviderConfig = ({
   region,
   repository,
 }: {
   readonly region: TaxRegionRecord;
   readonly repository: TaxRepository;
-}): Promise<TaxProviderConfigRecord | null> => {
-  if (region.providerConfigId) {
-    return repository.findProviderConfigById(region.providerConfigId);
-  }
+}) =>
+  Effect.gen(function* getTaxProviderConfigEffect() {
+    if (region.providerConfigId) {
+      return yield* repository.findProviderConfigById(region.providerConfigId);
+    }
 
-  return repository.findActiveProviderConfigByKey("manual");
-};
+    return yield* repository.findActiveProviderConfigByKey("manual");
+  });
 
 export const createTaxService = ({
   clock = createDefaultClock(),
@@ -138,245 +177,279 @@ export const createTaxService = ({
   providers = defaultTaxProviders,
   repository = defaultTaxRepository,
 }: CreateTaxServiceOptions = {}): TaxServiceShape => ({
-  calculateTax: async (input) => {
-    const region = await repository.findRegionById(
-      createTaxRegionId(input.regionId)
-    );
+  calculateTax: (input) =>
+    Effect.gen(function* calculateTaxEffect() {
+      const region = yield* repository.findRegionById(input.regionId);
 
-    if (!region) {
-      throw new Error(`Tax region "${input.regionId}" was not found.`);
-    }
+      if (!region) {
+        return yield* new TaxRegionNotFound({ regionId: input.regionId });
+      }
 
-    const providerConfig = await getProviderConfig({ region, repository });
+      const providerConfig = yield* getProviderConfig({ region, repository });
 
-    if (!providerConfig || !providerConfig.isActive) {
-      throw new Error(
-        `No active tax provider is configured for "${region.id}".`
-      );
-    }
+      if (!providerConfig || !providerConfig.isActive) {
+        return yield* new TaxProviderUnavailable({ providerKey: "manual" });
+      }
 
-    const provider = findTaxProvider(providers, providerConfig.providerKey);
+      const provider = findTaxProvider(providers, providerConfig.providerKey);
 
-    if (!provider) {
-      throw new Error(
-        `Tax provider "${providerConfig.providerKey}" is not available.`
-      );
-    }
+      if (!provider) {
+        return yield* new TaxProviderUnavailable({
+          providerKey: providerConfig.providerKey,
+        });
+      }
 
-    const currencyCode = input.currencyCode.trim().toUpperCase();
-    const providerResult = await provider.calculateTax(input, {
-      createLineId: () =>
-        createTaxLineId(createId(TAX_LINE_ID_PREFIX, idGenerator)),
-      currencyCode,
-      rates: await repository.findRatesByRegionId(region.id),
-    });
-    const result: TaxCalculationResult = {
-      ...providerResult,
-      currencyCode,
-      id: createTaxCalculationId(
+      const currencyCode = normalizeCode(input.currencyCode);
+      const rates = yield* repository.findRatesByRegionId(region.id);
+      const providerResult = yield* provider.calculateTax(input, {
+        createLineId: () =>
+          Effect.runSync(
+            createTaxLineIdEffect(createId(TAX_LINE_ID_PREFIX, idGenerator))
+          ),
+        currencyCode,
+        rates,
+      });
+      const id = yield* createTaxCalculationIdEffect(
         createId(TAX_CALCULATION_ID_PREFIX, idGenerator)
-      ),
-      providerKey: provider.key,
-      regionId: region.id,
-    };
-
-    await eventPublisher.publish(
-      createEventEnvelope({
-        id: createId("evt_", idGenerator),
-        name: TAX_CALCULATED_EVENT,
-        payload: {
-          id: result.id,
-          lineCount: result.lines.length,
-          providerKey: result.providerKey,
-          regionId: result.regionId,
-          totalTax: result.totalTax,
-        } satisfies TaxCalculatedEventPayload,
-        sourceModule: "tax",
-        subject: {
-          id: result.regionId,
-          type: "tax-region",
-        },
-      })
-    );
-
-    return result;
-  },
-  createCategory: async (input) => {
-    const name = normalizeText(input.name);
-
-    if (!name) {
-      throw new Error("Tax category name is required.");
-    }
-
-    const now = clock.now();
-    const category: TaxCategoryRecord = {
-      code: normalizeCode(input.code),
-      createdAt: now,
-      description: input.description?.trim() || null,
-      id: createTaxCategoryId(createId(TAX_CATEGORY_ID_PREFIX, idGenerator)),
-      metadata: input.metadata ?? {},
-      name,
-      updatedAt: now,
-    };
-    const saved = await repository.saveCategory(category);
-
-    await eventPublisher.publish(
-      createEventEnvelope({
-        id: createId("evt_", idGenerator),
-        name: TAX_CATEGORY_CREATED_EVENT,
-        payload: {
-          code: saved.code,
-          id: saved.id,
-        } satisfies TaxCategoryCreatedEventPayload,
-        sourceModule: "tax",
-        subject: {
-          id: saved.id,
-          type: "tax-category",
-        },
-      })
-    );
-
-    return saved;
-  },
-  createProviderConfig: async (input) => {
-    const providerKey = normalizeText(input.providerKey);
-    const provider = findTaxProvider(providers, providerKey);
-
-    if (!provider) {
-      throw new Error(`Tax provider "${providerKey}" is not available.`);
-    }
-
-    await provider.validateConfig?.(input.settings ?? {});
-
-    const now = clock.now();
-    const providerConfig: TaxProviderConfigRecord = {
-      createdAt: now,
-      id: createTaxProviderConfigId(
-        createId(TAX_PROVIDER_CONFIG_ID_PREFIX, idGenerator)
-      ),
-      isActive: input.isActive ?? true,
-      metadata: input.metadata ?? {},
-      providerKey,
-      settings: input.settings ?? {},
-      updatedAt: now,
-    };
-    const saved = await repository.saveProviderConfig(providerConfig);
-
-    await eventPublisher.publish(
-      createEventEnvelope({
-        id: createId("evt_", idGenerator),
-        name: TAX_PROVIDER_CONFIGURED_EVENT,
-        payload: {
-          id: saved.id,
-          providerKey: saved.providerKey,
-        } satisfies TaxProviderConfiguredEventPayload,
-        sourceModule: "tax",
-        subject: {
-          id: saved.id,
-          type: "tax-provider-config",
-        },
-      })
-    );
-
-    return saved;
-  },
-  createRate: async (input) => {
-    const regionId = createTaxRegionId(input.regionId);
-    const region = await repository.findRegionById(regionId);
-
-    if (!region) {
-      throw new Error(`Tax region "${input.regionId}" was not found.`);
-    }
-
-    const categoryId = input.categoryId
-      ? createTaxCategoryId(input.categoryId)
-      : null;
-
-    if (categoryId && !(await repository.findCategoryById(categoryId))) {
-      throw new Error(`Tax category "${input.categoryId}" was not found.`);
-    }
-
-    const now = clock.now();
-    const rate: TaxRateRecord = {
-      categoryId,
-      createdAt: now,
-      id: createTaxRateId(createId(TAX_RATE_ID_PREFIX, idGenerator)),
-      metadata: input.metadata ?? {},
-      name: normalizeText(input.name),
-      percentage: input.percentage,
-      regionId,
-      updatedAt: now,
-    };
-    const saved = await repository.saveRate(rate);
-
-    await eventPublisher.publish(
-      createEventEnvelope({
-        id: createId("evt_", idGenerator),
-        name: TAX_RATE_CREATED_EVENT,
-        payload: {
-          id: saved.id,
-          percentage: saved.percentage,
-          regionId: saved.regionId,
-        } satisfies TaxRateCreatedEventPayload,
-        sourceModule: "tax",
-        subject: {
-          id: saved.id,
-          type: "tax-rate",
-        },
-      })
-    );
-
-    return saved;
-  },
-  createRegion: async (input) => {
-    const providerConfigId = input.providerConfigId
-      ? createTaxProviderConfigId(input.providerConfigId)
-      : null;
-
-    if (
-      providerConfigId &&
-      !(await repository.findProviderConfigById(providerConfigId))
-    ) {
-      throw new Error(
-        `Tax provider config "${input.providerConfigId}" was not found.`
       );
-    }
+      const result: TaxCalculationResult = {
+        ...providerResult,
+        currencyCode,
+        id,
+        providerKey: provider.key,
+        regionId: region.id,
+      };
 
-    const now = clock.now();
-    const region: TaxRegionRecord = {
-      code: normalizeCode(input.code),
-      countryCode: normalizeCode(input.countryCode),
-      createdAt: now,
-      id: createTaxRegionId(createId(TAX_REGION_ID_PREFIX, idGenerator)),
-      metadata: input.metadata ?? {},
-      name: normalizeText(input.name),
-      providerConfigId,
-      updatedAt: now,
-    };
-    const saved = await repository.saveRegion(region);
+      yield* publishTaxEvent(
+        eventPublisher,
+        createEventEnvelope({
+          id: createId("evt_", idGenerator),
+          name: TAX_CALCULATED_EVENT,
+          payload: {
+            id: result.id,
+            lineCount: result.lines.length,
+            providerKey: result.providerKey,
+            regionId: result.regionId,
+            totalTax: result.totalTax,
+          } satisfies TaxCalculatedEventPayload,
+          sourceModule: "tax",
+          subject: {
+            id: result.regionId,
+            type: "tax-region",
+          },
+        })
+      );
 
-    await eventPublisher.publish(
-      createEventEnvelope({
-        id: createId("evt_", idGenerator),
-        name: TAX_REGION_CREATED_EVENT,
-        payload: {
-          code: saved.code,
-          id: saved.id,
-        } satisfies TaxRegionCreatedEventPayload,
-        sourceModule: "tax",
-        subject: {
-          id: saved.id,
-          type: "tax-region",
-        },
-      })
-    );
+      return result;
+    }),
+  createCategory: (input) =>
+    Effect.gen(function* createTaxCategoryEffect() {
+      const name = normalizeText(input.name);
 
-    return saved;
-  },
+      if (!name) {
+        return yield* new TaxValidationFailure({
+          message: "Tax category name is required.",
+        });
+      }
+
+      const now = clock.now();
+      const category: TaxCategoryRecord = {
+        code: normalizeCode(input.code),
+        createdAt: now,
+        description: input.description?.trim() || null,
+        id: yield* createTaxCategoryIdEffect(
+          createId(TAX_CATEGORY_ID_PREFIX, idGenerator)
+        ),
+        metadata: input.metadata ?? {},
+        name,
+        updatedAt: now,
+      };
+      const saved = yield* repository.saveCategory(category);
+
+      yield* publishTaxEvent(
+        eventPublisher,
+        createEventEnvelope({
+          id: createId("evt_", idGenerator),
+          name: TAX_CATEGORY_CREATED_EVENT,
+          payload: {
+            code: saved.code,
+            id: saved.id,
+          } satisfies TaxCategoryCreatedEventPayload,
+          sourceModule: "tax",
+          subject: {
+            id: saved.id,
+            type: "tax-category",
+          },
+        })
+      );
+
+      return saved;
+    }),
+  createProviderConfig: (input) =>
+    Effect.gen(function* createTaxProviderConfigEffect() {
+      const providerKey = normalizeText(input.providerKey);
+      const provider = findTaxProvider(providers, providerKey);
+
+      if (!provider) {
+        return yield* new TaxProviderUnavailable({ providerKey });
+      }
+
+      if (provider.validateConfig) {
+        yield* provider.validateConfig(input.settings ?? {});
+      }
+
+      const now = clock.now();
+      const providerConfig: TaxProviderConfigRecord = {
+        createdAt: now,
+        id: yield* createTaxProviderConfigIdEffect(
+          createId(TAX_PROVIDER_CONFIG_ID_PREFIX, idGenerator)
+        ),
+        isActive: input.isActive ?? true,
+        metadata: input.metadata ?? {},
+        providerKey,
+        settings: input.settings ?? {},
+        updatedAt: now,
+      };
+      const saved = yield* repository.saveProviderConfig(providerConfig);
+
+      yield* publishTaxEvent(
+        eventPublisher,
+        createEventEnvelope({
+          id: createId("evt_", idGenerator),
+          name: TAX_PROVIDER_CONFIGURED_EVENT,
+          payload: {
+            id: saved.id,
+            providerKey: saved.providerKey,
+          } satisfies TaxProviderConfiguredEventPayload,
+          sourceModule: "tax",
+          subject: {
+            id: saved.id,
+            type: "tax-provider-config",
+          },
+        })
+      );
+
+      return saved;
+    }),
+  createRate: (input) =>
+    Effect.gen(function* createTaxRateEffect() {
+      const region = yield* repository.findRegionById(input.regionId);
+
+      if (!region) {
+        return yield* new TaxRegionNotFound({ regionId: input.regionId });
+      }
+
+      const categoryId = input.categoryId ?? null;
+
+      if (categoryId && !(yield* repository.findCategoryById(categoryId))) {
+        return yield* new TaxCategoryNotFound({ categoryId });
+      }
+
+      const now = clock.now();
+      const rate: TaxRateRecord = {
+        categoryId,
+        createdAt: now,
+        id: yield* createTaxRateIdEffect(
+          createId(TAX_RATE_ID_PREFIX, idGenerator)
+        ),
+        metadata: input.metadata ?? {},
+        name: normalizeText(input.name),
+        percentage: input.percentage,
+        regionId: region.id,
+        updatedAt: now,
+      };
+      const saved = yield* repository.saveRate(rate);
+
+      yield* publishTaxEvent(
+        eventPublisher,
+        createEventEnvelope({
+          id: createId("evt_", idGenerator),
+          name: TAX_RATE_CREATED_EVENT,
+          payload: {
+            id: saved.id,
+            percentage: saved.percentage,
+            regionId: saved.regionId,
+          } satisfies TaxRateCreatedEventPayload,
+          sourceModule: "tax",
+          subject: {
+            id: saved.id,
+            type: "tax-rate",
+          },
+        })
+      );
+
+      return saved;
+    }),
+  createRegion: (input) =>
+    Effect.gen(function* createTaxRegionEffect() {
+      const providerConfigId = input.providerConfigId ?? null;
+
+      if (
+        providerConfigId &&
+        !(yield* repository.findProviderConfigById(providerConfigId))
+      ) {
+        return yield* new TaxProviderConfigNotFound({ providerConfigId });
+      }
+
+      const now = clock.now();
+      const region: TaxRegionRecord = {
+        code: normalizeCode(input.code),
+        countryCode: normalizeCode(input.countryCode),
+        createdAt: now,
+        id: yield* createTaxRegionIdEffect(
+          createId(TAX_REGION_ID_PREFIX, idGenerator)
+        ),
+        metadata: input.metadata ?? {},
+        name: normalizeText(input.name),
+        providerConfigId,
+        updatedAt: now,
+      };
+      const saved = yield* repository.saveRegion(region);
+
+      yield* publishTaxEvent(
+        eventPublisher,
+        createEventEnvelope({
+          id: createId("evt_", idGenerator),
+          name: TAX_REGION_CREATED_EVENT,
+          payload: {
+            code: saved.code,
+            id: saved.id,
+          } satisfies TaxRegionCreatedEventPayload,
+          sourceModule: "tax",
+          subject: {
+            id: saved.id,
+            type: "tax-region",
+          },
+        })
+      );
+
+      return saved;
+    }),
 });
 
 export const createTaxServiceLayer = (service: TaxServiceShape) =>
   Layer.succeed(TaxService, service);
+
+export const createTaxServiceLayerFromRepository = (
+  repository: TaxRepository
+) => createTaxServiceLayer(createTaxService({ repository }));
+
+export const TaxServiceLive = Layer.effect(
+  TaxService,
+  Effect.gen(function* createTaxServiceLiveEffect() {
+    const clock = yield* ClockService;
+    const eventPublisher = yield* EventPublisherService;
+    const idGenerator = yield* IdGeneratorService;
+    const repository = yield* TaxRepositoryService;
+
+    return createTaxService({
+      clock,
+      eventPublisher,
+      idGenerator,
+      repository,
+    });
+  })
+);
 
 export const defaultTaxService = createTaxService({
   repository: defaultTaxRepository,

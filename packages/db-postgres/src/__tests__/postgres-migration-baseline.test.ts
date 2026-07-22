@@ -16,6 +16,7 @@ import {
   postgresInventoryItemTableName,
   postgresProductTableName,
   postgresPromotionTableName,
+  postgresTaxRegionTableName,
   postgresStoreTableName,
   postgresFoundationSchema,
   runPostgresMigrations,
@@ -28,6 +29,7 @@ const productMigrationFolder = "20260721000000_product_module";
 const inventoryMigrationFolder = "20260724000000_inventory_module";
 const cartMigrationFolder = "20260725000000_cart_module";
 const promotionMigrationFolder = "20260726000000_promotion_module";
+const taxMigrationFolder = "20260727000000_tax_module";
 
 describe("PostgreSQL Drizzle migration baseline", () => {
   it("exports the clean foundation schema tables", () => {
@@ -166,6 +168,26 @@ describe("PostgreSQL Drizzle migration baseline", () => {
     expect(sql).toContain('CREATE TABLE "promotion_rule"');
     expect(sql).toContain('CREATE TABLE "promotion_usage_limit"');
     expect(sql).toContain('CREATE TABLE "promotion_redemption"');
+    expect(sql).toContain("--> statement-breakpoint");
+    expect(sql).not.toContain("kysely");
+  });
+
+  it("ships the tax module PostgreSQL migration", () => {
+    const migrationPath = join(
+      defaultPostgresMigrationsFolder,
+      taxMigrationFolder,
+      "migration.sql"
+    );
+
+    expect(existsSync(migrationPath)).toBe(true);
+
+    const sql = readFileSync(migrationPath, "utf8");
+
+    expect(postgresTaxRegionTableName).toBe("tax_region");
+    expect(sql).toContain('CREATE TABLE "tax_category"');
+    expect(sql).toContain('CREATE TABLE "tax_provider_config"');
+    expect(sql).toContain('CREATE TABLE "tax_region"');
+    expect(sql).toContain('CREATE TABLE "tax_rate"');
     expect(sql).toContain("--> statement-breakpoint");
     expect(sql).not.toContain("kysely");
   });

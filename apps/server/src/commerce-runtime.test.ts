@@ -16,7 +16,7 @@ describe("server commerce runtime", () => {
 
     expect(runtime.checkoutConfigured).toBe(false);
     expect(routeKeys).not.toContain("customerGet");
-    expect(routeKeys).toContain("taxCalculate");
+    expect(routeKeys).not.toContain("taxCalculate");
     expect(routeKeys).toContain("paymentCollectionCreate");
     expect(routeKeys).toContain("fulfillmentCreate");
     expect(routeKeys).toContain("orderCreateFromCheckout");

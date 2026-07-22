@@ -5,7 +5,6 @@ import { fulfillmentMigration } from "./schema/fulfillment";
 import { notificationEventMigration } from "./schema/notification-event";
 import { orderMigration } from "./schema/order";
 import { paymentMigration } from "./schema/payment";
-import { taxMigration } from "./schema/tax";
 
 export type CommerceMigration = Migration;
 export type CommerceMigrationMap = Readonly<Record<string, CommerceMigration>>;
@@ -30,7 +29,6 @@ export const defineCommerceMigrations = <
 
 export const commerceMigrations = defineCommerceMigrations({
   "000_auth": authMigration,
-  "008_tax": taxMigration,
   "009_payment": paymentMigration,
   "010_fulfillment": fulfillmentMigration,
   "011_notification_event": notificationEventMigration,

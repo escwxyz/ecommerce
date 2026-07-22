@@ -55,8 +55,16 @@ import {
 } from "@ecommerce/promotion";
 import type { PromotionServiceShape } from "@ecommerce/promotion";
 import { createStoreService } from "@ecommerce/store";
-import { createD1TaxRepository, createTaxService } from "@ecommerce/tax";
-import type { TaxD1Database } from "@ecommerce/tax";
+import {
+  CalculateTaxInputSchema,
+  createInMemoryTaxRepository,
+  createTaxCategoryIdEffect,
+  createTaxProviderConfigIdEffect,
+  createTaxRateIdEffect,
+  createTaxRegionIdEffect,
+  createTaxService,
+} from "@ecommerce/tax";
+import type { TaxServiceShape } from "@ecommerce/tax";
 import { Effect, Schema } from "effect";
 
 type NotificationEventRuntimeHooks = NonNullable<
@@ -87,6 +95,7 @@ const narrowDatabase = <Database>(db: ServerCommerceDatabase): Database =>
 
 type CheckoutCartContract = CreateCheckoutServiceOptions["cart"];
 type CheckoutPromotionContract = CreateCheckoutServiceOptions["promotion"];
+type CheckoutTaxContract = CreateCheckoutServiceOptions["tax"];
 
 const createCheckoutCartPromiseFacade = (
   service: CartServiceShape
@@ -122,6 +131,96 @@ const createCheckoutPromotionPromiseFacade = (
       ).pipe(Effect.flatMap((decoded) => service.calculateAdjustments(decoded)))
     ),
 });
+
+const createCheckoutTaxPromiseFacade = (
+  service: TaxServiceShape
+): CheckoutTaxContract => ({
+  calculateTax: (input) =>
+    Effect.runPromise(
+      Schema.decodeUnknownEffect(CalculateTaxInputSchema)({
+        ...(input as Record<string, unknown>),
+        items: Array.isArray((input as Record<string, unknown>).items)
+          ? (
+              (input as Record<string, unknown>).items as readonly unknown[]
+            ).map((item) =>
+              typeof item === "object" && item !== null
+                ? {
+                    ...(item as Record<string, unknown>),
+                    taxCategoryId:
+                      (item as Record<string, unknown>).taxCategoryId ===
+                      "default"
+                        ? developmentSeedIds.taxCategory
+                        : (item as Record<string, unknown>).taxCategoryId,
+                  }
+                : item
+            )
+          : (input as Record<string, unknown>).items,
+        regionId:
+          (input as Record<string, unknown>).regionId ===
+          developmentSeedIds.region
+            ? developmentSeedIds.taxRegion
+            : (input as Record<string, unknown>).regionId,
+      }).pipe(Effect.flatMap((decoded) => service.calculateTax(decoded)))
+    ),
+});
+
+const seedDevelopmentTaxRepository = (
+  repository: ReturnType<typeof createInMemoryTaxRepository>
+) =>
+  Effect.runSync(
+    Effect.gen(function* seedDevelopmentTaxRepositoryEffect() {
+      const timestamp = new Date(Date.UTC(2026, 0, 1));
+      const categoryId = yield* createTaxCategoryIdEffect(
+        developmentSeedIds.taxCategory
+      );
+      const providerConfigId = yield* createTaxProviderConfigIdEffect(
+        developmentSeedIds.taxProvider
+      );
+      const regionId = yield* createTaxRegionIdEffect(
+        developmentSeedIds.taxRegion
+      );
+      const rateId = yield* createTaxRateIdEffect(developmentSeedIds.taxRate);
+
+      yield* repository.saveProviderConfig({
+        createdAt: timestamp,
+        id: providerConfigId,
+        isActive: true,
+        metadata: {},
+        providerKey: "manual",
+        settings: {},
+        updatedAt: timestamp,
+      });
+      yield* repository.saveCategory({
+        code: "standard",
+        createdAt: timestamp,
+        description: "Standard taxable goods",
+        id: categoryId,
+        metadata: {},
+        name: "Standard",
+        updatedAt: timestamp,
+      });
+      yield* repository.saveRegion({
+        code: "us",
+        countryCode: "US",
+        createdAt: timestamp,
+        id: regionId,
+        metadata: {},
+        name: "United States",
+        providerConfigId,
+        updatedAt: timestamp,
+      });
+      yield* repository.saveRate({
+        categoryId,
+        createdAt: timestamp,
+        id: rateId,
+        metadata: {},
+        name: "US standard rate",
+        percentage: 8.25,
+        regionId,
+        updatedAt: timestamp,
+      });
+    })
+  );
 
 /**
  * Creates deterministic provider registries for local development and tests.
@@ -176,8 +275,11 @@ export const createServerCommerceRuntime = ({
     // Temporary checkout-only bridge until task 8.6 moves checkout onto
     // Effect module Layers directly. New promotion traffic uses Effect HTTP.
     promotion: createInMemoryPromotionRepository(),
-    tax: createD1TaxRepository({ db: narrowDatabase<TaxD1Database>(db) }),
+    // Temporary checkout-only bridge until task 8.6 moves checkout onto
+    // Effect module Layers directly. New tax traffic uses Effect HTTP.
+    tax: createInMemoryTaxRepository(),
   };
+  seedDevelopmentTaxRepository(repositories.tax);
 
   const notificationEvent = createNotificationEventService({
     clock,
@@ -488,7 +590,7 @@ export const createServerCommerceRuntime = ({
           region: services.region,
           salesChannel: services.salesChannel,
           store: services.store,
-          tax: services.tax,
+          tax: createCheckoutTaxPromiseFacade(services.tax),
         }
       : undefined;
   const checkout = checkoutServices
@@ -540,10 +642,6 @@ export const createServerCommerceRuntime = ({
         idGenerator,
         providerRegistry: paymentProviderRegistry,
         repository: repositories.payment,
-      },
-      tax: {
-        ...sharedServiceOptions,
-        repository: repositories.tax,
       },
     },
   });

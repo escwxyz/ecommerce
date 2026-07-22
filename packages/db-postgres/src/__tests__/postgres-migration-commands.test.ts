@@ -117,6 +117,9 @@ describe("PostgreSQL migration commands", () => {
       expect.objectContaining({
         name: "20260726000000_promotion_module",
       }),
+      expect.objectContaining({
+        name: "20260727000000_tax_module",
+      }),
     ]);
   });
 
@@ -153,6 +156,10 @@ describe("PostgreSQL migration commands", () => {
       'DROP TABLE IF EXISTS "promotion_rule" CASCADE',
       'DROP TABLE IF EXISTS "promotion_promotion" CASCADE',
       'DROP TABLE IF EXISTS "promotion_campaign" CASCADE',
+      'DROP TABLE IF EXISTS "tax_rate" CASCADE',
+      'DROP TABLE IF EXISTS "tax_region" CASCADE',
+      'DROP TABLE IF EXISTS "tax_provider_config" CASCADE',
+      'DROP TABLE IF EXISTS "tax_category" CASCADE',
       'DROP TABLE IF EXISTS "inventory_adjustment_event" CASCADE',
       'DROP TABLE IF EXISTS "inventory_reservation" CASCADE',
       'DROP TABLE IF EXISTS "inventory_level" CASCADE',

@@ -1,8 +1,12 @@
+import { Effect } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
+
 import type {
   CalculateTaxInput,
   TaxCalculationResult,
   TaxLine,
   TaxRateRecord,
+  TaxValidationFailure,
 } from "../domain";
 
 export interface TaxProviderCalculationContext {
@@ -13,11 +17,16 @@ export interface TaxProviderCalculationContext {
 
 export interface TaxProvider {
   readonly key: string;
-  calculateTax(
+  readonly calculateTax: (
     input: CalculateTaxInput,
     context: TaxProviderCalculationContext
-  ): Promise<Omit<TaxCalculationResult, "id" | "providerKey" | "regionId">>;
-  validateConfig?(settings: Readonly<Record<string, unknown>>): Promise<void>;
+  ) => EffectValue<
+    Omit<TaxCalculationResult, "id" | "providerKey" | "regionId">,
+    TaxValidationFailure
+  >;
+  readonly validateConfig?: (
+    settings: Readonly<Record<string, unknown>>
+  ) => EffectValue<void, TaxValidationFailure>;
 }
 
 const getLineRate = (
@@ -115,48 +124,49 @@ const getRoundedLineAmounts = (
 };
 
 export const manualTaxProvider: TaxProvider = {
-  calculateTax: (input, context) => {
-    const lineInputs = input.items.map((item) => {
-      const rate = getLineRate(item, context.rates);
-      const taxableAmount = getTaxableAmount(item);
+  calculateTax: (input, context) =>
+    Effect.sync(() => {
+      const lineInputs = input.items.map((item) => {
+        const rate = getLineRate(item, context.rates);
+        const taxableAmount = getTaxableAmount(item);
+
+        return {
+          item,
+          rate,
+          rawTaxAmount: calculateRawTaxAmount({
+            pricesIncludeTax: input.policy.pricesIncludeTax,
+            rate: rate?.percentage ?? 0,
+            taxableAmount,
+          }),
+          taxableAmount,
+        };
+      });
+      const roundedAmounts = getRoundedLineAmounts(
+        lineInputs.map((lineInput) => lineInput.rawTaxAmount),
+        input.policy.roundAt ?? "line"
+      );
+      const lines: TaxLine[] = [];
+
+      for (const [index, lineInput] of lineInputs.entries()) {
+        lines.push({
+          amount: roundedAmounts[index] ?? 0,
+          currencyCode: context.currencyCode,
+          id: context.createLineId(),
+          itemId: lineInput.item.id,
+          rate: lineInput.rate?.percentage ?? 0,
+          rateId: lineInput.rate?.id ?? null,
+          taxableAmount: lineInput.taxableAmount,
+        });
+      }
 
       return {
-        item,
-        rate,
-        rawTaxAmount: calculateRawTaxAmount({
-          pricesIncludeTax: input.policy.pricesIncludeTax,
-          rate: rate?.percentage ?? 0,
-          taxableAmount,
-        }),
-        taxableAmount,
-      };
-    });
-    const roundedAmounts = getRoundedLineAmounts(
-      lineInputs.map((lineInput) => lineInput.rawTaxAmount),
-      input.policy.roundAt
-    );
-    const lines: TaxLine[] = [];
-
-    for (const [index, lineInput] of lineInputs.entries()) {
-      lines.push({
-        amount: roundedAmounts[index] ?? 0,
         currencyCode: context.currencyCode,
-        id: context.createLineId(),
-        itemId: lineInput.item.id,
-        rate: lineInput.rate?.percentage ?? 0,
-        rateId: lineInput.rate?.id ?? null,
-        taxableAmount: lineInput.taxableAmount,
-      });
-    }
-
-    return Promise.resolve({
-      currencyCode: context.currencyCode,
-      lines,
-      totalTax: lines.reduce((total, line) => total + line.amount, 0),
-    });
-  },
+        lines,
+        totalTax: lines.reduce((total, line) => total + line.amount, 0),
+      };
+    }),
   key: "manual",
-  validateConfig: () => Promise.resolve(),
+  validateConfig: () => Effect.void,
 };
 
 export const defaultTaxProviders = [manualTaxProvider] as const;

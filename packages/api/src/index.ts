@@ -208,6 +208,20 @@ export {
   promotionEffectHttpApiContribution,
 } from "./promotion-effect-http-api";
 export {
+  TaxCalculationResultSuccessSchema,
+  TaxCategoryApiRecordSuccessSchema,
+  TaxProviderConfigApiRecordSuccessSchema,
+  TaxRateApiRecordSuccessSchema,
+  TaxRegionApiRecordSuccessSchema,
+  taxAdminHttpApiGroup,
+  taxReadErrors,
+  taxWriteErrors,
+} from "./tax-effect-http-contract";
+export {
+  taxAdminHttpApiHandlers,
+  taxEffectHttpApiContribution,
+} from "./tax-effect-http-api";
+export {
   RegionApiListSuccessSchema,
   RegionApiNullableRecordSuccessSchema,
   RegionApiRecordSuccessSchema,

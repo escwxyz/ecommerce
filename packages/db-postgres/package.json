@@ -34,6 +34,7 @@
     "@ecommerce/promotion": "workspace:*",
     "@ecommerce/region-sales-channel": "workspace:*",
     "@ecommerce/store": "workspace:*",
+    "@ecommerce/tax": "workspace:*",
     "@effect/sql-pg": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",

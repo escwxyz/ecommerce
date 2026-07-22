@@ -132,8 +132,8 @@ describe("db d1 adapter", () => {
     await expect(tableExists(database.db, "promotion_promotion")).resolves.toBe(
       false
     );
-    await expect(tableExists(database.db, "tax_region")).resolves.toBe(true);
-    await expect(tableExists(database.db, "tax_rate")).resolves.toBe(true);
+    await expect(tableExists(database.db, "tax_region")).resolves.toBe(false);
+    await expect(tableExists(database.db, "tax_rate")).resolves.toBe(false);
     await expect(tableExists(database.db, "payment_collection")).resolves.toBe(
       true
     );
@@ -205,42 +205,10 @@ describe("db d1 adapter", () => {
     expect(readdirSync(migrationsDir)).not.toContain("0008_inventory.sql");
   });
 
-  it("ships SQL migrations for tax tables", () => {
-    const sqlite = new Database(":memory:");
+  it("does not ship a legacy D1 tax migration after the Effect slice migration", () => {
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
-    sqlite.exec(readFileSync(join(migrationsDir, "0009_tax.sql"), "utf8"));
-
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'table'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "tax_category",
-        "tax_provider_config",
-        "tax_region",
-        "tax_rate",
-        "tax_calculation_policy",
-      ])
-    );
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'index'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "tax_category_code_idx",
-        "tax_provider_config_key_idx",
-        "tax_region_code_idx",
-        "tax_rate_region_idx",
-        "tax_rate_category_idx",
-      ])
-    );
-
-    sqlite.close();
+    expect(readdirSync(migrationsDir)).not.toContain("0009_tax.sql");
   });
 
   it("ships SQL migrations for payment tables", () => {
@@ -428,11 +396,6 @@ describe("db d1 adapter", () => {
         .map((row) => (row as { name: string }).name)
     ).toEqual(
       expect.arrayContaining([
-        "tax_category",
-        "tax_provider_config",
-        "tax_region",
-        "tax_rate",
-        "tax_calculation_policy",
         "payment_provider",
         "payment_account_holder",
         "payment_method",

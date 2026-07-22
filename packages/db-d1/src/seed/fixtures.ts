@@ -30,12 +30,9 @@ export const developmentSeedIds = {
   shippingProfile: "shprof_dev_default",
   stockLocation: "sloc_dev_main",
   taxCategory: "txcat_dev_standard",
-  taxPolicy: "txpolicy_dev_us",
   taxProvider: "txprov_dev_manual",
   taxRate: "txrate_dev_us_standard",
-  // Checkout currently passes the commerce region id into tax.calculateTax,
-  // so the development seed aligns the tax region primary key with that lookup.
-  taxRegion: "reg_dev_us",
+  taxRegion: "txreg_dev_us",
 } as const;
 
 const defineSeedWrite = <Table extends keyof CommerceDatabase>(
@@ -122,85 +119,10 @@ const shippingOption = defineSeedWrite(
   ["id"]
 );
 
-const taxCategory = defineSeedWrite(
-  "tax_category",
-  {
-    code: "standard",
-    created_at: seedTimestamp,
-    description: "Standard taxable goods",
-    id: developmentSeedIds.taxCategory,
-    metadata_json: emptyJson,
-    name: "Standard",
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const taxProvider = defineSeedWrite(
-  "tax_provider_config",
-  {
-    created_at: seedTimestamp,
-    id: developmentSeedIds.taxProvider,
-    is_active: 1,
-    metadata_json: emptyJson,
-    provider_key: "manual",
-    settings_json: emptyJson,
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const taxRegion = defineSeedWrite(
-  "tax_region",
-  {
-    code: "us",
-    country_code: "US",
-    created_at: seedTimestamp,
-    id: developmentSeedIds.taxRegion,
-    metadata_json: emptyJson,
-    name: "United States",
-    provider_config_id: developmentSeedIds.taxProvider,
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const taxRate = defineSeedWrite(
-  "tax_rate",
-  {
-    category_id: developmentSeedIds.taxCategory,
-    created_at: seedTimestamp,
-    id: developmentSeedIds.taxRate,
-    metadata_json: emptyJson,
-    name: "US standard rate",
-    percentage: 8.25,
-    region_id: developmentSeedIds.taxRegion,
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
-const taxPolicy = defineSeedWrite(
-  "tax_calculation_policy",
-  {
-    id: developmentSeedIds.taxPolicy,
-    prices_include_tax: 0,
-    region_id: developmentSeedIds.taxRegion,
-    round_at: "line",
-    updated_at: seedTimestamp,
-  },
-  ["id"]
-);
-
 export const developmentSeedWrites: readonly DevelopmentSeedWrite[] = [
   fulfillmentProvider,
   fulfillmentSet,
   shippingProfile,
   serviceZone,
   shippingOption,
-  taxCategory,
-  taxProvider,
-  taxRegion,
-  taxRate,
-  taxPolicy,
 ];
