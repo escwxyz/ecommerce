@@ -94,7 +94,7 @@
 ## 9. Durable workflows, outbox, queues, and actors
 
 - [x] 9.1 Define schema-versioned workflow definitions, state, step outcomes, retry, and compensation contracts
-- [ ] 9.2 Implement the deterministic in-memory workflow runtime and recovery test harness
+- [x] 9.2 Implement the deterministic in-memory workflow runtime and recovery test harness
 - [ ] 9.3 Implement Cloudflare workflow/queue runtime Layers with typed failures and telemetry
 - [ ] 9.4 Integrate transactional outbox claiming and idempotent queue delivery
 - [ ] 9.5 Define platform-neutral keyed actor, command, timer, and state ownership contracts

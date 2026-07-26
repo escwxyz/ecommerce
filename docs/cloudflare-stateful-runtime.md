@@ -64,13 +64,16 @@ authoritative relational store and may persist workflow metadata or
 transactional outbox records, but it is not by itself the workflow execution
 engine.
 
-As of task 9.1, `@ecommerce/core` owns the portable durable-message schemas for
-workflow descriptors, run state, step outcomes, retry policy, retry
-disposition, and compensation policy. Cloudflare adapters must decode persisted
-or queued workflow state through those schemas before dispatching work. Runtime
-implementations are still pending in tasks 9.2 and 9.3.
+As of tasks 9.1 and 9.2, `@ecommerce/core` owns the portable durable-message
+schemas for workflow descriptors, run state, step outcomes, retry policy,
+retry disposition, and compensation policy. Its deterministic in-memory runtime
+persists that state, resumes by run id or idempotency key, skips already
+completed step outcomes, and records failed plus compensated outcomes for
+replay tests. Cloudflare adapters must decode persisted or queued workflow
+state through those schemas before dispatching work. The Cloudflare runtime
+Layer implementation is still pending in task 9.3.
 
-As of tasks 8.1 through 9.1 in `adopt-effect-4-backend-architecture`, cart,
+As of tasks 8.1 through 9.2 in `adopt-effect-4-backend-architecture`, cart,
 promotion, tax, fulfillment, payment, checkout, order, and notification-event
 follow this split:
 

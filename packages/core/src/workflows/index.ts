@@ -242,6 +242,9 @@ export interface CommerceWorkflowStepAttempt<
   readonly completedAt?: Date;
   readonly output?: Output;
   readonly error?: Error;
+  readonly phase?: "run" | "compensation";
+  readonly retryDisposition?: CommerceWorkflowRetryDisposition;
+  readonly scheduledRetryAt?: Date;
 }
 
 export type WorkflowStepHandler<
@@ -383,6 +386,30 @@ export interface CommerceWorkflowMetadataStore {
   appendEvent(
     event: CommerceEventEnvelope<string, unknown>
   ): Promise<void> | void;
+}
+
+export interface CommerceWorkflowStateRegistrationResult {
+  readonly status: "created" | "duplicate";
+  readonly state: CommerceWorkflowRunState;
+}
+
+/**
+ * Adapter-neutral durable state store used by workflow runtimes to recover
+ * replay-relevant step outcomes without repeating completed side effects.
+ */
+export interface CommerceWorkflowStateStore {
+  getRunState(
+    runId: CommerceWorkflowRunId
+  ): Promise<CommerceWorkflowRunState | null> | CommerceWorkflowRunState | null;
+  findRunStateByIdempotencyKey(
+    query: CommerceWorkflowDuplicateQuery
+  ): Promise<CommerceWorkflowRunState | null> | CommerceWorkflowRunState | null;
+  registerRunState(
+    state: CommerceWorkflowRunState
+  ):
+    | Promise<CommerceWorkflowStateRegistrationResult>
+    | CommerceWorkflowStateRegistrationResult;
+  upsertRunState(state: CommerceWorkflowRunState): Promise<void> | void;
 }
 
 export interface CommerceWorkflowRuntime {
