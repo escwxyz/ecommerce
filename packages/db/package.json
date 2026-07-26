@@ -14,12 +14,6 @@
     "./schema/auth": {
       "default": "./src/schema/auth.ts"
     },
-    "./schema/notification-event": {
-      "default": "./src/schema/notification-event.ts"
-    },
-    "./schema/order": {
-      "default": "./src/schema/order.ts"
-    },
     "./schema/promotion": {
       "default": "./src/schema/promotion.ts"
     },
@@ -33,8 +27,6 @@
   },
   "dependencies": {
     "@ecommerce/cart": "workspace:*",
-    "@ecommerce/notification-event": "workspace:*",
-    "@ecommerce/order": "workspace:*",
     "@ecommerce/promotion": "workspace:*",
     "@ecommerce/tax": "workspace:*",
     "kysely": "catalog:",

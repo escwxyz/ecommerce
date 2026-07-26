@@ -3,7 +3,7 @@ import type {
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import { Context, Layer } from "effect";
+import { Context, Effect, Layer, Result } from "effect";
 import { nanoid } from "nanoid";
 
 import type {
@@ -14,6 +14,7 @@ import type {
   EventPublishInput,
   EventPublishResult,
   NotificationDispatchRecord,
+  NotificationEventExpectedError,
   NotificationEventRepository,
   NotificationProvider,
   NotificationProviderDeliveryInput,
@@ -21,6 +22,13 @@ import type {
   NotificationProviderRecord,
   NotificationTemplate,
   UpsertNotificationTemplateInput,
+} from "../domain";
+import {
+  NotificationEventOutboxNotFound,
+  NotificationEventRepositoryService,
+  NotificationEventRuntimeFailure,
+  NotificationProviderUnavailable,
+  NotificationTemplateNotFound,
 } from "../domain";
 import { defaultNotificationEventRepository } from "../repositories";
 
@@ -36,21 +44,35 @@ const NOTIFICATION_DISPATCH_ID_PREFIX = "ndsp_" as const;
 const NOTIFICATION_PROVIDER_ID_PREFIX = "nprov_" as const;
 
 export interface NotificationEventServiceShape {
-  dispatchNotification(
+  readonly dispatchNotification: (
     input: DispatchNotificationInput
-  ): Promise<NotificationDispatchRecord>;
-  listDeadLetters(): Promise<readonly EventDeadLetterRecord[]>;
-  listDispatches(): Promise<readonly NotificationDispatchRecord[]>;
-  publishEvent(input: EventPublishInput): Promise<EventPublishResult>;
-  recordEventDeliveryFailure(
+  ) => Effect.Effect<
+    NotificationDispatchRecord,
+    NotificationEventExpectedError
+  >;
+  readonly listDeadLetters: Effect.Effect<
+    readonly EventDeadLetterRecord[],
+    NotificationEventExpectedError
+  >;
+  readonly listDispatches: Effect.Effect<
+    readonly NotificationDispatchRecord[],
+    NotificationEventExpectedError
+  >;
+  readonly publishEvent: (
+    input: EventPublishInput
+  ) => Effect.Effect<EventPublishResult, NotificationEventExpectedError>;
+  readonly recordEventDeliveryFailure: (
     input: EventDeliveryFailureInput
-  ): Promise<EventOutboxRecord>;
-  registerNotificationProvider(
+  ) => Effect.Effect<EventOutboxRecord, NotificationEventExpectedError>;
+  readonly registerNotificationProvider: (
     providerKey: string
-  ): Promise<NotificationProviderRecord>;
-  upsertNotificationTemplate(
+  ) => Effect.Effect<
+    NotificationProviderRecord,
+    NotificationEventExpectedError
+  >;
+  readonly upsertNotificationTemplate: (
     input: UpsertNotificationTemplateInput
-  ): Promise<NotificationTemplate>;
+  ) => Effect.Effect<NotificationTemplate, NotificationEventExpectedError>;
 }
 
 export const NotificationEventService =
@@ -67,7 +89,9 @@ export interface CreateNotificationEventServiceOptions {
 }
 
 export interface NotificationEventRuntimeHooks {
-  eventPublished?(result: EventPublishResult): Promise<void>;
+  readonly eventPublished?: (
+    result: EventPublishResult
+  ) => Promise<void> | void;
 }
 
 export interface FakeNotificationProvider extends NotificationProvider {
@@ -120,16 +144,12 @@ const createProviderMap = (
 const requireProvider = (
   providers: ReadonlyMap<string, NotificationProvider>,
   providerKey: string
-): NotificationProvider => {
+): Effect.Effect<NotificationProvider, NotificationProviderUnavailable> => {
   const provider = providers.get(providerKey);
 
-  if (!provider) {
-    throw new Error(
-      `Notification provider "${providerKey}" is not registered.`
-    );
-  }
-
-  return provider;
+  return provider
+    ? Effect.succeed(provider)
+    : Effect.fail(new NotificationProviderUnavailable({ providerKey }));
 };
 
 const getNextAttemptAvailableAt = (
@@ -164,157 +184,179 @@ export const createNotificationEventService = ({
 }: CreateNotificationEventServiceOptions = {}): NotificationEventServiceShape => {
   const providers = createProviderMap(notificationProviders);
 
-  return {
-    dispatchNotification: async (input) => {
-      const existing = await repository.findDispatchByIdempotencyKey(
-        input.idempotencyKey
-      );
-
-      if (existing) {
-        return existing;
-      }
-
-      const template = await repository.findTemplateByKey({
-        channel: input.channel,
-        templateKey: input.templateKey,
-      });
-
-      if (!template) {
-        throw new Error(
-          `Notification template "${input.templateKey}" for channel "${input.channel}" was not found.`
+  return NotificationEventService.of({
+    dispatchNotification: (input) =>
+      Effect.gen(function* dispatchNotificationEffect() {
+        const existing = yield* repository.findDispatchByIdempotencyKey(
+          input.idempotencyKey
         );
-      }
 
-      const provider = requireProvider(providers, template.providerKey);
-      const now = clock.now();
-      const pendingDispatch: NotificationDispatchRecord = {
-        attempts: 1,
-        channel: input.channel,
-        correlationId: input.correlationId,
-        createdAt: now,
-        id: createPrefixedId(idGenerator, NOTIFICATION_DISPATCH_ID_PREFIX),
-        idempotencyKey: input.idempotencyKey,
-        payload: input.payload,
-        providerKey: template.providerKey,
-        recipient: input.recipient,
-        status: "pending",
-        templateId: template.id,
-        updatedAt: now,
-        causationId: input.causationId,
-        workflowRunId: input.workflowRunId,
-      };
+        if (existing) {
+          return existing;
+        }
 
-      await repository.saveDispatch(pendingDispatch);
-
-      try {
-        const result = await provider.deliver({
-          dispatch: pendingDispatch,
-          template,
+        const template = yield* repository.findTemplateByKey({
+          channel: input.channel,
+          templateKey: input.templateKey,
         });
 
-        return repository.saveDispatch(
-          applyDeliveryResult(pendingDispatch, result, clock.now())
+        if (!template) {
+          return yield* new NotificationTemplateNotFound({
+            channel: input.channel,
+            templateKey: input.templateKey,
+          });
+        }
+
+        const provider = yield* requireProvider(
+          providers,
+          template.providerKey
         );
-      } catch (error) {
-        return repository.saveDispatch({
-          ...pendingDispatch,
-          lastError: serializeError(error),
-          status: "failed",
-          updatedAt: clock.now(),
-        });
-      }
-    },
-    listDeadLetters: () => repository.listDeadLetters(),
-    listDispatches: () => repository.listDispatches(),
-    publishEvent: async (input) => {
-      const emittedAt = clock.now();
-      const envelope = createEventEnvelope({
-        ...input,
-        emittedAt,
-        id: createPrefixedId(idGenerator, EVENT_ID_PREFIX),
-      });
-      const outbox: EventOutboxRecord = {
-        attempts: 0,
-        availableAt: emittedAt,
-        createdAt: emittedAt,
-        envelope,
-        eventId: envelope.id,
-        id: envelope.id,
-        status: "pending",
-        updatedAt: emittedAt,
-      };
-
-      const result = {
-        envelope,
-        outbox: await repository.saveOutbox(outbox),
-      };
-
-      await runtime?.eventPublished?.(result);
-
-      return result;
-    },
-    recordEventDeliveryFailure: async ({ outboxId, reason, retryPolicy }) => {
-      const outbox = await repository.findOutboxById(outboxId);
-
-      if (!outbox) {
-        throw new Error(`Event outbox record "${outboxId}" was not found.`);
-      }
-
-      const now = clock.now();
-      const attempts = outbox.attempts + 1;
-      const exhausted = attempts >= retryPolicy.maxAttempts;
-      const nextOutbox: EventOutboxRecord = {
-        ...outbox,
-        attempts,
-        availableAt: exhausted
-          ? outbox.availableAt
-          : getNextAttemptAvailableAt(
-              now,
-              attempts,
-              retryPolicy.backoffSeconds
-            ),
-        lastError: reason,
-        status: exhausted ? "dead-lettered" : "retrying",
-        updatedAt: now,
-      };
-
-      await repository.saveOutbox(nextOutbox);
-
-      if (exhausted) {
-        await repository.saveDeadLetter({
-          attempts,
+        const now = clock.now();
+        const pendingDispatch: NotificationDispatchRecord = {
+          attempts: 1,
+          causationId: input.causationId,
+          channel: input.channel,
+          correlationId: input.correlationId,
           createdAt: now,
-          eventId: outbox.eventId,
-          id: `${outbox.id}:dead-letter`,
-          outboxId: outbox.id,
-          reason,
-        });
-      }
+          id: createPrefixedId(idGenerator, NOTIFICATION_DISPATCH_ID_PREFIX),
+          idempotencyKey: input.idempotencyKey,
+          payload: input.payload,
+          providerKey: template.providerKey,
+          recipient: input.recipient,
+          status: "pending",
+          templateId: template.id,
+          updatedAt: now,
+          workflowRunId: input.workflowRunId,
+        };
 
-      return nextOutbox;
-    },
-    registerNotificationProvider: async (providerKey) => {
-      await Promise.resolve();
-      requireProvider(providers, providerKey);
-      const now = clock.now();
-      return repository.saveProviderRecord({
-        createdAt: now,
-        id: createPrefixedId(idGenerator, NOTIFICATION_PROVIDER_ID_PREFIX),
-        isEnabled: true,
-        providerKey,
-        updatedAt: now,
-      });
-    },
+        yield* repository.saveDispatch(pendingDispatch);
+
+        const deliveryExit = yield* Effect.result(
+          Effect.tryPromise({
+            catch: serializeError,
+            try: () =>
+              provider.deliver({
+                dispatch: pendingDispatch,
+                template,
+              }),
+          })
+        );
+        const deliveryResult = Result.match(deliveryExit, {
+          onFailure: (error) => ({
+            error,
+            messageId: `${provider.key}:${pendingDispatch.id}:failed`,
+            status: "failed" as const,
+          }),
+          onSuccess: (result) => result,
+        });
+
+        return yield* repository.saveDispatch(
+          applyDeliveryResult(pendingDispatch, deliveryResult, clock.now())
+        );
+      }),
+    listDeadLetters: repository.listDeadLetters,
+    listDispatches: repository.listDispatches,
+    publishEvent: (input) =>
+      Effect.gen(function* publishEventEffect() {
+        const emittedAt = clock.now();
+        const envelope = createEventEnvelope({
+          ...input,
+          emittedAt,
+          id: createPrefixedId(idGenerator, EVENT_ID_PREFIX),
+        });
+        const outbox: EventOutboxRecord = {
+          attempts: 0,
+          availableAt: emittedAt,
+          createdAt: emittedAt,
+          envelope,
+          eventId: envelope.id,
+          id: envelope.id,
+          status: "pending",
+          updatedAt: emittedAt,
+        };
+        const result = {
+          envelope,
+          outbox: yield* repository.saveOutbox(outbox),
+        };
+
+        if (runtime?.eventPublished) {
+          yield* Effect.tryPromise({
+            catch: (error) =>
+              new NotificationEventRuntimeFailure({
+                reason: serializeError(error),
+              }),
+            try: () => Promise.resolve(runtime.eventPublished?.(result)),
+          });
+        }
+
+        return result;
+      }),
+    recordEventDeliveryFailure: ({ outboxId, reason, retryPolicy }) =>
+      Effect.gen(function* recordEventDeliveryFailureEffect() {
+        const outbox = yield* repository.findOutboxById(outboxId);
+
+        if (!outbox) {
+          return yield* new NotificationEventOutboxNotFound({ outboxId });
+        }
+
+        const now = clock.now();
+        const attempts = outbox.attempts + 1;
+        const exhausted = attempts >= retryPolicy.maxAttempts;
+        const nextOutbox: EventOutboxRecord = {
+          ...outbox,
+          attempts,
+          availableAt: exhausted
+            ? outbox.availableAt
+            : getNextAttemptAvailableAt(
+                now,
+                attempts,
+                retryPolicy.backoffSeconds
+              ),
+          lastError: reason,
+          status: exhausted ? "dead-lettered" : "retrying",
+          updatedAt: now,
+        };
+
+        yield* repository.saveOutbox(nextOutbox);
+
+        if (exhausted) {
+          yield* repository.saveDeadLetter({
+            attempts,
+            createdAt: now,
+            eventId: outbox.eventId,
+            id: `${outbox.id}:dead-letter`,
+            outboxId: outbox.id,
+            reason,
+          });
+        }
+
+        return nextOutbox;
+      }),
+    registerNotificationProvider: (providerKey) =>
+      Effect.gen(function* registerNotificationProviderEffect() {
+        yield* requireProvider(providers, providerKey);
+        const now = clock.now();
+        return yield* repository.saveProviderRecord({
+          createdAt: now,
+          id: createPrefixedId(idGenerator, NOTIFICATION_PROVIDER_ID_PREFIX),
+          isEnabled: true,
+          providerKey,
+          updatedAt: now,
+        });
+      }),
     upsertNotificationTemplate: (input) => repository.saveTemplate(input),
-  };
+  });
 };
 
 export const defaultNotificationEventService = createNotificationEventService();
 
 export const createNotificationEventServiceLayer = (
-  options: CreateNotificationEventServiceOptions
-) =>
-  Layer.succeed(
-    NotificationEventService,
-    createNotificationEventService(options)
-  );
+  service: NotificationEventServiceShape = defaultNotificationEventService
+) => Layer.succeed(NotificationEventService, service);
+
+export const notificationEventServiceFromRepositoryLayer = Layer.effect(
+  NotificationEventService,
+  NotificationEventRepositoryService.use((repository) =>
+    Effect.succeed(createNotificationEventService({ repository }))
+  )
+);

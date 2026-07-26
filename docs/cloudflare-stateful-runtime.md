@@ -64,8 +64,9 @@ authoritative relational store and
 may persist workflow metadata or transactional outbox records, but it is not by
 itself the workflow execution engine.
 
-As of tasks 8.1 through 8.5 in `adopt-effect-4-backend-architecture`, cart,
-promotion, tax, fulfillment, and payment follow this split:
+As of tasks 8.1 through 8.9 in `adopt-effect-4-backend-architecture`, cart,
+promotion, tax, fulfillment, payment, checkout, order, and notification-event
+follow this split:
 
 - PostgreSQL Drizzle owns durable cart, line-item, and adjustment persistence.
 - PostgreSQL Drizzle owns durable promotion campaign, promotion, rule, usage
@@ -77,6 +78,8 @@ promotion, tax, fulfillment, and payment follow this split:
   return-shipment-link persistence.
 - PostgreSQL Drizzle owns durable payment provider, account-holder, method,
   collection, session, payment, capture, and refund persistence.
+- PostgreSQL Drizzle owns durable notification-event outbox, dead-letter,
+  provider, template, and dispatch persistence.
 - The Cloudflare Durable Object cart cache implements the Effect-native
   active-cache port for hot aggregate reads, ownership checks, idempotency maps,
   and projection-sync failure recording.
@@ -91,8 +94,20 @@ promotion, tax, fulfillment, and payment follow this split:
   Effect-native payment-provider boundary rather than actor-local state.
 - Checkout now has an Effect-facing service and admin Effect HTTP contract, but
   the server golden-path composition still uses temporary checkout-only Promise
-  facades over cart, promotion, tax, fulfillment, and payment while order and
-  notification-event remain legacy downstream slices.
+  facades over cart, promotion, tax, fulfillment, payment, order, and
+  notification-event until section 9 resolves durable workflow orchestration.
+  The legacy checkout Zod/oRPC package surface and server oRPC route have been
+  removed; the credential-free golden path exercises the composed Effect
+  checkout service directly.
+- Order has no Durable Object or actor-local state owner yet. PostgreSQL is
+  authoritative for order records, line items, transactions, transitions, and
+  post-purchase operations; the Effect Worker foundation currently uses an
+  in-memory order Layer until Cloudflare runtime composition wires the
+  PostgreSQL adapter.
+- Notification-event queue and realtime Cloudflare bridges are platform
+  delivery/fanout mechanisms. They are not durable ownership boundaries;
+  PostgreSQL remains authoritative for outbox, dead-letter, provider, template,
+  and dispatch state until a later accepted workflow/actor design changes that.
 
 Workflow steps must be idempotent, persist replay-relevant outcomes, and define
 retry, terminal rejection, and compensation behavior. Module mutations and

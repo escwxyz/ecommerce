@@ -706,16 +706,18 @@ describe("cloudflare workflow runtime adapter", () => {
       }),
     });
 
-    const published = await service.publishEvent({
-      correlationId: "corr_notify_1",
-      name: "order.placed",
-      payload: { orderId: "order_1" },
-      sourceModule: "order",
-      workflowRunId: "wf_notify_1",
-    });
+    const published = await Effect.runPromise(
+      service.publishEvent({
+        correlationId: "corr_notify_1",
+        name: "order.placed",
+        payload: { orderId: "order_1" },
+        sourceModule: "order",
+        workflowRunId: "wf_notify_1",
+      })
+    );
 
     await expect(
-      repository.findOutboxById(published.outbox.id)
+      Effect.runPromise(repository.findOutboxById(published.outbox.id))
     ).resolves.toMatchObject({
       id: "evt_cf_notify_1",
       status: "pending",
@@ -755,22 +757,26 @@ describe("cloudflare workflow runtime adapter", () => {
       repository,
     });
 
-    await service.upsertNotificationTemplate({
-      channel: "email",
-      id: "ntpl_cf_notify_1",
-      name: "Order placed",
-      providerKey: "email",
-      templateKey: "order.placed",
-    });
+    await Effect.runPromise(
+      service.upsertNotificationTemplate({
+        channel: "email",
+        id: "ntpl_cf_notify_1",
+        name: "Order placed",
+        providerKey: "email",
+        templateKey: "order.placed",
+      })
+    );
 
-    const dispatch = await service.dispatchNotification({
-      channel: "email",
-      correlationId: "corr_notify_2",
-      idempotencyKey: "notify_order_1",
-      payload: { orderId: "order_1" },
-      recipient: { address: "ada@example.com", type: "email" },
-      templateKey: "order.placed",
-    });
+    const dispatch = await Effect.runPromise(
+      service.dispatchNotification({
+        channel: "email",
+        correlationId: "corr_notify_2",
+        idempotencyKey: "notify_order_1",
+        payload: { orderId: "order_1" },
+        recipient: { address: "ada@example.com", type: "email" },
+        templateKey: "order.placed",
+      })
+    );
     const provider = createFakeNotificationProvider("email");
     const message = fakeQueue.messages[0] as NotificationEventQueueMessage;
 
@@ -800,7 +806,9 @@ describe("cloudflare workflow runtime adapter", () => {
     });
 
     expect(provider.deliveries).toHaveLength(1);
-    await expect(repository.listDispatches()).resolves.toMatchObject([
+    await expect(
+      Effect.runPromise(repository.listDispatches)
+    ).resolves.toMatchObject([
       {
         id: "ndsp_cf_notify_1",
         status: "delivered",
@@ -825,21 +833,25 @@ describe("cloudflare workflow runtime adapter", () => {
       repository,
     });
 
-    await service.upsertNotificationTemplate({
-      channel: "email",
-      id: "ntpl_cf_notify_failed",
-      name: "Order placed",
-      providerKey: "email",
-      templateKey: "order.placed",
-    });
-    await service.dispatchNotification({
-      channel: "email",
-      correlationId: "corr_notify_failed",
-      idempotencyKey: "notify_order_failed",
-      payload: { orderId: "order_1" },
-      recipient: { address: "ada@example.com", type: "email" },
-      templateKey: "order.placed",
-    });
+    await Effect.runPromise(
+      service.upsertNotificationTemplate({
+        channel: "email",
+        id: "ntpl_cf_notify_failed",
+        name: "Order placed",
+        providerKey: "email",
+        templateKey: "order.placed",
+      })
+    );
+    await Effect.runPromise(
+      service.dispatchNotification({
+        channel: "email",
+        correlationId: "corr_notify_failed",
+        idempotencyKey: "notify_order_failed",
+        payload: { orderId: "order_1" },
+        recipient: { address: "ada@example.com", type: "email" },
+        templateKey: "order.placed",
+      })
+    );
 
     const message = fakeQueue.messages[0] as NotificationEventQueueMessage;
     const queueMessage = {
@@ -870,7 +882,9 @@ describe("cloudflare workflow runtime adapter", () => {
     );
 
     expect(retrySpy).toHaveBeenCalledTimes(1);
-    await expect(repository.listDispatches()).resolves.toMatchObject([
+    await expect(
+      Effect.runPromise(repository.listDispatches)
+    ).resolves.toMatchObject([
       {
         id: "ndsp_cf_notify_failed",
         lastError: "temporary provider failure",
@@ -896,21 +910,25 @@ describe("cloudflare workflow runtime adapter", () => {
       repository,
     });
 
-    await service.upsertNotificationTemplate({
-      channel: "email",
-      id: "ntpl_cf_notify_thrown",
-      name: "Order placed",
-      providerKey: "email",
-      templateKey: "order.placed",
-    });
-    await service.dispatchNotification({
-      channel: "email",
-      correlationId: "corr_notify_thrown",
-      idempotencyKey: "notify_order_thrown",
-      payload: { orderId: "order_1" },
-      recipient: { address: "ada@example.com", type: "email" },
-      templateKey: "order.placed",
-    });
+    await Effect.runPromise(
+      service.upsertNotificationTemplate({
+        channel: "email",
+        id: "ntpl_cf_notify_thrown",
+        name: "Order placed",
+        providerKey: "email",
+        templateKey: "order.placed",
+      })
+    );
+    await Effect.runPromise(
+      service.dispatchNotification({
+        channel: "email",
+        correlationId: "corr_notify_thrown",
+        idempotencyKey: "notify_order_thrown",
+        payload: { orderId: "order_1" },
+        recipient: { address: "ada@example.com", type: "email" },
+        templateKey: "order.placed",
+      })
+    );
 
     const message = fakeQueue.messages[0] as NotificationEventQueueMessage;
     const queueMessage = {
@@ -942,7 +960,9 @@ describe("cloudflare workflow runtime adapter", () => {
 
     expect(deliveries).toBe(1);
     expect(retrySpy).toHaveBeenCalledTimes(1);
-    await expect(repository.listDispatches()).resolves.toMatchObject([
+    await expect(
+      Effect.runPromise(repository.listDispatches)
+    ).resolves.toMatchObject([
       {
         id: "ndsp_cf_notify_thrown",
         lastError: "provider timeout",

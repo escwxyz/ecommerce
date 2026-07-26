@@ -1,10 +1,15 @@
+import { Effect, Layer } from "effect";
+
 import type {
   OrderAggregate,
+  OrderExpectedError,
+  OrderId,
   OrderRecord,
   OrderRepository,
   OrderStateTransitionRecord,
   OrderTransactionRecord,
 } from "../domain";
+import { OrderNotFound, OrderRepositoryService } from "../domain";
 
 const cloneDate = (date: Date): Date => new Date(date);
 
@@ -56,7 +61,11 @@ const cloneAggregate = (aggregate: OrderAggregate): OrderAggregate => ({
   })),
 });
 
-export class InMemoryOrderRepository implements OrderRepository {
+export interface ResettableOrderRepository extends OrderRepository {
+  readonly clear: Effect.Effect<void>;
+}
+
+export class InMemoryOrderRepository implements ResettableOrderRepository {
   readonly #aggregates = new Map<string, OrderAggregate>();
   readonly #orderIdempotency = new Map<string, string>();
   readonly #transactionIdempotency = new Map<string, string>();
@@ -65,160 +74,183 @@ export class InMemoryOrderRepository implements OrderRepository {
     OrderStateTransitionRecord
   >();
 
-  findOrderById(orderId: string): Promise<OrderRecord | null> {
-    const aggregate = this.#aggregates.get(orderId);
+  readonly clear = Effect.sync(() => {
+    this.#aggregates.clear();
+    this.#orderIdempotency.clear();
+    this.#transactionIdempotency.clear();
+    this.#transitionIdempotency.clear();
+  });
 
-    return Promise.resolve(aggregate ? cloneOrder(aggregate.order) : null);
-  }
+  readonly findOrderById = (
+    orderId: OrderId
+  ): Effect.Effect<OrderRecord | null, OrderExpectedError> =>
+    Effect.sync(() => {
+      const aggregate = this.#aggregates.get(orderId);
+      return aggregate ? cloneOrder(aggregate.order) : null;
+    });
 
-  findOrderByIdempotencyKey(
+  readonly findOrderByIdempotencyKey = (
     idempotencyKey: string
-  ): Promise<OrderRecord | null> {
-    const orderId = this.#orderIdempotency.get(idempotencyKey);
+  ): Effect.Effect<OrderRecord | null, OrderExpectedError> => {
+    const self = this;
+    return Effect.gen(function* findOrderByIdempotencyKeyEffect() {
+      const orderId = self.#orderIdempotency.get(idempotencyKey);
+      return orderId ? yield* self.findOrderById(orderId as OrderId) : null;
+    });
+  };
 
-    return orderId ? this.findOrderById(orderId) : Promise.resolve(null);
-  }
-
-  findStateTransitionByIdempotencyKey(
+  readonly findStateTransitionByIdempotencyKey = (
     idempotencyKey: string
-  ): Promise<OrderStateTransitionRecord | null> {
-    const transition = this.#transitionIdempotency.get(idempotencyKey);
+  ): Effect.Effect<OrderStateTransitionRecord | null, OrderExpectedError> =>
+    Effect.sync(() => {
+      const transition = this.#transitionIdempotency.get(idempotencyKey);
 
-    return Promise.resolve(
-      transition
+      return transition
         ? {
             ...transition,
             changedAt: cloneDate(transition.changedAt),
             metadata: { ...transition.metadata },
           }
-        : null
-    );
-  }
+        : null;
+    });
 
-  getOrderAggregate(orderId: string): Promise<OrderAggregate | null> {
-    const aggregate = this.#aggregates.get(orderId);
+  readonly getOrderAggregate = (
+    orderId: OrderId
+  ): Effect.Effect<OrderAggregate | null, OrderExpectedError> =>
+    Effect.sync(() => {
+      const aggregate = this.#aggregates.get(orderId);
+      return aggregate ? cloneAggregate(aggregate) : null;
+    });
 
-    return Promise.resolve(aggregate ? cloneAggregate(aggregate) : null);
-  }
+  readonly listOrders: Effect.Effect<
+    readonly OrderRecord[],
+    OrderExpectedError
+  > = Effect.sync(() =>
+    [...this.#aggregates.values()].map((aggregate) =>
+      cloneOrder(aggregate.order)
+    )
+  );
 
-  listOrders(): Promise<readonly OrderRecord[]> {
-    return Promise.resolve(
-      [...this.#aggregates.values()].map((aggregate) =>
-        cloneOrder(aggregate.order)
-      )
-    );
-  }
-
-  saveOrderAggregate(
+  readonly saveOrderAggregate = (
     aggregate: OrderAggregate,
     idempotencyKey: string
-  ): Promise<OrderAggregate> {
-    const existingOrderId = this.#orderIdempotency.get(idempotencyKey);
+  ): Effect.Effect<OrderAggregate, OrderExpectedError> =>
+    Effect.sync(() => {
+      const existingOrderId = this.#orderIdempotency.get(idempotencyKey);
 
-    if (existingOrderId) {
-      const existing = this.#aggregates.get(existingOrderId);
-      if (existing) {
-        return Promise.resolve(cloneAggregate(existing));
+      if (existingOrderId) {
+        const existing = this.#aggregates.get(existingOrderId);
+        if (existing) {
+          return cloneAggregate(existing);
+        }
       }
-    }
 
-    const cloned = cloneAggregate(aggregate);
-    this.#aggregates.set(cloned.order.id, cloned);
-    this.#orderIdempotency.set(idempotencyKey, cloned.order.id);
+      const cloned = cloneAggregate(aggregate);
+      this.#aggregates.set(cloned.order.id, cloned);
+      this.#orderIdempotency.set(idempotencyKey, cloned.order.id);
 
-    return Promise.resolve(cloneAggregate(cloned));
-  }
+      return cloneAggregate(cloned);
+    });
 
-  saveOrderTransaction(
+  readonly saveOrderTransaction = (
     transaction: OrderTransactionRecord,
     idempotencyKey: string
-  ): Promise<OrderTransactionRecord> {
-    const existingId = this.#transactionIdempotency.get(idempotencyKey);
+  ): Effect.Effect<OrderTransactionRecord, OrderExpectedError> => {
+    const self = this;
+    return Effect.gen(function* saveOrderTransactionEffect() {
+      const existingId = self.#transactionIdempotency.get(idempotencyKey);
 
-    if (existingId) {
-      const existing = this.#aggregates
-        .get(transaction.orderId)
-        ?.transactions.find((candidate) => candidate.id === existingId);
+      if (existingId) {
+        const existing = self.#aggregates
+          .get(transaction.orderId)
+          ?.transactions.find(
+            (candidate: OrderTransactionRecord) => candidate.id === existingId
+          );
 
-      if (existing) {
-        return Promise.resolve({
-          ...existing,
-          createdAt: cloneDate(existing.createdAt),
-        });
+        if (existing) {
+          return {
+            ...existing,
+            createdAt: cloneDate(existing.createdAt),
+            updatedAt: cloneDate(existing.updatedAt),
+          };
+        }
       }
-    }
 
-    const aggregate = this.#aggregates.get(transaction.orderId);
+      const aggregate = self.#aggregates.get(transaction.orderId);
 
-    if (!aggregate) {
-      return Promise.reject(
-        new Error(`Order "${transaction.orderId}" was not found.`)
-      );
-    }
+      if (!aggregate) {
+        return yield* new OrderNotFound({ orderId: transaction.orderId });
+      }
 
-    aggregate.transactions = [...aggregate.transactions, transaction];
-    this.#transactionIdempotency.set(idempotencyKey, transaction.id);
+      self.#aggregates.set(transaction.orderId, {
+        ...aggregate,
+        transactions: [...aggregate.transactions, transaction],
+      });
+      self.#transactionIdempotency.set(idempotencyKey, transaction.id);
 
-    return Promise.resolve({
-      ...transaction,
-      createdAt: cloneDate(transaction.createdAt),
+      return {
+        ...transaction,
+        createdAt: cloneDate(transaction.createdAt),
+        updatedAt: cloneDate(transaction.updatedAt),
+      };
     });
-  }
+  };
 
-  saveStateTransition(
+  readonly saveStateTransition = (
     transition: OrderStateTransitionRecord,
     idempotencyKey: string
-  ): Promise<OrderStateTransitionRecord> {
-    const existing = this.#transitionIdempotency.get(idempotencyKey);
+  ): Effect.Effect<OrderStateTransitionRecord, OrderExpectedError> => {
+    const self = this;
+    return Effect.gen(function* saveStateTransitionEffect() {
+      const existing = self.#transitionIdempotency.get(idempotencyKey);
 
-    if (existing) {
-      return Promise.resolve({
-        ...existing,
-        changedAt: cloneDate(existing.changedAt),
-        metadata: { ...existing.metadata },
+      if (existing) {
+        return {
+          ...existing,
+          changedAt: cloneDate(existing.changedAt),
+          metadata: { ...existing.metadata },
+        };
+      }
+
+      const aggregate = self.#aggregates.get(transition.orderId);
+
+      if (!aggregate) {
+        return yield* new OrderNotFound({ orderId: transition.orderId });
+      }
+
+      self.#aggregates.set(transition.orderId, {
+        ...aggregate,
+        stateTransitions: [...aggregate.stateTransitions, transition],
       });
-    }
+      self.#transitionIdempotency.set(idempotencyKey, transition);
 
-    const aggregate = this.#aggregates.get(transition.orderId);
-
-    if (!aggregate) {
-      return Promise.reject(
-        new Error(`Order "${transition.orderId}" was not found.`)
-      );
-    }
-
-    aggregate.stateTransitions = [...aggregate.stateTransitions, transition];
-    this.#transitionIdempotency.set(idempotencyKey, transition);
-
-    return Promise.resolve({
-      ...transition,
-      changedAt: cloneDate(transition.changedAt),
-      metadata: { ...transition.metadata },
+      return {
+        ...transition,
+        changedAt: cloneDate(transition.changedAt),
+        metadata: { ...transition.metadata },
+      };
     });
-  }
+  };
 
-  updateOrder(order: OrderRecord): Promise<OrderRecord> {
-    const aggregate = this.#aggregates.get(order.id);
+  readonly updateOrder = (
+    order: OrderRecord
+  ): Effect.Effect<OrderRecord, OrderExpectedError> => {
+    const self = this;
+    return Effect.gen(function* updateOrderEffect() {
+      const aggregate = self.#aggregates.get(order.id);
 
-    if (!aggregate) {
-      return Promise.reject(new Error(`Order "${order.id}" was not found.`));
-    }
+      if (!aggregate) {
+        return yield* new OrderNotFound({ orderId: order.id });
+      }
 
-    aggregate.order = cloneOrder(order);
+      self.#aggregates.set(order.id, {
+        ...aggregate,
+        order: cloneOrder(order),
+      });
 
-    return Promise.resolve(cloneOrder(order));
-  }
-
-  reset(): void {
-    this.#aggregates.clear();
-    this.#orderIdempotency.clear();
-    this.#transactionIdempotency.clear();
-    this.#transitionIdempotency.clear();
-  }
-}
-
-export interface ResettableOrderRepository extends OrderRepository {
-  reset(): void;
+      return cloneOrder(order);
+    });
+  };
 }
 
 export const createInMemoryOrderRepository = (): OrderRepository =>
@@ -228,3 +260,6 @@ export const createResettableInMemoryOrderRepository =
   (): ResettableOrderRepository => new InMemoryOrderRepository();
 
 export const defaultOrderRepository = createInMemoryOrderRepository();
+
+export const createOrderRepositoryLayer = (repository: OrderRepository) =>
+  Layer.succeed(OrderRepositoryService, repository);

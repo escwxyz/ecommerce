@@ -23,11 +23,9 @@ describe("checkout API and admin assembly", () => {
   });
 
   it("keeps migrated checkout operations out of legacy oRPC composition", () => {
-    const checkoutFragment = createBuiltinRouteFragments().find(
-      (fragment) => fragment.key === "module:checkout"
-    );
-
-    expect(checkoutFragment).toBeUndefined();
+    expect(
+      createBuiltinRouteFragments().map((fragment) => fragment.key)
+    ).toEqual(["builtin:core"]);
   });
 
   it("includes checkout Effect HTTP operations in canonical admin composition", () => {

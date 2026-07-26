@@ -1,105 +1,198 @@
-import { z } from "zod";
+import { Schema } from "effect";
 
-export const EventEnvelopeApiSchema = z.object({
-  causationId: z.string().min(1).optional(),
-  correlationId: z.string().min(1).optional(),
-  emittedAt: z.string().min(1),
-  id: z.string().min(1).startsWith("evt_"),
-  name: z.string().min(1),
-  payload: z.unknown(),
-  sourceModule: z.string().min(1).optional(),
-  subject: z
-    .object({
-      id: z.string().min(1),
-      type: z.string().min(1),
-    })
-    .optional(),
-  workflowRunId: z.string().min(1).optional(),
+export const NotificationEventTrimmedStringSchema = Schema.Trimmed.pipe(
+  Schema.check(Schema.isMinLength(1))
+);
+export const NotificationEventMetadataSchema = Schema.Record(
+  Schema.String,
+  Schema.Unknown
+);
+
+export const EventSerializedIdSchema =
+  NotificationEventTrimmedStringSchema.pipe(
+    Schema.check(Schema.isStartsWith("evt_"))
+  );
+export const NotificationDispatchSerializedIdSchema =
+  NotificationEventTrimmedStringSchema.pipe(
+    Schema.check(Schema.isStartsWith("ndsp_"))
+  );
+export const NotificationProviderSerializedIdSchema =
+  NotificationEventTrimmedStringSchema.pipe(
+    Schema.check(Schema.isStartsWith("nprov_"))
+  );
+export const NotificationTemplateSerializedIdSchema =
+  NotificationEventTrimmedStringSchema.pipe(
+    Schema.check(Schema.isStartsWith("ntpl_"))
+  );
+
+export const NotificationEventIsoDateTimeStringSchema =
+  NotificationEventTrimmedStringSchema.pipe(
+    Schema.check(
+      Schema.makeFilter((value: string) => !Number.isNaN(Date.parse(value)))
+    )
+  );
+
+export const NotificationEventNonNegativeIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+export const NotificationEventPositiveIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThan(0))
+);
+
+export const EventSubjectSchema = Schema.Struct({
+  id: NotificationEventTrimmedStringSchema,
+  type: NotificationEventTrimmedStringSchema,
 });
 
-export const EventOutboxStatusSchema = z.enum([
+export const EventEnvelopeSchema = Schema.Struct({
+  causationId: Schema.optional(NotificationEventTrimmedStringSchema),
+  correlationId: Schema.optional(NotificationEventTrimmedStringSchema),
+  emittedAt: Schema.Date,
+  id: EventSerializedIdSchema,
+  name: NotificationEventTrimmedStringSchema,
+  payload: Schema.Unknown,
+  sourceModule: Schema.optional(NotificationEventTrimmedStringSchema),
+  subject: Schema.optional(EventSubjectSchema),
+  workflowRunId: Schema.optional(NotificationEventTrimmedStringSchema),
+});
+
+export const EventEnvelopeApiSchema = Schema.Struct({
+  causationId: Schema.optional(NotificationEventTrimmedStringSchema),
+  correlationId: Schema.optional(NotificationEventTrimmedStringSchema),
+  emittedAt: NotificationEventIsoDateTimeStringSchema,
+  id: EventSerializedIdSchema,
+  name: NotificationEventTrimmedStringSchema,
+  payload: Schema.Unknown,
+  sourceModule: Schema.optional(NotificationEventTrimmedStringSchema),
+  subject: Schema.optional(EventSubjectSchema),
+  workflowRunId: Schema.optional(NotificationEventTrimmedStringSchema),
+});
+
+export const EventOutboxStatusSchema = Schema.Literals([
   "pending",
   "dispatched",
   "retrying",
   "dead-lettered",
 ]);
 
-export const EventOutboxApiSchema = z.object({
-  attempts: z.number().int().nonnegative(),
-  availableAt: z.string().min(1),
-  createdAt: z.string().min(1),
-  eventId: z.string().min(1).startsWith("evt_"),
-  id: z.string().min(1).startsWith("evt_"),
-  lastError: z.string().min(1).optional(),
+export const EventOutboxRecordSchema = Schema.Struct({
+  attempts: NotificationEventNonNegativeIntegerSchema,
+  availableAt: Schema.Date,
+  createdAt: Schema.Date,
+  envelope: EventEnvelopeSchema,
+  eventId: EventSerializedIdSchema,
+  id: EventSerializedIdSchema,
+  lastError: Schema.optional(NotificationEventTrimmedStringSchema),
   status: EventOutboxStatusSchema,
-  updatedAt: z.string().min(1),
+  updatedAt: Schema.Date,
 });
 
-export const EventPublishInputSchema = z.object({
-  causationId: z.string().min(1).optional(),
-  correlationId: z.string().min(1).optional(),
-  name: z.string().min(1),
-  payload: z.unknown(),
-  sourceModule: z.string().min(1),
-  subject: z
-    .object({
-      id: z.string().min(1),
-      type: z.string().min(1),
-    })
-    .optional(),
-  workflowRunId: z.string().min(1).optional(),
+export const EventOutboxApiSchema = Schema.Struct({
+  attempts: NotificationEventNonNegativeIntegerSchema,
+  availableAt: NotificationEventIsoDateTimeStringSchema,
+  createdAt: NotificationEventIsoDateTimeStringSchema,
+  eventId: EventSerializedIdSchema,
+  id: EventSerializedIdSchema,
+  lastError: Schema.optional(NotificationEventTrimmedStringSchema),
+  status: EventOutboxStatusSchema,
+  updatedAt: NotificationEventIsoDateTimeStringSchema,
 });
 
-export const EventPublishResultApiSchema = z.object({
+export const EventPublishInputSchema = Schema.Struct({
+  causationId: Schema.optional(NotificationEventTrimmedStringSchema),
+  correlationId: Schema.optional(NotificationEventTrimmedStringSchema),
+  name: NotificationEventTrimmedStringSchema,
+  payload: Schema.Unknown,
+  sourceModule: NotificationEventTrimmedStringSchema,
+  subject: Schema.optional(EventSubjectSchema),
+  workflowRunId: Schema.optional(NotificationEventTrimmedStringSchema),
+});
+
+export const EventPublishResultSchema = Schema.Struct({
+  envelope: EventEnvelopeSchema,
+  outbox: EventOutboxRecordSchema,
+});
+
+export const EventPublishResultApiSchema = Schema.Struct({
   envelope: EventEnvelopeApiSchema,
   outbox: EventOutboxApiSchema,
 });
 
-export const EventDeliveryFailureInputSchema = z.object({
-  outboxId: z.string().min(1).startsWith("evt_"),
-  reason: z.string().min(1),
-  retryPolicy: z.object({
-    backoffSeconds: z
-      .array(z.number().int().nonnegative())
-      .readonly()
-      .optional(),
-    maxAttempts: z.number().int().positive(),
+export const EventDeliveryFailureInputSchema = Schema.Struct({
+  outboxId: EventSerializedIdSchema,
+  reason: NotificationEventTrimmedStringSchema,
+  retryPolicy: Schema.Struct({
+    backoffSeconds: Schema.optional(
+      Schema.Array(NotificationEventNonNegativeIntegerSchema)
+    ),
+    maxAttempts: NotificationEventPositiveIntegerSchema,
   }),
 });
 
-export const EventDeadLetterApiSchema = z.object({
-  attempts: z.number().int().positive(),
-  createdAt: z.string().min(1),
-  eventId: z.string().min(1).startsWith("evt_"),
-  id: z.string().min(1),
-  outboxId: z.string().min(1).startsWith("evt_"),
-  reason: z.string().min(1),
+export const EventDeadLetterRecordSchema = Schema.Struct({
+  attempts: NotificationEventPositiveIntegerSchema,
+  createdAt: Schema.Date,
+  eventId: EventSerializedIdSchema,
+  id: NotificationEventTrimmedStringSchema,
+  outboxId: EventSerializedIdSchema,
+  reason: NotificationEventTrimmedStringSchema,
 });
 
-export const NotificationChannelSchema = z.enum([
+export const EventDeadLetterApiSchema = Schema.Struct({
+  attempts: NotificationEventPositiveIntegerSchema,
+  createdAt: NotificationEventIsoDateTimeStringSchema,
+  eventId: EventSerializedIdSchema,
+  id: NotificationEventTrimmedStringSchema,
+  outboxId: EventSerializedIdSchema,
+  reason: NotificationEventTrimmedStringSchema,
+});
+
+export const EventDeadLetterListApiSchema = Schema.Array(
+  EventDeadLetterApiSchema
+);
+
+export const NotificationChannelSchema = Schema.Literals([
   "email",
   "sms",
   "webhook",
   "in-app",
 ]);
 
-export const NotificationRecipientSchema = z.object({
-  address: z.string().min(1),
-  type: z.string().min(1),
+export const NotificationRecipientSchema = Schema.Struct({
+  address: NotificationEventTrimmedStringSchema,
+  type: NotificationEventTrimmedStringSchema,
 });
 
-export const NotificationTemplateSchema = z.object({
+export const NotificationTemplateSchema = Schema.Struct({
   channel: NotificationChannelSchema,
-  id: z.string().min(1).startsWith("ntpl_"),
-  name: z.string().min(1),
-  providerKey: z.string().min(1),
-  subject: z.string().min(1).optional(),
-  templateKey: z.string().min(1),
+  id: NotificationTemplateSerializedIdSchema,
+  name: NotificationEventTrimmedStringSchema,
+  providerKey: NotificationEventTrimmedStringSchema,
+  subject: Schema.optional(NotificationEventTrimmedStringSchema),
+  templateKey: NotificationEventTrimmedStringSchema,
 });
 
 export const UpsertNotificationTemplateInputSchema = NotificationTemplateSchema;
 
-export const NotificationDispatchStatusSchema = z.enum([
+export const NotificationProviderRecordSchema = Schema.Struct({
+  createdAt: Schema.Date,
+  id: NotificationProviderSerializedIdSchema,
+  isEnabled: Schema.Boolean,
+  providerKey: NotificationEventTrimmedStringSchema,
+  updatedAt: Schema.Date,
+});
+
+export const NotificationProviderApiSchema = Schema.Struct({
+  createdAt: NotificationEventIsoDateTimeStringSchema,
+  id: NotificationProviderSerializedIdSchema,
+  isEnabled: Schema.Boolean,
+  providerKey: NotificationEventTrimmedStringSchema,
+  updatedAt: NotificationEventIsoDateTimeStringSchema,
+});
+
+export const NotificationDispatchStatusSchema = Schema.Literals([
   "pending",
   "queued",
   "delivered",
@@ -107,37 +200,57 @@ export const NotificationDispatchStatusSchema = z.enum([
   "dead-lettered",
 ]);
 
-export const DispatchNotificationInputSchema = z.object({
-  causationId: z.string().min(1).optional(),
+export const DispatchNotificationInputSchema = Schema.Struct({
+  causationId: Schema.optional(NotificationEventTrimmedStringSchema),
   channel: NotificationChannelSchema,
-  correlationId: z.string().min(1),
-  idempotencyKey: z.string().min(1),
-  payload: z.unknown(),
+  correlationId: NotificationEventTrimmedStringSchema,
+  idempotencyKey: NotificationEventTrimmedStringSchema,
+  payload: Schema.Unknown,
   recipient: NotificationRecipientSchema,
-  templateKey: z.string().min(1),
-  workflowRunId: z.string().min(1).optional(),
+  templateKey: NotificationEventTrimmedStringSchema,
+  workflowRunId: Schema.optional(NotificationEventTrimmedStringSchema),
 });
 
-export const NotificationDispatchApiSchema = z.object({
-  attempts: z.number().int().positive(),
-  causationId: z.string().min(1).optional(),
+export const NotificationDispatchRecordSchema = Schema.Struct({
+  attempts: NotificationEventPositiveIntegerSchema,
+  causationId: Schema.optional(NotificationEventTrimmedStringSchema),
   channel: NotificationChannelSchema,
-  correlationId: z.string().min(1),
-  createdAt: z.string().min(1),
-  deliveredAt: z.string().min(1).optional(),
-  id: z.string().min(1).startsWith("ndsp_"),
-  idempotencyKey: z.string().min(1),
-  lastError: z.string().min(1).optional(),
-  payload: z.unknown(),
-  providerKey: z.string().min(1),
-  providerMessageId: z.string().min(1).optional(),
+  correlationId: NotificationEventTrimmedStringSchema,
+  createdAt: Schema.Date,
+  deliveredAt: Schema.optional(Schema.Date),
+  id: NotificationDispatchSerializedIdSchema,
+  idempotencyKey: NotificationEventTrimmedStringSchema,
+  lastError: Schema.optional(NotificationEventTrimmedStringSchema),
+  payload: Schema.Unknown,
+  providerKey: NotificationEventTrimmedStringSchema,
+  providerMessageId: Schema.optional(NotificationEventTrimmedStringSchema),
   recipient: NotificationRecipientSchema,
   status: NotificationDispatchStatusSchema,
-  templateId: z.string().min(1).startsWith("ntpl_"),
-  updatedAt: z.string().min(1),
-  workflowRunId: z.string().min(1).optional(),
+  templateId: NotificationTemplateSerializedIdSchema,
+  updatedAt: Schema.Date,
+  workflowRunId: Schema.optional(NotificationEventTrimmedStringSchema),
 });
 
-export const NotificationDispatchListApiSchema = z
-  .array(NotificationDispatchApiSchema)
-  .readonly();
+export const NotificationDispatchApiSchema = Schema.Struct({
+  attempts: NotificationEventPositiveIntegerSchema,
+  causationId: Schema.optional(NotificationEventTrimmedStringSchema),
+  channel: NotificationChannelSchema,
+  correlationId: NotificationEventTrimmedStringSchema,
+  createdAt: NotificationEventIsoDateTimeStringSchema,
+  deliveredAt: Schema.optional(NotificationEventIsoDateTimeStringSchema),
+  id: NotificationDispatchSerializedIdSchema,
+  idempotencyKey: NotificationEventTrimmedStringSchema,
+  lastError: Schema.optional(NotificationEventTrimmedStringSchema),
+  payload: Schema.Unknown,
+  providerKey: NotificationEventTrimmedStringSchema,
+  providerMessageId: Schema.optional(NotificationEventTrimmedStringSchema),
+  recipient: NotificationRecipientSchema,
+  status: NotificationDispatchStatusSchema,
+  templateId: NotificationTemplateSerializedIdSchema,
+  updatedAt: NotificationEventIsoDateTimeStringSchema,
+  workflowRunId: Schema.optional(NotificationEventTrimmedStringSchema),
+});
+
+export const NotificationDispatchListApiSchema = Schema.Array(
+  NotificationDispatchApiSchema
+);

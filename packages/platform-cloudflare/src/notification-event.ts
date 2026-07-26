@@ -9,6 +9,7 @@ import type {
   NotificationProviderDeliveryResult,
   NotificationTemplate,
 } from "@ecommerce/notification-event/domain";
+import { Effect } from "effect";
 
 export const notificationEventQueueName = "notification-event-work" as const;
 export const notificationEventDeadLetterQueueName =
@@ -203,25 +204,27 @@ const markOutboxDispatched = async (
   outboxId: string,
   now: Date
 ): Promise<EventOutboxRecord | null> => {
-  const outbox = await repository.findOutboxById(outboxId);
+  const outbox = await Effect.runPromise(repository.findOutboxById(outboxId));
 
   if (!outbox || outbox.status === "dispatched") {
     return outbox;
   }
 
-  return repository.saveOutbox({
-    ...outbox,
-    attempts: outbox.attempts + 1,
-    status: "dispatched",
-    updatedAt: now,
-  });
+  return Effect.runPromise(
+    repository.saveOutbox({
+      ...outbox,
+      attempts: outbox.attempts + 1,
+      status: "dispatched",
+      updatedAt: now,
+    })
+  );
 };
 
 const findDispatchById = async (
   repository: NotificationEventRepository,
   dispatchId: string
 ): Promise<NotificationDispatchRecord | null> => {
-  const dispatches = await repository.listDispatches();
+  const dispatches = await Effect.runPromise(repository.listDispatches);
   return dispatches.find((dispatch) => dispatch.id === dispatchId) ?? null;
 };
 
@@ -250,13 +253,15 @@ const recordNotificationFailure = (
   const attempts = dispatch.attempts + 1;
   const exhausted = attempts >= retryPolicy.maxAttempts;
 
-  return repository.saveDispatch({
-    ...dispatch,
-    attempts,
-    lastError: reason,
-    status: exhausted ? "dead-lettered" : "failed",
-    updatedAt: now,
-  });
+  return Effect.runPromise(
+    repository.saveDispatch({
+      ...dispatch,
+      attempts,
+      lastError: reason,
+      status: exhausted ? "dead-lettered" : "failed",
+      updatedAt: now,
+    })
+  );
 };
 
 const recordNotificationDeadLetter = async (
@@ -272,13 +277,15 @@ const recordNotificationDeadLetter = async (
   );
   const dispatch = existing ?? source.payload.dispatch;
 
-  return repository.saveDispatch({
-    ...dispatch,
-    attempts,
-    lastError: reason,
-    status: "dead-lettered",
-    updatedAt: now,
-  });
+  return Effect.runPromise(
+    repository.saveDispatch({
+      ...dispatch,
+      attempts,
+      lastError: reason,
+      status: "dead-lettered",
+      updatedAt: now,
+    })
+  );
 };
 
 const recordEventDeadLetter = async (
@@ -288,28 +295,34 @@ const recordEventDeadLetter = async (
   attempts: number,
   now: Date
 ): Promise<EventOutboxRecord | null> => {
-  const outbox = await repository.findOutboxById(source.payload.outboxId);
+  const outbox = await Effect.runPromise(
+    repository.findOutboxById(source.payload.outboxId)
+  );
 
   if (!outbox) {
     return null;
   }
 
-  const deadLettered = await repository.saveOutbox({
-    ...outbox,
-    attempts,
-    lastError: reason,
-    status: "dead-lettered",
-    updatedAt: now,
-  });
+  const deadLettered = await Effect.runPromise(
+    repository.saveOutbox({
+      ...outbox,
+      attempts,
+      lastError: reason,
+      status: "dead-lettered",
+      updatedAt: now,
+    })
+  );
 
-  await repository.saveDeadLetter({
-    attempts,
-    createdAt: now,
-    eventId: outbox.eventId,
-    id: `${outbox.id}:dead-letter`,
-    outboxId: outbox.id,
-    reason,
-  });
+  await Effect.runPromise(
+    repository.saveDeadLetter({
+      attempts,
+      createdAt: now,
+      eventId: outbox.eventId,
+      id: `${outbox.id}:dead-letter`,
+      outboxId: outbox.id,
+      reason,
+    })
+  );
 
   return deadLettered;
 };
@@ -567,8 +580,10 @@ export const processNotificationEventQueueMessage = async (
     return;
   }
 
-  const saved = await options.repository.saveDispatch(
-    applyProviderResult(dispatch, result, options.clock.now())
+  const saved = await Effect.runPromise(
+    options.repository.saveDispatch(
+      applyProviderResult(dispatch, result, options.clock.now())
+    )
   );
 
   await safePublishRealtime(options.realtime, options.streamScope, {

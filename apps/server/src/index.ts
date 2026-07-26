@@ -4,6 +4,7 @@ import { createInMemoryCartRepository } from "@ecommerce/cart";
 import { createD1Database } from "@ecommerce/db-d1";
 import { env } from "@ecommerce/env/server";
 import {
+  createCloudflareCartCacheRepository,
   createCloudflareQueuedNotificationProvider,
   createNotificationEventQueuePublisher,
   createNotificationEventRealtimePublisher,
@@ -80,8 +81,11 @@ const developmentProviderRegistries =
     : {};
 const runtime = createServerCommerceRuntime({
   ...developmentProviderRegistries,
-  cartRepository: cartProjectionRepository,
   clock,
+  cartRepository: createCloudflareCartCacheRepository({
+    namespace: serverEnv.CART_CACHE,
+    projectionRepository: cartProjectionRepository,
+  }),
   db: database.db,
   notificationProviders: queuedNotificationProviders,
   notificationRuntime: notificationEventQueuePublisher,

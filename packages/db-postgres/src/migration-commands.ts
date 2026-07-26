@@ -26,6 +26,16 @@ import {
   postgresInventoryLevelTableName,
   postgresInventoryReservationTableName,
   postgresInventoryStockLocationTableName,
+  postgresOrderLineItemTableName,
+  postgresOrderPostPurchaseOperationTableName,
+  postgresOrderStateTransitionTableName,
+  postgresOrderTableName,
+  postgresOrderTransactionTableName,
+  postgresEventDeadLetterTableName,
+  postgresEventOutboxTableName,
+  postgresNotificationDispatchTableName,
+  postgresNotificationProviderTableName,
+  postgresNotificationTemplateTableName,
   postgresPricingCurrencyTableName,
   postgresPricingMoneyAmountTableName,
   postgresPricingPriceListTableName,
@@ -320,6 +330,36 @@ export const createPostgresDevelopmentResetPlan = (
     command,
     requiresConfirmation: true,
     statements: [
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresNotificationDispatchTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresNotificationTemplateTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresNotificationProviderTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresEventDeadLetterTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresEventOutboxTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresOrderPostPurchaseOperationTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresOrderStateTransitionTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresOrderTransactionTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresOrderLineItemTableName
+      )} CASCADE`,
+      `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
+        postgresOrderTableName
+      )} CASCADE`,
       `DROP TABLE IF EXISTS ${quotePostgresIdentifier(
         postgresCartAdjustmentTableName
       )} CASCADE`,

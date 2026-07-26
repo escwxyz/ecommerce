@@ -150,16 +150,16 @@ describe("db d1 adapter", () => {
       false
     );
     await expect(tableExists(database.db, "shipment")).resolves.toBe(false);
-    await expect(tableExists(database.db, "event_outbox")).resolves.toBe(true);
+    await expect(tableExists(database.db, "event_outbox")).resolves.toBe(false);
     await expect(tableExists(database.db, "event_dead_letter")).resolves.toBe(
-      true
+      false
     );
     await expect(
       tableExists(database.db, "notification_dispatch")
-    ).resolves.toBe(true);
+    ).resolves.toBe(false);
     await expect(
       indexExists(database.db, "notification_dispatch_idempotency_idx")
-    ).resolves.toBe(true);
+    ).resolves.toBe(false);
     await expect(tableExists(database.db, "cart")).resolves.toBe(false);
     await expect(tableExists(database.db, "cart_line_item")).resolves.toBe(
       false
@@ -167,25 +167,25 @@ describe("db d1 adapter", () => {
     await expect(tableExists(database.db, "cart_adjustment")).resolves.toBe(
       false
     );
-    await expect(tableExists(database.db, "order_record")).resolves.toBe(true);
+    await expect(tableExists(database.db, "order_record")).resolves.toBe(false);
     await expect(tableExists(database.db, "order_line_item")).resolves.toBe(
-      true
+      false
     );
     await expect(tableExists(database.db, "order_transaction")).resolves.toBe(
-      true
+      false
     );
     await expect(
       tableExists(database.db, "order_state_transition")
-    ).resolves.toBe(true);
+    ).resolves.toBe(false);
     await expect(
       tableExists(database.db, "order_post_purchase_operation")
-    ).resolves.toBe(true);
+    ).resolves.toBe(false);
     await expect(indexExists(database.db, "order_cart_id_idx")).resolves.toBe(
-      true
+      false
     );
     await expect(
       indexExists(database.db, "order_line_item_order_id_idx")
-    ).resolves.toBe(true);
+    ).resolves.toBe(false);
 
     sqlite.close();
   });
@@ -220,44 +220,12 @@ describe("db d1 adapter", () => {
     expect(readdirSync(migrationsDir)).not.toContain("0010_payment.sql");
   });
 
-  it("ships SQL migrations for notification-event tables", () => {
-    const sqlite = new Database(":memory:");
+  it("does not ship a legacy D1 notification-event migration after the Effect slice migration", () => {
     const migrationsDir = join(import.meta.dir, "migrations", "sql");
 
-    sqlite.exec(
-      readFileSync(join(migrationsDir, "0012_notification_event.sql"), "utf8")
+    expect(readdirSync(migrationsDir)).not.toContain(
+      "0012_notification_event.sql"
     );
-
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'table'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "event_outbox",
-        "event_dead_letter",
-        "notification_template",
-        "notification_dispatch",
-        "notification_provider",
-      ])
-    );
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'index'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
-      expect.arrayContaining([
-        "event_outbox_status_idx",
-        "event_dead_letter_event_idx",
-        "notification_template_key_idx",
-        "notification_provider_key_idx",
-        "notification_dispatch_idempotency_idx",
-      ])
-    );
-
-    sqlite.close();
   });
 
   it("ships SQL migrations for order tables", () => {
@@ -307,23 +275,27 @@ describe("db d1 adapter", () => {
       }
     }
 
-    expect(
-      sqlite
-        .query("select name from sqlite_master where type = 'table'")
-        .all()
-        .map((row) => (row as { name: string }).name)
-    ).toEqual(
+    const tableNames = sqlite
+      .query("select name from sqlite_master where type = 'table'")
+      .all()
+      .map((row) => (row as { name: string }).name);
+
+    expect(tableNames).toEqual(
+      expect.arrayContaining([
+        "order_record",
+        "order_line_item",
+        "order_transaction",
+        "order_state_transition",
+        "order_post_purchase_operation",
+      ])
+    );
+    expect(tableNames).not.toEqual(
       expect.arrayContaining([
         "event_outbox",
         "event_dead_letter",
         "notification_template",
         "notification_dispatch",
         "notification_provider",
-        "order_record",
-        "order_line_item",
-        "order_transaction",
-        "order_state_transition",
-        "order_post_purchase_operation",
       ])
     );
     expect(

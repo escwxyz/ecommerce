@@ -19,17 +19,18 @@ describe("server commerce runtime", () => {
     expect(routeKeys).not.toContain("taxCalculate");
     expect(routeKeys).not.toContain("paymentCollectionCreate");
     expect(routeKeys).not.toContain("fulfillmentCreate");
-    expect(routeKeys).toContain("orderCreateFromCheckout");
+    expect(routeKeys).not.toContain("orderCreateFromCheckout");
     expect(routeKeys).not.toContain("checkoutComplete");
   });
 
-  it("configures checkout service without restoring the legacy oRPC route", () => {
+  it("composes the checkout service without restoring legacy oRPC routes", () => {
     const runtime = createServerCommerceRuntime({
       ...createDevelopmentCommerceProviderRegistries(),
       db: unusedDatabase,
     });
 
     expect(runtime.checkoutConfigured).toBe(true);
+    expect(runtime.services.checkout).toBeDefined();
     expect(Object.keys(runtime.apiAssembly.router)).not.toContain(
       "checkoutComplete"
     );

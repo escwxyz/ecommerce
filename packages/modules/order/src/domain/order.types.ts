@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import type { Effect as EffectValue } from "effect/Effect";
 
 import type {
   CreateOrderFromCheckoutInputSchema,
@@ -12,7 +12,9 @@ import type {
   OrderIdentifierSchema,
   OrderItemSnapshotSchema,
   OrderLineItemApiRecordSchema,
+  OrderLineItemIdSchema,
   OrderLineItemRecordSchema,
+  OrderMetadataSchema,
   OrderPaymentReferenceSchema,
   OrderPostPurchaseOperationRecordSchema,
   OrderRecordSchema,
@@ -20,77 +22,78 @@ import type {
   OrderStatusSchema,
   OrderTotalsSnapshotSchema,
   OrderTransactionApiRecordSchema,
+  OrderTransactionIdSchema,
   OrderTransactionRecordSchema,
   OrderTransactionTypeSchema,
+  OrderIdSchema,
   RecordOrderTransactionInputSchema,
   TransitionOrderStatusInputSchema,
 } from "./order.schema";
+import type { OrderExpectedError } from "./order.errors";
 
-export type OrderAddressSnapshot = z.infer<typeof OrderAddressSnapshotSchema>;
-export type OrderTotalsSnapshot = z.infer<typeof OrderTotalsSnapshotSchema>;
-export type OrderItemSnapshot = z.infer<typeof OrderItemSnapshotSchema>;
-export type OrderPaymentReference = z.infer<typeof OrderPaymentReferenceSchema>;
-export type OrderFulfillmentReference = z.infer<
-  typeof OrderFulfillmentReferenceSchema
->;
-export type OrderStatus = z.infer<typeof OrderStatusSchema>;
-export type OrderTransactionType = z.infer<typeof OrderTransactionTypeSchema>;
-export type OrderRecord = z.infer<typeof OrderRecordSchema>;
-export type OrderLineItemRecord = z.infer<typeof OrderLineItemRecordSchema>;
-export type OrderTransactionRecord = z.infer<
-  typeof OrderTransactionRecordSchema
->;
-export type OrderStateTransitionRecord = z.infer<
-  typeof OrderStateTransitionRecordSchema
->;
-export type OrderPostPurchaseOperationRecord = z.infer<
-  typeof OrderPostPurchaseOperationRecordSchema
->;
-export type OrderAggregate = z.infer<typeof OrderAggregateSchema>;
-export type CreateOrderLineItemInput = z.infer<
-  typeof CreateOrderLineItemInputSchema
->;
-export type CreateOrderFromCheckoutInput = z.infer<
-  typeof CreateOrderFromCheckoutInputSchema
->;
-export type TransitionOrderStatusInput = z.infer<
-  typeof TransitionOrderStatusInputSchema
->;
-export type RecordOrderTransactionInput = z.infer<
-  typeof RecordOrderTransactionInputSchema
->;
-export type OrderIdentifierInput = z.infer<typeof OrderIdentifierSchema>;
-export type OrderApiRecord = z.infer<typeof OrderApiRecordSchema>;
-export type OrderLineItemApiRecord = z.infer<
-  typeof OrderLineItemApiRecordSchema
->;
-export type OrderTransactionApiRecord = z.infer<
-  typeof OrderTransactionApiRecordSchema
->;
-export type OrderAggregateApiRecord = z.infer<typeof OrderAggregateApiSchema>;
-export type OrderApiList = z.infer<typeof OrderApiListSchema>;
+export type OrderId = typeof OrderIdSchema.Type;
+export type OrderLineItemId = typeof OrderLineItemIdSchema.Type;
+export type OrderTransactionId = typeof OrderTransactionIdSchema.Type;
+export type OrderMetadata = typeof OrderMetadataSchema.Type;
+export type OrderAddressSnapshot = typeof OrderAddressSnapshotSchema.Type;
+export type OrderTotalsSnapshot = typeof OrderTotalsSnapshotSchema.Type;
+export type OrderItemSnapshot = typeof OrderItemSnapshotSchema.Type;
+export type OrderPaymentReference = typeof OrderPaymentReferenceSchema.Type;
+export type OrderFulfillmentReference =
+  typeof OrderFulfillmentReferenceSchema.Type;
+export type OrderStatus = typeof OrderStatusSchema.Type;
+export type OrderTransactionType = typeof OrderTransactionTypeSchema.Type;
+export type OrderRecord = typeof OrderRecordSchema.Type;
+export type OrderLineItemRecord = typeof OrderLineItemRecordSchema.Type;
+export type OrderTransactionRecord = typeof OrderTransactionRecordSchema.Type;
+export type OrderStateTransitionRecord =
+  typeof OrderStateTransitionRecordSchema.Type;
+export type OrderPostPurchaseOperationRecord =
+  typeof OrderPostPurchaseOperationRecordSchema.Type;
+export type OrderAggregate = typeof OrderAggregateSchema.Type;
+export type CreateOrderLineItemInput =
+  typeof CreateOrderLineItemInputSchema.Type;
+export type CreateOrderFromCheckoutInput =
+  typeof CreateOrderFromCheckoutInputSchema.Type;
+export type TransitionOrderStatusInput =
+  typeof TransitionOrderStatusInputSchema.Type;
+export type RecordOrderTransactionInput =
+  typeof RecordOrderTransactionInputSchema.Type;
+export type OrderIdentifierInput = typeof OrderIdentifierSchema.Type;
+export type OrderApiRecord = typeof OrderApiRecordSchema.Type;
+export type OrderLineItemApiRecord = typeof OrderLineItemApiRecordSchema.Type;
+export type OrderTransactionApiRecord =
+  typeof OrderTransactionApiRecordSchema.Type;
+export type OrderAggregateApiRecord = typeof OrderAggregateApiSchema.Type;
+export type OrderApiList = typeof OrderApiListSchema.Type;
 
 export interface OrderRepository {
-  findOrderById(orderId: string): Promise<OrderRecord | null>;
-  findOrderByIdempotencyKey(
+  readonly findOrderById: (
+    orderId: OrderId
+  ) => EffectValue<OrderRecord | null, OrderExpectedError>;
+  readonly findOrderByIdempotencyKey: (
     idempotencyKey: string
-  ): Promise<OrderRecord | null>;
-  findStateTransitionByIdempotencyKey(
+  ) => EffectValue<OrderRecord | null, OrderExpectedError>;
+  readonly findStateTransitionByIdempotencyKey: (
     idempotencyKey: string
-  ): Promise<OrderStateTransitionRecord | null>;
-  getOrderAggregate(orderId: string): Promise<OrderAggregate | null>;
-  listOrders(): Promise<readonly OrderRecord[]>;
-  saveOrderAggregate(
+  ) => EffectValue<OrderStateTransitionRecord | null, OrderExpectedError>;
+  readonly getOrderAggregate: (
+    orderId: OrderId
+  ) => EffectValue<OrderAggregate | null, OrderExpectedError>;
+  readonly listOrders: EffectValue<readonly OrderRecord[], OrderExpectedError>;
+  readonly saveOrderAggregate: (
     aggregate: OrderAggregate,
     idempotencyKey: string
-  ): Promise<OrderAggregate>;
-  saveOrderTransaction(
+  ) => EffectValue<OrderAggregate, OrderExpectedError>;
+  readonly saveOrderTransaction: (
     transaction: OrderTransactionRecord,
     idempotencyKey: string
-  ): Promise<OrderTransactionRecord>;
-  saveStateTransition(
+  ) => EffectValue<OrderTransactionRecord, OrderExpectedError>;
+  readonly saveStateTransition: (
     transition: OrderStateTransitionRecord,
     idempotencyKey: string
-  ): Promise<OrderStateTransitionRecord>;
-  updateOrder(order: OrderRecord): Promise<OrderRecord>;
+  ) => EffectValue<OrderStateTransitionRecord, OrderExpectedError>;
+  readonly updateOrder: (
+    order: OrderRecord
+  ) => EffectValue<OrderRecord, OrderExpectedError>;
 }

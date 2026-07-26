@@ -1,8 +1,4 @@
 import type { AdminMetadataModel } from "@ecommerce/core/admin";
-import type { CreateNotificationEventRouteFragmentOptions } from "@ecommerce/notification-event/router";
-import { createNotificationEventRouteFragment } from "@ecommerce/notification-event/router";
-import type { CreateOrderRouteFragmentOptions } from "@ecommerce/order/router";
-import { createOrderRouteFragment } from "@ecommerce/order/router";
 import { z } from "zod";
 
 import { createAdminMetadataModel } from "../admin-metadata";
@@ -115,24 +111,11 @@ export const coreRouteFragment = createApiRouteFragment({
 });
 
 export interface CreateBuiltinRouteFragmentsOptions {
-  readonly notificationEvent?: CreateNotificationEventRouteFragmentOptions;
-  readonly order?: CreateOrderRouteFragmentOptions;
 }
 
-export const createBuiltinRouteFragments = ({
-  notificationEvent,
-  order,
-}: CreateBuiltinRouteFragmentsOptions = {}) =>
-  [
-    coreRouteFragment,
-    createApiRouteFragment({
-      ...createNotificationEventRouteFragment(notificationEvent),
-      owner: "module",
-    }),
-    createApiRouteFragment({
-      ...createOrderRouteFragment(order),
-      owner: "module",
-    }),
-  ] as const satisfies readonly ApiRouteFragment[];
+export const createBuiltinRouteFragments = (
+  _options: CreateBuiltinRouteFragmentsOptions = {}
+) =>
+  [coreRouteFragment] as const satisfies readonly ApiRouteFragment[];
 
 export const builtinRouteFragments = createBuiltinRouteFragments();

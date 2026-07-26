@@ -32,16 +32,18 @@ import {
 } from "@ecommerce/fulfillment";
 import type { FulfillmentProviderRegistry } from "@ecommerce/fulfillment";
 import {
-  createD1NotificationEventRepository,
+  createInMemoryNotificationEventRepository,
   createNotificationEventService,
 } from "@ecommerce/notification-event";
 import type {
   CreateNotificationEventServiceOptions,
-  NotificationEventD1Database,
   NotificationProvider,
 } from "@ecommerce/notification-event";
-import { createD1OrderRepository, createOrderService } from "@ecommerce/order";
-import type { OrderD1Database } from "@ecommerce/order";
+import {
+  createInMemoryOrderRepository,
+  createOrderService,
+} from "@ecommerce/order";
+import type { OrderServiceShape } from "@ecommerce/order";
 import {
   createFakePaymentProvider,
   createInMemoryPaymentRepository,
@@ -90,12 +92,12 @@ export interface ServerCommerceRuntimeOptions {
   readonly paymentProviderRegistry?: PaymentProviderRegistry;
 }
 
-const narrowDatabase = <Database>(db: ServerCommerceDatabase): Database =>
-  db as unknown as Database;
-
 type CheckoutCartContract = CreateCheckoutServiceOptions["cart"];
+type CheckoutOrderContract = CreateCheckoutServiceOptions["order"];
 type CheckoutPromotionContract = CreateCheckoutServiceOptions["promotion"];
 type CheckoutTaxContract = CreateCheckoutServiceOptions["tax"];
+type CheckoutNotificationEventContract =
+  CreateCheckoutServiceOptions["notificationEvent"];
 
 const createCheckoutCartPromiseFacade = (
   service: CartServiceShape
@@ -161,6 +163,23 @@ const createCheckoutTaxPromiseFacade = (
             ? developmentSeedIds.taxRegion
             : (input as Record<string, unknown>).regionId,
       }).pipe(Effect.flatMap((decoded) => service.calculateTax(decoded)))
+    ),
+});
+
+const createCheckoutNotificationEventPromiseFacade = (
+  service: NonNullable<ReturnType<typeof createNotificationEventService>>
+): CheckoutNotificationEventContract => ({
+  publishEvent: (input) => Effect.runPromise(service.publishEvent(input)),
+});
+
+const createCheckoutOrderPromiseFacade = (
+  service: OrderServiceShape
+): CheckoutOrderContract => ({
+  createOrderFromCheckout: (input) =>
+    Effect.runPromise(
+      service.createOrderFromCheckout(
+        input as Parameters<OrderServiceShape["createOrderFromCheckout"]>[0]
+      )
     ),
 });
 
@@ -325,15 +344,17 @@ export const createServerCommerceRuntime = ({
     );
   }
 
+  // Retained while Hono/auth compatibility composition still passes a D1
+  // binding; notification-event no longer consumes D1 after task 8.8.
+  void db;
+
   const repositories = {
     cart: providedCartRepository ?? createInMemoryCartRepository(),
     // Temporary checkout-only bridge until task 8.6 moves checkout onto
     // Effect module Layers directly. New fulfillment traffic uses Effect HTTP.
     fulfillment: createInMemoryFulfillmentRepository(),
-    notificationEvent: createD1NotificationEventRepository({
-      db: narrowDatabase<NotificationEventD1Database>(db),
-    }),
-    order: createD1OrderRepository({ db: narrowDatabase<OrderD1Database>(db) }),
+    notificationEvent: createInMemoryNotificationEventRepository(),
+    order: createInMemoryOrderRepository(),
     // Temporary checkout-only bridge until task 8.6 moves checkout onto
     // Effect module Layers directly. New payment traffic uses Effect HTTP.
     payment: createInMemoryPaymentRepository(),
@@ -356,15 +377,17 @@ export const createServerCommerceRuntime = ({
   });
   const eventPublisher: EventPublisherServiceShape = {
     publish: async (event) => {
-      await notificationEvent.publishEvent({
-        causationId: event.causationId,
-        correlationId: event.correlationId,
-        name: event.name,
-        payload: event.payload,
-        sourceModule: event.sourceModule ?? "server",
-        subject: event.subject,
-        workflowRunId: event.workflowRunId,
-      });
+      await Effect.runPromise(
+        notificationEvent.publishEvent({
+          causationId: event.causationId,
+          correlationId: event.correlationId,
+          name: event.name,
+          payload: event.payload,
+          sourceModule: event.sourceModule ?? "server",
+          subject: event.subject,
+          workflowRunId: event.workflowRunId,
+        })
+      );
     },
   };
   const sharedServiceOptions = { clock, eventPublisher, idGenerator };
@@ -650,8 +673,10 @@ export const createServerCommerceRuntime = ({
             services.fulfillment
           ),
           inventory: services.inventory,
-          notificationEvent: services.notificationEvent,
-          order: services.order,
+          notificationEvent: createCheckoutNotificationEventPromiseFacade(
+            services.notificationEvent
+          ),
+          order: createCheckoutOrderPromiseFacade(services.order),
           payment: createPaymentPromiseServiceFromEffectService(
             services.payment
           ),
@@ -665,29 +690,13 @@ export const createServerCommerceRuntime = ({
         }
       : undefined;
   const checkout = checkoutServices
-    ? {
-        ...checkoutServices,
-      }
+    ? { ...checkoutServices }
     : undefined;
   const checkoutService = checkout
     ? createCheckoutService(checkout)
     : undefined;
 
-  const apiAssembly = createApiRootAssembly({
-    routes: {
-      notificationEvent: {
-        clock,
-        idGenerator,
-        notificationProviders,
-        repository: repositories.notificationEvent,
-        runtime: notificationRuntime,
-      },
-      order: {
-        ...sharedServiceOptions,
-        repository: repositories.order,
-      },
-    },
-  });
+  const apiAssembly = createApiRootAssembly({ routes: {} });
 
   return {
     apiAssembly,

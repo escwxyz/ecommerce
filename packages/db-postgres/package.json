@@ -30,6 +30,8 @@
     "@ecommerce/customer": "workspace:*",
     "@ecommerce/fulfillment": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
+    "@ecommerce/notification-event": "workspace:*",
+    "@ecommerce/order": "workspace:*",
     "@ecommerce/payment": "workspace:*",
     "@ecommerce/pricing": "workspace:*",
     "@ecommerce/product": "workspace:*",

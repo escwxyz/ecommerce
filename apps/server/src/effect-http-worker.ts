@@ -1,6 +1,8 @@
 import {
   cartEffectHttpApiContribution,
   fulfillmentEffectHttpApiContribution,
+  notificationEventEffectHttpApiContribution,
+  orderEffectHttpApiContribution,
   paymentEffectHttpApiContribution,
   promotionEffectHttpApiContribution,
   taxEffectHttpApiContribution,
@@ -10,6 +12,11 @@ import {
   createFulfillmentServiceLayer,
   defaultFulfillmentService,
 } from "@ecommerce/fulfillment";
+import {
+  createNotificationEventServiceLayer,
+  defaultNotificationEventService,
+} from "@ecommerce/notification-event";
+import { createOrderServiceLayer, defaultOrderService } from "@ecommerce/order";
 import { createPaymentServiceLayer } from "@ecommerce/payment";
 import {
   createPromotionServiceLayer,
@@ -24,9 +31,9 @@ import { createEffectHttpWorkerHttpEffect } from "./effect-http-worker-runtime";
 /**
  * Native Alchemy v2 entrypoint for the canonical Effect HTTP application.
  * Module and plugin contributions are added here as their vertical migrations
- * complete. Cart, fulfillment, payment, promotion, and tax start with in-memory Layers until
- * Cloudflare runtime composition can provide PostgreSQL/cache-backed Layers
- * explicitly.
+ * complete. Cart, fulfillment, notification-event, order, payment, promotion,
+ * and tax start with in-memory Layers until Cloudflare runtime composition can
+ * provide PostgreSQL/cache-backed Layers explicitly.
  */
 const effectHttpWorker = Cloudflare.Worker(
   "CommerceEffectHttpWorker",
@@ -36,6 +43,8 @@ const effectHttpWorker = Cloudflare.Worker(
       contributions: [
         ...cartEffectHttpApiContribution.groups,
         ...fulfillmentEffectHttpApiContribution.groups,
+        ...notificationEventEffectHttpApiContribution.groups,
+        ...orderEffectHttpApiContribution.groups,
         ...paymentEffectHttpApiContribution.groups,
         ...promotionEffectHttpApiContribution.groups,
         ...taxEffectHttpApiContribution.groups,
@@ -43,6 +52,8 @@ const effectHttpWorker = Cloudflare.Worker(
       runtimeLayers: [
         createCartServiceLayer(defaultCartService),
         createFulfillmentServiceLayer(defaultFulfillmentService),
+        createNotificationEventServiceLayer(defaultNotificationEventService),
+        createOrderServiceLayer(defaultOrderService),
         createPaymentServiceLayer({}),
         createPromotionServiceLayer(defaultPromotionService),
         createTaxServiceLayer(defaultTaxService),

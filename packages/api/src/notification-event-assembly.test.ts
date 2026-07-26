@@ -2,6 +2,11 @@ import { describe, expect, it } from "bun:test";
 
 import { createAdminMetadataModel } from "./admin-metadata";
 import {
+  adminHttpApi,
+  createEffectHttpApiAssembly,
+  notificationEventEffectHttpApiContribution,
+} from "./index";
+import {
   authorizationEvaluator,
   builtinPermissionStatement,
 } from "./permissions";
@@ -13,14 +18,33 @@ describe("notification event API and admin assembly", () => {
     expect(builtinPermissionStatement.notification).toEqual(["read", "write"]);
   });
 
-  it("includes notification-event route operations in builtin API composition", () => {
-    const fragment = createBuiltinRouteFragments().find(
-      (routeFragment) => routeFragment.key === "module:notification-event"
-    );
+  it("keeps migrated notification-event operations out of legacy oRPC composition", () => {
+    expect(
+      createBuiltinRouteFragments().map((routeFragment) => routeFragment.key)
+    ).toEqual(["builtin:core"]);
+  });
 
-    expect(Object.keys(fragment?.router ?? {})).toContain("eventPublish");
-    expect(Object.keys(fragment?.router ?? {})).toContain(
-      "notificationDispatch"
+  it("includes notification-event Effect HTTP operations in canonical admin composition", () => {
+    const assembly = createEffectHttpApiAssembly({
+      contributions: notificationEventEffectHttpApiContribution.groups,
+      root: adminHttpApi,
+      surface: "admin",
+    });
+
+    expect(assembly.contributions.map((group) => group.key)).toEqual([
+      "module:notification-event.admin",
+    ]);
+    expect(assembly.routes.map((route) => route.routeKey)).toEqual([
+      "GET /admin/events/dead-letters",
+      "POST /admin/events/outbox/:outboxId/failures",
+      "POST /admin/events",
+      "POST /admin/notifications/dispatches",
+      "GET /admin/notifications/dispatches",
+      "POST /admin/notifications/providers",
+      "PUT /admin/notifications/templates/:templateKey",
+    ]);
+    expect(notificationEventEffectHttpApiContribution.moduleName).toBe(
+      "notification-event"
     );
   });
 

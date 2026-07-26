@@ -126,6 +126,12 @@ describe("PostgreSQL migration commands", () => {
       expect.objectContaining({
         name: "20260729000000_payment_module",
       }),
+      expect.objectContaining({
+        name: "20260730000000_order_module",
+      }),
+      expect.objectContaining({
+        name: "20260731000000_notification_event_module",
+      }),
     ]);
   });
 
@@ -154,6 +160,16 @@ describe("PostgreSQL migration commands", () => {
 
     expect(plan.requiresConfirmation).toBe(true);
     expect(plan.statements).toEqual([
+      'DROP TABLE IF EXISTS "notification_dispatch" CASCADE',
+      'DROP TABLE IF EXISTS "notification_template" CASCADE',
+      'DROP TABLE IF EXISTS "notification_provider" CASCADE',
+      'DROP TABLE IF EXISTS "event_dead_letter" CASCADE',
+      'DROP TABLE IF EXISTS "event_outbox" CASCADE',
+      'DROP TABLE IF EXISTS "order_post_purchase_operation" CASCADE',
+      'DROP TABLE IF EXISTS "order_state_transition" CASCADE',
+      'DROP TABLE IF EXISTS "order_transaction" CASCADE',
+      'DROP TABLE IF EXISTS "order_line_item" CASCADE',
+      'DROP TABLE IF EXISTS "order_record" CASCADE',
       'DROP TABLE IF EXISTS "cart_adjustment" CASCADE',
       'DROP TABLE IF EXISTS "cart_line_item" CASCADE',
       'DROP TABLE IF EXISTS "cart" CASCADE',

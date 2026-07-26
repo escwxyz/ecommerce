@@ -15,6 +15,8 @@ import {
   postgresCustomerTableName,
   postgresFulfillmentTableName,
   postgresInventoryItemTableName,
+  postgresOrderTableName,
+  postgresEventOutboxTableName,
   postgresPaymentTableName,
   postgresProductTableName,
   postgresPromotionTableName,
@@ -34,6 +36,9 @@ const promotionMigrationFolder = "20260726000000_promotion_module";
 const taxMigrationFolder = "20260727000000_tax_module";
 const fulfillmentMigrationFolder = "20260728000000_fulfillment_module";
 const paymentMigrationFolder = "20260729000000_payment_module";
+const orderMigrationFolder = "20260730000000_order_module";
+const notificationEventMigrationFolder =
+  "20260731000000_notification_event_module";
 
 describe("PostgreSQL Drizzle migration baseline", () => {
   it("exports the clean foundation schema tables", () => {
@@ -217,6 +222,27 @@ describe("PostgreSQL Drizzle migration baseline", () => {
     expect(sql).not.toContain("kysely");
   });
 
+  it("ships the notification-event module PostgreSQL migration", () => {
+    const migrationPath = join(
+      defaultPostgresMigrationsFolder,
+      notificationEventMigrationFolder,
+      "migration.sql"
+    );
+
+    expect(existsSync(migrationPath)).toBe(true);
+
+    const sql = readFileSync(migrationPath, "utf8");
+
+    expect(postgresEventOutboxTableName).toBe("event_outbox");
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "event_outbox"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "event_dead_letter"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "notification_provider"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "notification_template"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "notification_dispatch"');
+    expect(sql).toContain("--> statement-breakpoint");
+    expect(sql).not.toContain("kysely");
+  });
+
   it("ships the payment module PostgreSQL migration", () => {
     const migrationPath = join(
       defaultPostgresMigrationsFolder,
@@ -232,6 +258,31 @@ describe("PostgreSQL Drizzle migration baseline", () => {
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "payment_provider"');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "payment_collection"');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "payment"');
+    expect(sql).toContain("--> statement-breakpoint");
+    expect(sql).not.toContain("kysely");
+  });
+
+  it("ships the order module PostgreSQL migration", () => {
+    const migrationPath = join(
+      defaultPostgresMigrationsFolder,
+      orderMigrationFolder,
+      "migration.sql"
+    );
+
+    expect(existsSync(migrationPath)).toBe(true);
+
+    const sql = readFileSync(migrationPath, "utf8");
+
+    expect(postgresOrderTableName).toBe("order_record");
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "order_record"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "order_line_item"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "order_transaction"');
+    expect(sql).toContain(
+      'CREATE TABLE IF NOT EXISTS "order_state_transition"'
+    );
+    expect(sql).toContain(
+      'CREATE TABLE IF NOT EXISTS "order_post_purchase_operation"'
+    );
     expect(sql).toContain("--> statement-breakpoint");
     expect(sql).not.toContain("kysely");
   });

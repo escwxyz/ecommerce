@@ -15,11 +15,9 @@ describe("payment API and admin assembly", () => {
   });
 
   it("keeps migrated payment operations out of legacy oRPC composition", () => {
-    const paymentFragment = createBuiltinRouteFragments().find(
-      (fragment) => fragment.key === "module:payment"
-    );
-
-    expect(paymentFragment).toBeUndefined();
+    expect(
+      createBuiltinRouteFragments().map((fragment) => fragment.key)
+    ).toEqual(["builtin:core"]);
   });
 
   it("includes payment Effect HTTP operations in canonical admin composition", () => {

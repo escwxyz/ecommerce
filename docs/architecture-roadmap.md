@@ -58,11 +58,12 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
-As of 2026-07-22, tasks 1.1 through 8.5 of
+As of 2026-07-26, tasks 1.1 through 8.9 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
 customer/product/region-sales-channel/pricing/inventory foundational slices,
-plus the cart, promotion, tax, fulfillment, and payment transactional slices, have
-migrated to the Effect backend architecture:
+plus the cart, promotion, tax, fulfillment, payment, checkout, order, and
+notification-event transactional slices, have migrated to the Effect backend
+architecture:
 
 - `@ecommerce/store` owns Effect Schema domain/API contracts, schema-backed
   tagged errors, Effect services, repository contracts, in-memory test Layers,
@@ -158,54 +159,70 @@ migrated to the Effect backend architecture:
 - The legacy D1 seed no longer creates `store`, `customer`, `product`,
   `product_variant`, `region`, `region_country`, `sales_channel`, or
   `sales_channel_product`, pricing records, inventory records, cart tables, or
-  promotion/tax/fulfillment/payment tables. Checkout smoke tests now run
+  promotion/tax/fulfillment/payment/order tables. Checkout smoke tests now run
   against the remaining legacy D1 modules by
   using temporary server-owned store defaults, customer payment-identity,
   deterministic product-variant validation, deterministic region/sales-channel
   validation, deterministic pricing calculation and inventory
   availability/reservation facades, and Promise facades over the Effect cart,
-  promotion, tax, fulfillment, and payment services behind the Effect checkout
+  promotion, tax, fulfillment, payment, and order services behind the Effect checkout
   service boundary. The tax facade translates the legacy checkout commerce-region ID
   into the seeded tax-region ID rather than weakening migrated tax identifier
   schemas.
 - The checkout compatibility facades are intentionally not new module adapters:
   they preserve only the development golden-path invariants formerly supplied
-  by deleted D1 seed rows. Task 8.6 moved the checkout API/schema boundary to
-  Effect and deleted the legacy checkout oRPC exports; the remaining facades are
-  scoped to the server golden-path composition until the downstream order and
-  notification-event slices migrate and checkout can consume all module service
-  Layers directly.
+  by deleted D1 seed rows. Task 8.9 removed checkout's remaining legacy
+  Zod/oRPC contract/router package surface and the server oRPC checkout route.
+  The golden-path suite now exercises the composed Effect checkout service
+  directly while durable workflow/runtime Layer composition remains deferred to
+  section 9.
+- Order now has Effect Schema domain/API contracts, typed errors, Effect-native
+  service and repository contracts, in-memory test Layers, PostgreSQL Drizzle
+  persistence, and admin Effect HTTP API assembly. Its legacy Zod contracts,
+  Kysely/D1 repository, shared-D1 schema, oRPC router, and related public
+  exports have been removed.
+- Notification-event now has Effect Schema domain/API contracts, typed errors,
+  Effect-native service and repository contracts, in-memory test Layers,
+  PostgreSQL Drizzle persistence, Cloudflare queue/realtime bridges that run
+  repository Effects at the platform boundary, and admin Effect HTTP API
+  assembly. Its legacy Zod contracts, Kysely/D1 repository, shared-D1 schema,
+  oRPC router, and related public exports have been removed.
 - The shared section-7 verification gate has passed for foundational module
   repository contracts, Effect HTTP API assembly, permission metadata,
   storefront SDK transports and browser boundaries, runtime import boundaries,
   shared auth contracts, PostgreSQL/D1 compatibility checks, and the
   credential-free Cloudflare Worker/platform suites.
+- The shared section-8 verification gate has passed for the cross-module
+  checkout golden path, expected checkout failure/idempotency behavior,
+  permission-protected Effect HTTP APIs, Cloudflare queue/retry/concurrency
+  primitives, PostgreSQL repository/outbox contracts, and migrated module
+  boundary suites. Live PostgreSQL concurrency checks remain opt-in with
+  `POSTGRES_URL`.
 
 ## Current Gaps
 
-- Live PostgreSQL store/customer/product/region-sales-channel/pricing/inventory/cart/promotion/tax/fulfillment/payment
+- Live PostgreSQL store/customer/product/region-sales-channel/pricing/inventory/cart/promotion/tax/fulfillment/payment/order/notification-event
   contract verification is opt-in and still requires `POSTGRES_URL`.
   Credential-free
   suites validate the in-memory contract, package type shape, migrations as
   checked-in files, API contracts, SDK transports, and Worker composition.
-- Order and notification-event still have legacy D1/Kysely/oRPC paths until
-  their vertical-slice tasks run.
 - Checkout no longer exports legacy Zod/oRPC contracts and is exposed through
   the admin Effect HTTP group at `POST /admin/checkout/complete`. Its service
-  returns Effect values and schema-backed failures, but the internal
-  orchestration body still uses temporary server-owned Promise facades for
-  downstream modules in the golden-path runtime. Newly migrated module code must
-  not depend on those facades.
+  returns Effect values and schema-backed failures, but the server golden-path
+  composition still uses temporary server-owned Promise facades over migrated
+  downstream services until section 9 introduces durable workflow/runtime Layer
+  composition. Newly migrated module code must not depend on those facades.
 - The Hono Worker remains the deployed compatibility entrypoint while the
   Effect Worker foundation accumulates migrated module groups. Cart, promotion,
-  tax, fulfillment, payment, and checkout are registered in native Effect HTTP
-  contracts/tests with in-memory or test Layers until the Cloudflare
-  PostgreSQL/cache-backed runtime Layer is composed.
-- Tasks 8.1 through 8.5 did not make the cart, promotion, tax, fulfillment, or
-  payment Effect Worker paths production-backed. The authoritative PostgreSQL
-  repositories and cart Durable Object cache port exist, but the deployed
-  Cloudflare runtime still needs a request/runtime Layer that wires those
-  adapters together before cart, promotion, tax, fulfillment, or payment traffic
+  tax, fulfillment, payment, checkout, order, and notification-event are
+  registered in native Effect HTTP contracts/tests with in-memory or test
+  Layers until the Cloudflare PostgreSQL/cache-backed runtime Layer is
+  composed.
+- Tasks 8.1 through 8.9 did not make the cart, promotion, tax, fulfillment,
+  payment, order, or notification-event Effect Worker paths production-backed.
+  The authoritative PostgreSQL repositories and cart Durable Object cache port
+  exist, but the deployed Cloudflare runtime still needs a request/runtime
+  Layer that wires those adapters together before migrated module traffic
   should rely on that path.
 - The cart Durable Object cache is a hot aggregate and ownership/idempotency
   coordination primitive, not the durable source of truth. PostgreSQL remains

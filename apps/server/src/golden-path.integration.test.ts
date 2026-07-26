@@ -3,30 +3,20 @@ import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { AuthService } from "@ecommerce/auth";
-import { createStoreAdminAuthSession } from "@ecommerce/auth/testing";
+import { checkoutEffectHttpApiContribution } from "@ecommerce/api";
+import { CheckoutService } from "@ecommerce/checkout";
 import { createD1Database } from "@ecommerce/db-d1";
 import {
   developmentSeedIds,
   generateDevelopmentSeedSql,
 } from "@ecommerce/db-d1/seed";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 
 import {
   createDevelopmentCommerceProviderRegistries,
   createServerCommerceRuntime,
 } from "./commerce-runtime";
-
-const auth = {
-  api: {
-    getSession: async () => null,
-  },
-  handler: () => new Response("auth-mounted"),
-} as AuthService;
-
-const adminSession = createStoreAdminAuthSession({
-  permissions: ["cart:read", "cart:write", "checkout:execute", "checkout:read"],
-});
+import { createEffectHttpWorkerRuntime } from "./effect-http-worker-runtime";
 
 class FakeD1PreparedStatement {
   readonly #query: string;
@@ -113,26 +103,58 @@ const createDeterministicIdGenerator = () => {
   };
 };
 
+const fixedAuthDate = new Date("2026-01-01T00:00:00.000Z");
+const checkoutAdminAuth = {
+  api: {
+    getSession: () =>
+      Promise.resolve({
+        session: {
+          createdAt: fixedAuthDate,
+          expiresAt: new Date("2027-01-02T00:00:00.000Z"),
+          id: "session_golden",
+          token: "session-token",
+          updatedAt: fixedAuthDate,
+          userId: "user_golden",
+        },
+        user: {
+          email: "ada.dev@example.com",
+          emailVerified: true,
+          id: "user_golden",
+          name: "Ada Dev",
+          permissions: ["checkout:execute"],
+          role: "admin",
+        },
+      }),
+  },
+};
+
 describe("server golden checkout path", () => {
-  it("persists checkout outcomes through the Effect checkout boundary with temporary downstream facade support", async () => {
+  it("persists checkout outcomes through the Effect HTTP checkout transport", async () => {
     const sqlite = createMigratedSeededDatabase();
     const database = createD1Database(
       createFakeD1Binding(sqlite) as unknown as D1Database
     );
+    const publishedEventNames: string[] = [];
     const runtime = createServerCommerceRuntime({
       ...createDevelopmentCommerceProviderRegistries(),
       clock: { now: () => new Date("2026-01-02T00:00:00.000Z") },
       db: database.db,
       idGenerator: createDeterministicIdGenerator(),
+      notificationRuntime: {
+        eventPublished: (result) => {
+          publishedEventNames.push(result.envelope.name);
+        },
+      },
     });
-    expect(
-      auth.handler(new Request("https://commerce.example/auth"))
-    ).toBeInstanceOf(Response);
-    expect(adminSession.user.permissions).toContain("checkout:execute");
-    const checkoutService = runtime.services.checkout;
-    if (!checkoutService) {
-      throw new Error("Expected checkout service to be configured.");
+    if (!runtime.services.checkout) {
+      throw new Error("Golden checkout runtime did not configure checkout.");
     }
+    const effectHttpRuntime = createEffectHttpWorkerRuntime({
+      auth: checkoutAdminAuth,
+      contributions: [...checkoutEffectHttpApiContribution.groups],
+      runtimeLayers: [Layer.succeed(CheckoutService, runtime.services.checkout)],
+    });
+
     try {
       const cart = await Effect.runPromise(
         runtime.services.cart.createCart({
@@ -179,30 +201,69 @@ describe("server golden checkout path", () => {
         })
       );
 
-      const checkout = await Effect.runPromise(
-        checkoutService.completeCheckout({
-          cartId: cart.id,
-          correlationId: "golden-checkout",
-          idempotencyKey: "golden-checkout",
+      const checkoutResponse = await effectHttpRuntime.fetch(
+        new Request("https://commerce.example/admin/checkout/complete", {
+          body: JSON.stringify({
+            cartId: cart.id,
+            correlationId: "golden-checkout",
+            idempotencyKey: "golden-checkout",
           payment: {
             capture: true,
             providerKey: "manual",
+            },
+            shippingOptionId: developmentSeedIds.fulfillmentOption,
+          }),
+          headers: {
+            "content-type": "application/json",
+            cookie: "better-auth.session=token",
           },
-          shippingOptionId: developmentSeedIds.fulfillmentOption,
+          method: "POST",
         })
       );
-      const retry = await Effect.runPromise(
-        checkoutService.completeCheckout({
-          cartId: cart.id,
-          correlationId: "golden-checkout-retry",
-          idempotencyKey: "golden-checkout",
+      if (!checkoutResponse.ok) {
+        throw new Error(
+          `Effect HTTP checkout failed with ${checkoutResponse.status}: ${await checkoutResponse.text()}`
+        );
+      }
+      const checkout = (
+        (await checkoutResponse.json()) as {
+          readonly data: {
+            readonly cartId: string;
+            readonly fulfillmentIds: readonly string[];
+            readonly orderId: string;
+            readonly paymentId: string;
+            readonly status: string;
+            readonly workflowRunId: string;
+          };
+        }
+      ).data;
+      const retryResponse = await effectHttpRuntime.fetch(
+        new Request("https://commerce.example/admin/checkout/complete", {
+          body: JSON.stringify({
+            cartId: cart.id,
+            correlationId: "golden-checkout-retry",
+            idempotencyKey: "golden-checkout",
           payment: {
             capture: true,
             providerKey: "manual",
+            },
+            shippingOptionId: developmentSeedIds.fulfillmentOption,
+          }),
+          headers: {
+            "content-type": "application/json",
+            cookie: "better-auth.session=token",
           },
-          shippingOptionId: developmentSeedIds.fulfillmentOption,
+          method: "POST",
         })
       );
+      if (!retryResponse.ok) {
+        throw new Error(
+          `Effect HTTP checkout retry failed with ${retryResponse.status}: ${await retryResponse.text()}`
+        );
+      }
+      const retry = (
+        (await retryResponse.json()) as { readonly data: typeof checkout }
+      ).data;
 
       expect(checkout).toMatchObject({
         cartId: cart.id,
@@ -214,33 +275,11 @@ describe("server golden checkout path", () => {
       expect(checkout.fulfillmentIds).toHaveLength(1);
       expect(retry).toEqual(checkout);
 
-      const persisted = sqlite
-        .query<
-          {
-            event_name: string;
-            order_cart_id: string;
-            order_customer_id: string;
-            order_id: string;
-            order_product_id: string;
-          },
-          [string]
-        >(
-          `SELECT
-            o.id AS order_id,
-            o.cart_id AS order_cart_id,
-            o.customer_id AS order_customer_id,
-            json_extract(oli.item_snapshot, '$.productId') AS order_product_id,
-            eo.event_name AS event_name
-          FROM order_record o
-          JOIN order_line_item oli ON oli.order_id = o.id
-          JOIN event_outbox eo ON eo.workflow_run_id = 'golden-checkout'
-            AND eo.event_name = 'checkout.completed'
-          WHERE o.cart_id = ?`
-        )
-        .get(cart.id);
-
       const completedCart = await Effect.runPromise(
         runtime.services.cart.getCart(cart.id)
+      );
+      const persistedOrder = await Effect.runPromise(
+        runtime.services.order.getOrder(checkout.orderId)
       );
 
       expect(completedCart?.cart.paymentCollectionId).toStartWith("paycol_");
@@ -268,14 +307,23 @@ describe("server golden checkout path", () => {
         total: 3206,
       });
 
-      expect(persisted).toMatchObject({
-        event_name: "checkout.completed",
-        order_cart_id: cart.id,
-        order_customer_id: developmentSeedIds.customer,
-        order_id: checkout.orderId,
-        order_product_id: developmentSeedIds.product,
+      expect(persistedOrder).toMatchObject({
+        lineItems: [
+          {
+            itemSnapshot: {
+              productId: developmentSeedIds.product,
+            },
+          },
+        ],
+        order: {
+          cartId: cart.id,
+          customerId: developmentSeedIds.customer,
+          id: checkout.orderId,
+        },
       });
+      expect(publishedEventNames).toContain("checkout.completed");
     } finally {
+      await effectHttpRuntime.dispose();
       await database.db.destroy();
       sqlite.close();
     }
