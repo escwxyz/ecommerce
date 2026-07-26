@@ -41,6 +41,9 @@
     "./stateful": {
       "default": "./src/stateful/index.ts"
     },
+    "./stateful/testing": {
+      "default": "./src/stateful/testing.ts"
+    },
     "./testing": {
       "default": "./src/testing/index.ts"
     },

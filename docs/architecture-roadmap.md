@@ -58,7 +58,7 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
-As of 2026-07-26, tasks 1.1 through 9.4 of
+As of 2026-07-26, tasks 1.1 through 9.6 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
 customer/product/region-sales-channel/pricing/inventory foundational slices,
 plus the cart, promotion, tax, fulfillment, payment, checkout, order, and
@@ -220,6 +220,23 @@ architecture:
   failure, and retains typed persistence failures for runtime retry. Core tests
   cover success and rejection behavior, while the Cloudflare adapter test
   proves replay produces identical queue identity for consumer deduplication.
+- Section 9.5 replaces the permanent actor design surface with Effect-native,
+  platform-neutral contracts in `@ecommerce/core/stateful`. Schema-versioned
+  commands, results, timers, state snapshots, and ownership descriptors now
+  preserve actor identity, correlation, idempotency, recovery source, and state
+  authority. Effect service tags cover command dispatch, timers, and state
+  persistence, while a deterministic in-memory Layer verifies deduplication,
+  state versioning, and timer cancellation without Cloudflare bindings.
+  Actor-local relational ownership is rejected unless it names the accepted
+  design that explicitly transferred authority away from PostgreSQL.
+- Section 9.6 implements the first Cloudflare Durable Object adapter for those
+  contracts. The platform Layer routes each actor type/key to a named Durable
+  Object and translates transport or response-decoding failures into the
+  command, timer, or state service's schema-backed error. The Durable Object
+  host decodes every command, result, timer, and state message, serializes actor
+  turns, durably deduplicates commands, atomically persists a changed state
+  snapshot with its command result, and maintains the earliest Cloudflare alarm
+  for the actor's durable timer set.
 
 ## Current Gaps
 
@@ -239,6 +256,18 @@ architecture:
   the PostgreSQL outbox Layer or a scheduled production drain. That wiring
   remains part of the broader Cloudflare PostgreSQL-backed runtime-composition
   gap; credential-free tests use deterministic claimer and queue Layers.
+- Cart and inventory still expose optional Promise-shaped coordinator inputs.
+  Their deprecated Cloudflare facade now dispatches through the task-9.6
+  `KeyedActorService` Layer, so it no longer bypasses the Effect Schema Durable
+  Object protocol. Task 12.5 removes the facade, its legacy core types, and the
+  temporary `StatefulCoordinatorDurableObject` export alias after those module
+  callers adopt the permanent actor service directly.
+- The generic `KeyedActorDurableObject` currently provides coordination,
+  deduplication, state, and timer hosting with a no-op command interpreter.
+  Commerce-specific actor behavior must compose
+  `createKeyedActorDurableObjectHandler` with its own typed command handler.
+  Task 9.8 records ownership per workload, while task 9.9 supplies the broader
+  interruption, restart, duplicate-delivery, and timer-recovery evidence.
 - The Hono Worker remains the deployed compatibility entrypoint while the
   Effect Worker foundation accumulates migrated module groups. Cart, promotion,
   tax, fulfillment, payment, checkout, order, and notification-event are

@@ -97,8 +97,8 @@
 - [x] 9.2 Implement the deterministic in-memory workflow runtime and recovery test harness
 - [x] 9.3 Implement Cloudflare workflow/queue runtime Layers with typed failures and telemetry
 - [x] 9.4 Integrate transactional outbox claiming and idempotent queue delivery
-- [ ] 9.5 Define platform-neutral keyed actor, command, timer, and state ownership contracts
-- [ ] 9.6 Implement the Durable Object actor Layer and Effect Schema message boundary
+- [x] 9.5 Define platform-neutral keyed actor, command, timer, and state ownership contracts
+- [x] 9.6 Implement the Durable Object actor Layer and Effect Schema message boundary
 - [ ] 9.7 Evaluate Effect SQL Durable Object SQLite for applicable actor-local state
 - [ ] 9.8 Document PostgreSQL versus actor-local ownership for every stateful workload
 - [ ] 9.9 Verify interruption, retry, replay, duplicate delivery, compensation, actor restart, and timer recovery

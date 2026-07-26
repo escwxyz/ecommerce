@@ -64,7 +64,7 @@ authoritative relational store and may persist workflow metadata or
 transactional outbox records, but it is not by itself the workflow execution
 engine.
 
-As of tasks 9.1 through 9.4, `@ecommerce/core` owns the portable durable-message
+As of tasks 9.1 through 9.5, `@ecommerce/core` owns the portable durable-message
 schemas for workflow descriptors, run state, step outcomes, retry policy,
 retry disposition, and compensation policy. Its deterministic in-memory runtime
 persists that state, resumes by run id or idempotency key, skips already
@@ -82,6 +82,54 @@ the same queue identity for at-least-once consumer deduplication. The Cloudflare
 workflow adapter still delegates execution to Cloudflare Workflows, and the
 deployed Worker still needs PostgreSQL-backed outbox Layer plus scheduled-drain
 composition before production traffic uses this path.
+
+Task 9.5 also defines the permanent keyed actor boundary in
+`@ecommerce/core/stateful`:
+
+- `KeyedActorCommandSchema` and `KeyedActorCommandResultSchema` carry
+  schema-versioned actor identity, command identity, correlation,
+  idempotency, optional causation/workflow/subject metadata, output, duplicate
+  status, and state version.
+- `KeyedActorTimerSchema` stores the complete command envelope with stable
+  timer identity plus canonical scheduled and due timestamps.
+- `KeyedActorStateSnapshotSchema` binds versioned state to an explicit
+  `KeyedActorStateOwnershipSchema` declaration.
+- `KeyedActorService`, `KeyedActorTimerService`, and
+  `KeyedActorStateStoreService` are Effect service tags with schema-backed
+  command, timer, and persistence failures.
+- The deterministic in-memory test Layer scopes deduplication and timers by
+  actor key, versions actor-local state, and requires no Cloudflare runtime.
+
+Ownership declarations distinguish cache, coordination, workflow, and
+relational-record state; name PostgreSQL or actor-local ownership; and declare
+the recovery source. Actor-local relational authority is invalid unless an
+accepted design reference explicitly transfers it. This guard prevents a
+Durable Object adapter from silently becoming a second commerce system of
+record.
+
+Task 9.6 implements the first permanent Cloudflare actor adapter:
+
+- `createCloudflareKeyedActorLayer` provides `KeyedActorService`,
+  `KeyedActorTimerService`, and `KeyedActorStateStoreService` over a Durable
+  Object namespace.
+- The Layer derives a stable object name from actor type and key, decodes every
+  response, and translates binding, HTTP, JSON, and schema failures to the
+  corresponding schema-backed core error.
+- `createKeyedActorDurableObjectHandler` is the reusable Effect host for a
+  concrete actor class. It decodes all request and stored values, serializes
+  turns, persists command results for durable idempotency, atomically stores a
+  changed state snapshot with its result, and stores multiple timers while
+  programming Cloudflare's single alarm to the earliest due time.
+- `KeyedActorDurableObject` is the first coordination host. Its default command
+  interpreter acknowledges commands with `null`; commerce-specific actors must
+  provide their own typed handler rather than add command-name branching to
+  runtime-neutral core.
+
+The old Promise coordinator remains only at cart and inventory's temporary
+migration input. Its Cloudflare facade now dispatches through the permanent
+Effect Layer and schema protocol. Task 12.5 removes that facade, the legacy
+core types, and the temporary class export alias. Task 9.9 owns comprehensive
+restart, interruption, duplicate-delivery, and timer-recovery verification.
 
 As of tasks 8.1 through 9.2 in `adopt-effect-4-backend-architecture`, cart,
 promotion, tax, fulfillment, payment, checkout, order, and notification-event

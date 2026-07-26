@@ -160,7 +160,7 @@ export const postgresConnection = Effect.gen(
 );
 
 export const statefulCoordinator = Cloudflare.DurableObject(
-  "StatefulCoordinatorDurableObject"
+  "KeyedActorDurableObject"
 );
 
 export const cartCache = Cloudflare.DurableObject("CartCacheDurableObject");

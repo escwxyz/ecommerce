@@ -71,7 +71,25 @@ export {
   type SandboxStoragePort,
 } from "./sandbox";
 export {
+  createCloudflareKeyedActorLayer,
   createCloudflareStatefulCoordinator,
+  createKeyedActorDurableObjectHandler,
+  CloudflareKeyedActorDispatchResponseSchema,
+  CloudflareKeyedActorFailureResponseSchema,
+  CloudflareKeyedActorRequestSchema,
+  CloudflareKeyedActorStateLookupResponseSchema,
+  CloudflareKeyedActorStatePutResponseSchema,
+  CloudflareKeyedActorTimerCancelResponseSchema,
+  CloudflareKeyedActorTimerLookupResponseSchema,
+  CloudflareKeyedActorTimerResponseSchema,
+  type CloudflareKeyedActorCommandHandler,
+  type CloudflareKeyedActorDurableObjectHandler,
+  type CloudflareKeyedActorDurableObjectHandlerOptions,
+  type CloudflareKeyedActorLayerOptions,
+  type CloudflareKeyedActorNamespace,
+  type CloudflareKeyedActorRequest,
+  type CloudflareKeyedActorStorage,
+  type CloudflareKeyedActorStub,
   type CloudflareStatefulCoordinatorOptions,
 } from "./stateful";
 export {

@@ -1,45 +1,64 @@
-import type { StatefulCoordinationRequest } from "@ecommerce/core";
+import { KeyedActorStateOwnershipSchema } from "@ecommerce/core/stateful";
 import { DurableObject } from "cloudflare:workers";
+import { Effect, Schema } from "effect";
 
-interface StoredCoordinationResult {
-  readonly output?: unknown;
+import { createKeyedActorDurableObjectHandler } from "./stateful-host";
+import type { CloudflareKeyedActorDurableObjectHandler } from "./stateful-host";
+
+type KeyedActorDurableObjectEnv = Record<string, unknown>;
+
+/**
+ * Cloudflare's first generic implementation of the portable keyed actor.
+ *
+ * This coordinator acknowledges and deduplicates commands. Actor classes with
+ * domain behavior should compose the same host with their own typed command
+ * handler; the host always owns message decoding, timers, and durable storage.
+ */
+export class KeyedActorDurableObject extends DurableObject<KeyedActorDurableObjectEnv> {
+  readonly #host: CloudflareKeyedActorDurableObjectHandler;
+
+  constructor(ctx: DurableObjectState, env: KeyedActorDurableObjectEnv) {
+    super(ctx, env);
+    this.#host = createKeyedActorDurableObjectHandler({
+      clock: {
+        now: () => new Date(),
+      },
+      expectedActorName: ctx.id.name,
+      handle: () => Effect.succeed({ output: null }),
+      ownership: (command) =>
+        Schema.decodeUnknownSync(KeyedActorStateOwnershipSchema)({
+          actorType: command.actor.type,
+          classification: "coordination",
+          owner: "actor-local",
+          recoverySource: "recomputed",
+          schemaVersion: command.schemaVersion,
+          stateName: "command-coordination",
+        }),
+      storage: {
+        delete: (key) => ctx.storage.delete(key),
+        deleteAlarm: () => ctx.storage.deleteAlarm(),
+        get: (key) => ctx.storage.get(key),
+        list: (options) => ctx.storage.list(options),
+        put: (key, value) => ctx.storage.put(key, value),
+        putMany: (entries) => ctx.storage.put(entries),
+        setAlarm: (scheduledTime) => ctx.storage.setAlarm(scheduledTime),
+      },
+    });
+  }
+
+  fetch(request: Request): Promise<Response> {
+    return this.#host.fetch(request);
+  }
+
+  alarm(): Promise<void> {
+    return this.#host.alarm();
+  }
 }
 
 /**
- * Durable Object host for platform stateful coordination requests.
- * It stores idempotency keys per coordinator object so duplicate mutation
- * attempts can be rejected before module repositories are mutated.
+ * Temporary export alias retained for Cloudflare migration compatibility.
+ *
+ * @deprecated Bind and export `KeyedActorDurableObject`; task 12.5 removes
+ * this alias after every deployed stage has adopted the new class name.
  */
-export class StatefulCoordinatorDurableObject extends DurableObject {
-  async fetch(request: Request): Promise<Response> {
-    if (request.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
-
-    const input = (await request.json()) as StatefulCoordinationRequest;
-
-    if (!input.idempotencyKey) {
-      return new Response("Missing idempotency key", { status: 400 });
-    }
-
-    const storageKey = `coordination:${input.operationName}:${input.idempotencyKey}`;
-    const existing =
-      await this.ctx.storage.get<StoredCoordinationResult>(storageKey);
-
-    if (existing) {
-      return Response.json({
-        duplicate: true,
-        output: existing.output,
-      });
-    }
-
-    await this.ctx.storage.put(storageKey, {
-      output: undefined,
-    } satisfies StoredCoordinationResult);
-
-    return Response.json({
-      duplicate: false,
-      output: undefined,
-    });
-  }
-}
+export { KeyedActorDurableObject as StatefulCoordinatorDurableObject };

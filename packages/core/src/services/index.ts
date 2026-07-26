@@ -82,7 +82,12 @@ export type WorkflowRuntimeService = CommerceWorkflowRuntime;
 /** Durable workflow metadata projection contract exposed as an Effect service tag. */
 export type WorkflowMetadataStoreService = CommerceWorkflowMetadataStore;
 
-/** Keyed actor/coordination contract exposed as an Effect service tag. */
+/**
+ * Legacy Promise coordinator exposed as an Effect service tag.
+ *
+ * @deprecated Task 9.6 replaces its Cloudflare adapter with
+ * `KeyedActorService` from `@ecommerce/core/stateful`.
+ */
 export type StatefulCoordinatorService = StatefulCoordinator;
 
 /** Runtime-neutral queue publisher contract exposed as an Effect service tag. */
@@ -134,7 +139,7 @@ export const WorkflowMetadataStoreService =
     "@ecommerce/core/WorkflowMetadataStoreService"
   );
 
-/** Effect tag for keyed actor/coordination implementations. */
+/** @deprecated Use `KeyedActorService` from `@ecommerce/core/stateful`. */
 export const StatefulCoordinatorService =
   Context.Service<StatefulCoordinatorService>(
     "@ecommerce/core/StatefulCoordinatorService"
@@ -182,7 +187,7 @@ export const workflowMetadataStoreLayer = (
   service: WorkflowMetadataStoreService
 ) => Layer.succeed(WorkflowMetadataStoreService, service);
 
-/** Creates a Layer for keyed actor/coordination implementations. */
+/** @deprecated Use `keyedActorLayer` from `@ecommerce/core/stateful`. */
 export const statefulCoordinatorLayer = (service: StatefulCoordinatorService) =>
   Layer.succeed(StatefulCoordinatorService, service);
 

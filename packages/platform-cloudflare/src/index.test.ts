@@ -144,15 +144,56 @@ const createFakeDurableObjectNamespace = () => {
         fetch: async (request: Request) => {
           fetches.push(request);
           const body = (await request.json()) as {
+            readonly command?: {
+              readonly actor: {
+                readonly key: string;
+                readonly type: string;
+              };
+              readonly causationId?: string;
+              readonly commandId: string;
+              readonly commandName: string;
+              readonly correlationId: string;
+              readonly idempotencyKey: string;
+              readonly schemaVersion: number;
+              readonly subject?: {
+                readonly id: string;
+                readonly type: string;
+              };
+              readonly workflowRunId?: string;
+            };
             readonly idempotencyKey?: string;
+            readonly operation?: string;
           };
           requests.push(body);
 
-          const key = body.idempotencyKey;
+          const key = body.command?.idempotencyKey ?? body.idempotencyKey;
           const duplicate = key ? idempotencyKeys.has(key) : false;
 
           if (key) {
             idempotencyKeys.add(key);
+          }
+
+          if (body.operation === "dispatch" && body.command) {
+            return Response.json({
+              operation: "dispatch-result",
+              result: {
+                actor: body.command.actor,
+                causationId: body.command.causationId,
+                commandId: body.command.commandId,
+                commandName: body.command.commandName,
+                completedAt: "2026-06-06T12:00:00.000Z",
+                correlationId: body.command.correlationId,
+                duplicate,
+                idempotencyKey: body.command.idempotencyKey,
+                output: {
+                  mutationCount: idempotencyKeys.size,
+                },
+                schemaVersion: body.command.schemaVersion,
+                stateVersion: 0,
+                subject: body.command.subject,
+                workflowRunId: body.command.workflowRunId,
+              },
+            });
           }
 
           return Response.json({

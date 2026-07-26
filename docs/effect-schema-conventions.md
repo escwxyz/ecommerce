@@ -12,12 +12,12 @@ the exact installed source before using newer Effect examples.
 
 Every representation has one owner:
 
-| Representation | Owner | Typical path | Purpose |
-| --- | --- | --- | --- |
-| Domain | Commerce module | `src/domain/<subject>.schema.ts` | Branded IDs, value objects, invariants, internal absence |
-| API | API group or module | `src/api/<subject>.api-schema.ts` | Versioned JSON request, response, pagination, and error shapes |
-| Storage | Database adapter | `packages/db-postgres/src/modules/<module>/<subject>.table.ts` | Drizzle tables, relations, codecs, and generated row schemas |
-| Message | Workflow/event/actor owner | `src/<boundary>/<message>.schema.ts` | Versioned durable payloads and bridge messages |
+| Representation | Owner                      | Typical path                                                   | Purpose                                                        |
+| -------------- | -------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------- |
+| Domain         | Commerce module            | `src/domain/<subject>.schema.ts`                               | Branded IDs, value objects, invariants, internal absence       |
+| API            | API group or module        | `src/api/<subject>.api-schema.ts`                              | Versioned JSON request, response, pagination, and error shapes |
+| Storage        | Database adapter           | `packages/db-postgres/src/modules/<module>/<subject>.table.ts` | Drizzle tables, relations, codecs, and generated row schemas   |
+| Message        | Workflow/event/actor owner | `src/<boundary>/<message>.schema.ts`                           | Versioned durable payloads and bridge messages                 |
 
 Do not import Drizzle tables or generated storage schemas into module domain or
 API packages. Do not put HTTP status, database column, Cloudflare binding, or
@@ -176,6 +176,19 @@ disposition, and compensation policy. Executable `Effect` handlers stay on
 workflow definitions and are not persisted; adapters persist only the
 schema-versioned descriptor/state shapes and replay completed step outcomes
 before invoking idempotent side effects.
+
+Keyed actor durable messages use `@ecommerce/core/stateful` schemas for actor
+references, commands, command results, timers, state snapshots, and state
+ownership. Adapters decode these schemas before actor dispatch or persistence.
+Ownership metadata is part of the durable state contract: PostgreSQL remains
+the relational authority unless an accepted design reference explicitly
+assigns a relational record to actor-local storage.
+
+The Cloudflare adapter wraps those canonical messages in an operation-tagged
+Durable Object request/response protocol. Both the namespace Layer and Durable
+Object host decode their side of the exchange; stored command results, timers,
+and snapshots are decoded again on read so corrupted or obsolete durable state
+becomes a typed adapter failure instead of entering actor logic.
 
 Use `Schema.decodeUnknownEffect` in Effect programs. `decodeUnknownSync` is
 limited to deterministic initialization or tests where a thrown schema defect

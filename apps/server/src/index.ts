@@ -13,7 +13,7 @@ import {
 import type { NotificationEventQueueMessage } from "@ecommerce/platform-cloudflare";
 import { CartCacheDurableObject } from "@ecommerce/platform-cloudflare/cart-cache-do";
 import { NotificationEventRealtimeDurableObject } from "@ecommerce/platform-cloudflare/notification-event-realtime-do";
-import { StatefulCoordinatorDurableObject } from "@ecommerce/platform-cloudflare/stateful-do";
+import { KeyedActorDurableObject } from "@ecommerce/platform-cloudflare/stateful-do";
 
 import { createServerApp } from "./app";
 import {
@@ -43,7 +43,7 @@ const serverEnv = env as unknown as CommerceServerEnv;
 export {
   CartCacheDurableObject,
   NotificationEventRealtimeDurableObject,
-  StatefulCoordinatorDurableObject,
+  KeyedActorDurableObject,
 };
 
 const database = createD1Database(serverEnv.DB);
