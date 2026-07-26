@@ -1,3 +1,12 @@
+export {
+  deliverOutboxBatch,
+  outboxRecordToQueueMessage,
+  OutboxQueuePublishFailure,
+  type OutboxDeliveryBatchOptions,
+  type OutboxDeliveryBatchReport,
+  type OutboxDeliveryRecordResult,
+} from "./outbox-delivery";
+
 export interface CommerceQueueSubject {
   readonly type: string;
   readonly id: string;

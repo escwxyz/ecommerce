@@ -96,7 +96,7 @@
 - [x] 9.1 Define schema-versioned workflow definitions, state, step outcomes, retry, and compensation contracts
 - [x] 9.2 Implement the deterministic in-memory workflow runtime and recovery test harness
 - [x] 9.3 Implement Cloudflare workflow/queue runtime Layers with typed failures and telemetry
-- [ ] 9.4 Integrate transactional outbox claiming and idempotent queue delivery
+- [x] 9.4 Integrate transactional outbox claiming and idempotent queue delivery
 - [ ] 9.5 Define platform-neutral keyed actor, command, timer, and state ownership contracts
 - [ ] 9.6 Implement the Durable Object actor Layer and Effect Schema message boundary
 - [ ] 9.7 Evaluate Effect SQL Durable Object SQLite for applicable actor-local state

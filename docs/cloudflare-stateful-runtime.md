@@ -64,7 +64,7 @@ authoritative relational store and may persist workflow metadata or
 transactional outbox records, but it is not by itself the workflow execution
 engine.
 
-As of tasks 9.1 through 9.3, `@ecommerce/core` owns the portable durable-message
+As of tasks 9.1 through 9.4, `@ecommerce/core` owns the portable durable-message
 schemas for workflow descriptors, run state, step outcomes, retry policy,
 retry disposition, and compensation policy. Its deterministic in-memory runtime
 persists that state, resumes by run id or idempotency key, skips already
@@ -74,9 +74,14 @@ and queue adapters through runtime-neutral Effect service Layers, normalizes
 Cloudflare binding, queue, coordinator, state, metadata, and lifecycle-event
 failures to schema-backed tagged errors, records bounded telemetry events, and
 persists workflow run state through the portable state-store contract when one
-is provided. The Cloudflare workflow adapter still delegates execution to
-Cloudflare Workflows; task 9.4 will connect transactional outbox claiming and
-idempotent queue delivery to these runtime primitives.
+is provided. The runtime-neutral outbox delivery cycle now claims bounded
+post-commit batches, preserves the outbox record id and domain idempotency key
+in the Cloudflare queue envelope, acknowledges only after publish success, and
+persists queue rejection as a typed failed delivery. Replay therefore produces
+the same queue identity for at-least-once consumer deduplication. The Cloudflare
+workflow adapter still delegates execution to Cloudflare Workflows, and the
+deployed Worker still needs PostgreSQL-backed outbox Layer plus scheduled-drain
+composition before production traffic uses this path.
 
 As of tasks 8.1 through 9.2 in `adopt-effect-4-backend-architecture`, cart,
 promotion, tax, fulfillment, payment, checkout, order, and notification-event

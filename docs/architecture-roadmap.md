@@ -58,7 +58,7 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
-As of 2026-07-26, tasks 1.1 through 9.3 of
+As of 2026-07-26, tasks 1.1 through 9.4 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
 customer/product/region-sales-channel/pricing/inventory foundational slices,
 plus the cart, promotion, tax, fulfillment, payment, checkout, order, and
@@ -213,6 +213,13 @@ architecture:
   queue/workflow runtime operations. The Cloudflare workflow adapter can now
   persist and recover schema-versioned workflow state through the shared
   `CommerceWorkflowStateStore` contract when one is provided.
+- Section 9.4 adds the runtime-neutral transactional-outbox delivery cycle. It
+  claims bounded post-commit batches, maps each outbox record to a stable queue
+  message id plus preserved domain idempotency key, acknowledges records only
+  after queue publication succeeds, persists queue rejection as an outbox
+  failure, and retains typed persistence failures for runtime retry. Core tests
+  cover success and rejection behavior, while the Cloudflare adapter test
+  proves replay produces identical queue identity for consumer deduplication.
 
 ## Current Gaps
 
@@ -227,10 +234,11 @@ architecture:
   composition still uses temporary server-owned Promise facades over migrated
   downstream services until section 9 introduces durable workflow/runtime Layer
   composition. Newly migrated module code must not depend on those facades.
-- Task 9.4 still needs to connect transactional outbox claiming to idempotent
-  Cloudflare queue delivery. Until then, the queue/runtime Layers exist, but
-  committed outbox rows are not yet drained through the new section-9 delivery
-  loop.
+- The task-9.4 delivery cycle and Cloudflare queue Layer compose through
+  runtime-neutral Effect services, but the deployed Worker does not yet provide
+  the PostgreSQL outbox Layer or a scheduled production drain. That wiring
+  remains part of the broader Cloudflare PostgreSQL-backed runtime-composition
+  gap; credential-free tests use deterministic claimer and queue Layers.
 - The Hono Worker remains the deployed compatibility entrypoint while the
   Effect Worker foundation accumulates migrated module groups. Cart, promotion,
   tax, fulfillment, payment, checkout, order, and notification-event are

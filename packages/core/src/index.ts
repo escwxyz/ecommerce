@@ -112,7 +112,10 @@ export {
   type TransactionRequest,
 } from "./persistence/index";
 export {
+  OutboxQueuePublishFailure,
+  deliverOutboxBatch,
   defineQueueMessage,
+  outboxRecordToQueueMessage,
   type CommerceQueueConsumeContext,
   type CommerceQueueConsumer,
   type CommerceQueueDeadLetter,
@@ -123,6 +126,9 @@ export {
   type CommerceQueuePublisher,
   type CommerceQueueRetryPolicy,
   type CommerceQueueSubject,
+  type OutboxDeliveryBatchOptions,
+  type OutboxDeliveryBatchReport,
+  type OutboxDeliveryRecordResult,
 } from "./queues/index";
 export {
   type CommercePluginContributionSet,
