@@ -170,6 +170,13 @@ Decode `unknown` at every trust boundary:
 - provider webhooks and third-party API responses;
 - native plugin manifests and sandbox bridge messages.
 
+Workflow durable messages use `@ecommerce/core/workflows` schemas for
+descriptors, persisted run state, step outcomes, retry policy, retry
+disposition, and compensation policy. Executable `Effect` handlers stay on
+workflow definitions and are not persisted; adapters persist only the
+schema-versioned descriptor/state shapes and replay completed step outcomes
+before invoking idempotent side effects.
+
 Use `Schema.decodeUnknownEffect` in Effect programs. `decodeUnknownSync` is
 limited to deterministic initialization or tests where a thrown schema defect
 is intentionally fatal. Do not call a Zod-style `.parse()` compatibility

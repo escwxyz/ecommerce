@@ -1,12 +1,62 @@
-import type { Effect } from "effect";
+import { Schema, type Effect } from "effect";
 
 import type { CommerceEventEnvelope } from "../events/index";
 
 export type CommerceWorkflowKey = string;
 export type CommerceWorkflowVersion = number;
+export type CommerceWorkflowSchemaVersion = number;
 export type CommerceWorkflowRunId = string;
 export type CommerceWorkflowIdempotencyKey = string;
 export type CommerceWorkflowHistoryReference = string;
+
+const isCanonicalIsoDateTime = (value: string): boolean => {
+  const parsed = new Date(value);
+  return (
+    !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value
+  );
+};
+
+const isPositiveInteger = (value: number): boolean =>
+  Number.isInteger(value) && value > 0;
+
+const isNonNegativeInteger = (value: number): boolean =>
+  Number.isInteger(value) && value >= 0;
+
+export const CommerceWorkflowTrimmedStringSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.makeFilter((value: string) => value.trim() === value))
+);
+
+export const CommerceWorkflowKeySchema =
+  CommerceWorkflowTrimmedStringSchema.pipe(
+    Schema.brand("CommerceWorkflowKey")
+  );
+
+export const CommerceWorkflowVersionSchema = Schema.Number.pipe(
+  Schema.check(Schema.makeFilter(isPositiveInteger))
+);
+
+export const CommerceWorkflowSchemaVersionSchema = Schema.Number.pipe(
+  Schema.check(Schema.makeFilter(isPositiveInteger))
+);
+
+export const CommerceWorkflowNonNegativeIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.makeFilter(isNonNegativeInteger))
+);
+
+export const CommerceWorkflowIsoDateTimeStringSchema =
+  CommerceWorkflowTrimmedStringSchema.pipe(
+    Schema.check(Schema.makeFilter(isCanonicalIsoDateTime))
+  );
+
+export const CommerceWorkflowMetadataSchema = Schema.Record(
+  Schema.String,
+  Schema.Unknown
+);
+
+export const CommerceWorkflowSubjectSchema = Schema.Struct({
+  id: CommerceWorkflowTrimmedStringSchema,
+  type: CommerceWorkflowTrimmedStringSchema,
+});
 
 export type CommerceWorkflowRunStatus =
   | "pending"
@@ -21,6 +71,126 @@ export type CommerceWorkflowStepStatus =
   | "completed"
   | "failed"
   | "compensated";
+
+export const CommerceWorkflowRunStatusSchema = Schema.Literals([
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "compensating",
+  "compensated",
+]);
+
+export const CommerceWorkflowStepStatusSchema = Schema.Literals([
+  "running",
+  "completed",
+  "failed",
+  "compensated",
+]);
+
+export const CommerceWorkflowRunErrorSchema = Schema.Struct({
+  message: CommerceWorkflowTrimmedStringSchema,
+  name: CommerceWorkflowTrimmedStringSchema,
+  retryable: Schema.optional(Schema.Boolean),
+  tag: Schema.optional(CommerceWorkflowTrimmedStringSchema),
+});
+
+export type CommerceWorkflowRetryDisposition =
+  | "retry"
+  | "do-not-retry"
+  | "compensate";
+
+export const CommerceWorkflowRetryDispositionSchema = Schema.Literals([
+  "retry",
+  "do-not-retry",
+  "compensate",
+]);
+
+export const CommerceWorkflowRetryPolicySchema = Schema.Struct({
+  backoffMillis: Schema.optional(
+    Schema.Array(CommerceWorkflowNonNegativeIntegerSchema)
+  ),
+  maxAttempts: CommerceWorkflowVersionSchema,
+  maxDelayMillis: Schema.optional(CommerceWorkflowNonNegativeIntegerSchema),
+  retryableErrorTags: Schema.optional(
+    Schema.Array(CommerceWorkflowTrimmedStringSchema)
+  ),
+});
+
+export type CommerceWorkflowRetryPolicy =
+  typeof CommerceWorkflowRetryPolicySchema.Type;
+
+export const CommerceWorkflowCompensationPolicySchema = Schema.Struct({
+  idempotencyScope: Schema.optional(
+    Schema.Literals(["workflow", "step", "subject"])
+  ),
+  required: Schema.Boolean,
+  stepName: Schema.optional(CommerceWorkflowTrimmedStringSchema),
+});
+
+export type CommerceWorkflowCompensationPolicy =
+  typeof CommerceWorkflowCompensationPolicySchema.Type;
+
+export const CommerceWorkflowStepDefinitionSchema = Schema.Struct({
+  compensation: Schema.optional(CommerceWorkflowCompensationPolicySchema),
+  name: CommerceWorkflowTrimmedStringSchema,
+  retryPolicy: Schema.optional(CommerceWorkflowRetryPolicySchema),
+  schemaVersion: CommerceWorkflowSchemaVersionSchema,
+});
+
+export type CommerceWorkflowStepDefinition =
+  typeof CommerceWorkflowStepDefinitionSchema.Type;
+
+export const CommerceWorkflowDefinitionDescriptorSchema = Schema.Struct({
+  key: CommerceWorkflowKeySchema,
+  schemaVersion: CommerceWorkflowSchemaVersionSchema,
+  steps: Schema.Array(CommerceWorkflowStepDefinitionSchema),
+  version: CommerceWorkflowVersionSchema,
+});
+
+export type CommerceWorkflowDefinitionDescriptor =
+  typeof CommerceWorkflowDefinitionDescriptorSchema.Type;
+
+export const CommerceWorkflowStepOutcomeSchema = Schema.Struct({
+  attempt: CommerceWorkflowVersionSchema,
+  completedAt: Schema.optional(CommerceWorkflowIsoDateTimeStringSchema),
+  error: Schema.optional(CommerceWorkflowRunErrorSchema),
+  output: Schema.optional(Schema.Unknown),
+  phase: Schema.Literals(["run", "compensation"]),
+  retryDisposition: Schema.optional(CommerceWorkflowRetryDispositionSchema),
+  scheduledRetryAt: Schema.optional(CommerceWorkflowIsoDateTimeStringSchema),
+  startedAt: CommerceWorkflowIsoDateTimeStringSchema,
+  status: CommerceWorkflowStepStatusSchema,
+  stepId: CommerceWorkflowTrimmedStringSchema,
+  stepName: CommerceWorkflowTrimmedStringSchema,
+});
+
+export type CommerceWorkflowStepOutcome =
+  typeof CommerceWorkflowStepOutcomeSchema.Type;
+
+export const CommerceWorkflowRunStateSchema = Schema.Struct({
+  attempts: Schema.Array(CommerceWorkflowStepOutcomeSchema),
+  causationId: Schema.optional(CommerceWorkflowTrimmedStringSchema),
+  completedAt: Schema.optional(CommerceWorkflowIsoDateTimeStringSchema),
+  correlationId: CommerceWorkflowTrimmedStringSchema,
+  createdAt: CommerceWorkflowIsoDateTimeStringSchema,
+  historyReference: Schema.optional(CommerceWorkflowTrimmedStringSchema),
+  idempotencyKey: Schema.optional(CommerceWorkflowTrimmedStringSchema),
+  input: Schema.Unknown,
+  metadata: Schema.optional(CommerceWorkflowMetadataSchema),
+  nextStepIndex: CommerceWorkflowNonNegativeIntegerSchema,
+  output: Schema.optional(Schema.Unknown),
+  runId: CommerceWorkflowTrimmedStringSchema,
+  schemaVersion: CommerceWorkflowSchemaVersionSchema,
+  status: CommerceWorkflowRunStatusSchema,
+  subject: Schema.optional(CommerceWorkflowSubjectSchema),
+  updatedAt: CommerceWorkflowIsoDateTimeStringSchema,
+  workflowKey: CommerceWorkflowKeySchema,
+  workflowVersion: CommerceWorkflowVersionSchema,
+});
+
+export type CommerceWorkflowRunState =
+  typeof CommerceWorkflowRunStateSchema.Type;
 
 export interface CommerceWorkflowSubject {
   readonly type: string;
@@ -56,6 +226,8 @@ export interface CommerceWorkflowStepResult<Output = unknown> {
 export interface CommerceWorkflowRunError {
   readonly name: string;
   readonly message: string;
+  readonly retryable?: boolean;
+  readonly tag?: string;
 }
 
 export interface CommerceWorkflowStepAttempt<
@@ -97,6 +269,7 @@ export interface CommerceWorkflowCompensation<
   Error = never,
 > {
   readonly name: string;
+  readonly policy?: CommerceWorkflowCompensationPolicy;
   readonly compensate: WorkflowCompensationHandler<Input, Output, Error>;
 }
 
@@ -106,6 +279,8 @@ export interface CommerceWorkflowStep<
   Error = never,
 > {
   readonly name: string;
+  readonly retryPolicy?: CommerceWorkflowRetryPolicy;
+  readonly schemaVersion?: CommerceWorkflowSchemaVersion;
   readonly run: WorkflowStepHandler<Input, Output, Error>;
   readonly compensation?: CommerceWorkflowCompensation<Input, Output, Error>;
 }
@@ -113,6 +288,7 @@ export interface CommerceWorkflowStep<
 export interface CommerceWorkflowDefinition<Input = unknown, Output = unknown> {
   readonly key: CommerceWorkflowKey;
   readonly version: CommerceWorkflowVersion;
+  readonly schemaVersion?: CommerceWorkflowSchemaVersion;
   // oxlint-disable-next-line typescript/no-explicit-any
   readonly steps: readonly CommerceWorkflowStep<Input, any, any>[];
   readonly resolveOutput?: (
@@ -322,6 +498,34 @@ export const defineWorkflowStep = <
 export const defineWorkflow = <Input = unknown, Output = unknown>(
   definition: CommerceWorkflowDefinition<Input, Output>
 ): CommerceWorkflowDefinition<Input, Output> => definition;
+
+/**
+ * Creates the durable, schema-versioned descriptor for a workflow definition.
+ *
+ * Executable Effect handlers stay on `CommerceWorkflowDefinition`; this
+ * descriptor is the adapter-neutral shape that can be stored, replayed, and
+ * compared across in-memory, Cloudflare, or future workflow runtimes.
+ */
+export const describeWorkflowDefinition = (
+  definition: CommerceWorkflowDefinition
+): CommerceWorkflowDefinitionDescriptor => ({
+  key: Schema.decodeUnknownSync(CommerceWorkflowKeySchema)(definition.key),
+  schemaVersion: definition.schemaVersion ?? definition.version,
+  steps: definition.steps.map((step) => ({
+    compensation:
+      step.compensation?.policy ??
+      (step.compensation
+        ? {
+            required: true,
+            stepName: step.compensation.name,
+          }
+        : undefined),
+    name: step.name,
+    retryPolicy: step.retryPolicy,
+    schemaVersion: step.schemaVersion ?? definition.schemaVersion ?? 1,
+  })),
+  version: definition.version,
+});
 
 export const createWorkflowRunError = (
   error: unknown

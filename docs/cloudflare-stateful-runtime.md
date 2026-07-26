@@ -60,11 +60,17 @@ distinct Effect telemetry classifications.
 Effect workflows remain the orchestration contract. Queue and Durable Object
 Layers are runtime primitives called through portable Effect services.
 PostgreSQL, accessed through Effect SQL and Drizzle, is the default
-authoritative relational store and
-may persist workflow metadata or transactional outbox records, but it is not by
-itself the workflow execution engine.
+authoritative relational store and may persist workflow metadata or
+transactional outbox records, but it is not by itself the workflow execution
+engine.
 
-As of tasks 8.1 through 8.9 in `adopt-effect-4-backend-architecture`, cart,
+As of task 9.1, `@ecommerce/core` owns the portable durable-message schemas for
+workflow descriptors, run state, step outcomes, retry policy, retry
+disposition, and compensation policy. Cloudflare adapters must decode persisted
+or queued workflow state through those schemas before dispatching work. Runtime
+implementations are still pending in tasks 9.2 and 9.3.
+
+As of tasks 8.1 through 9.1 in `adopt-effect-4-backend-architecture`, cart,
 promotion, tax, fulfillment, payment, checkout, order, and notification-event
 follow this split:
 
