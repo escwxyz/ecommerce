@@ -412,7 +412,7 @@ const createFakeCartCacheNamespace = () => {
 };
 
 describe("cloudflare cart cache adapter", () => {
-  it("routes active cart mutations through deterministic cart Durable Object names and syncs D1 projection", async () => {
+  it("routes active cart mutations through deterministic cart Durable Object names and syncs the projection repository", async () => {
     const cartCache = createFakeCartCacheNamespace();
     const projectionRepository = createResettableInMemoryCartRepository();
     const repository = createCloudflareCartCacheRepository({

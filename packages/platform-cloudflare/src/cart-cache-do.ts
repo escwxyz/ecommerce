@@ -166,9 +166,10 @@ const toStoredCartAggregate = (
     : null;
 
 /**
- * Durable Object host for active cart cache state. D1 remains the projection
- * store; this object stores the hot cart aggregate, ownership scope, and retry
- * metadata needed when projection sync fails after a mutation is accepted.
+ * Durable Object host for active cart cache state. PostgreSQL remains the
+ * authoritative projection store; this object owns only the hot aggregate,
+ * ownership scope, idempotency indexes, and projection-sync coordination.
+ * Actor-local state must remain disposable and recoverable from PostgreSQL.
  */
 export class CartCacheDurableObject extends DurableObject {
   async fetch(request: Request): Promise<Response> {

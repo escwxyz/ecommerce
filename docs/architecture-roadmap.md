@@ -237,6 +237,17 @@ architecture:
   turns, durably deduplicates commands, atomically persists a changed state
   snapshot with its command result, and maintains the earliest Cloudflare alarm
   for the actor's durable timer set.
+- Section 9.7 evaluates the beta.93 Effect SQL Durable Object SQLite adapter.
+  It is approved for actor-local workloads that need relational queries,
+  indexes, migrations, or multi-statement transactions, but is not added merely
+  to rewrite the keyed actor's small key-value layout. Notification realtime is
+  the first concrete conversion candidate because it already uses raw Durable
+  Object SQLite.
+- Section 9.8 records the normative owner and recovery source for every current
+  stateful workload in `docs/stateful-workload-ownership.md`. PostgreSQL owns
+  commerce records, projections, outbox state, and queryable workflow metadata;
+  actor-local storage owns only declared coordination, cache, workflow-history,
+  timer, and fanout state; queues are transit rather than authority.
 
 ## Current Gaps
 
@@ -266,8 +277,9 @@ architecture:
   deduplication, state, and timer hosting with a no-op command interpreter.
   Commerce-specific actor behavior must compose
   `createKeyedActorDurableObjectHandler` with its own typed command handler.
-  Task 9.8 records ownership per workload, while task 9.9 supplies the broader
-  interruption, restart, duplicate-delivery, and timer-recovery evidence.
+  Ownership is recorded in `docs/stateful-workload-ownership.md`; task 9.9
+  supplies the broader interruption, restart, duplicate-delivery, and
+  timer-recovery evidence.
 - The Hono Worker remains the deployed compatibility entrypoint while the
   Effect Worker foundation accumulates migrated module groups. Cart, promotion,
   tax, fulfillment, payment, checkout, order, and notification-event are

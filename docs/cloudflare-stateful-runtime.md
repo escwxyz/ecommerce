@@ -23,6 +23,27 @@ small, high-contention state scope such as:
 Keep durable business records behind repository/database contracts unless a
 module-specific design explicitly chooses a DO-owned primary record.
 
+The normative per-workload owner and recovery matrix lives in
+[`stateful-workload-ownership.md`](./stateful-workload-ownership.md). A platform
+adapter choice such as key-value Durable Object storage, raw SQLite, or Effect
+SQL SQLite does not change that ownership declaration.
+
+## Effect SQL Durable Object SQLite
+
+Task 9.7 approves `@effect/sql-sqlite-do` for actor-local state that benefits
+from relational queries, indexes, migrations, or multi-statement
+transactions. The reviewed beta.93 client must receive the full
+`ctx.storage` handle when transactions are required; passing only
+`ctx.storage.sql` provides queries without Cloudflare-managed transaction
+support.
+
+The current keyed-actor key-value layout remains in place because its command
+results, single snapshot, and timer set do not yet justify another dependency
+or storage migration. Notification realtime is the first concrete conversion
+candidate because it already owns actor-local raw SQLite tables. Any adoption
+must exact-pin the package to the workspace Effect cohort and pass the
+task-9.9 restart and recovery suite.
+
 ## Merchant Reference Pattern
 
 `refs/merchant/src/do.ts` is a useful Cloudflare-native reference, but its
@@ -131,9 +152,10 @@ Effect Layer and schema protocol. Task 12.5 removes that facade, the legacy
 core types, and the temporary class export alias. Task 9.9 owns comprehensive
 restart, interruption, duplicate-delivery, and timer-recovery verification.
 
-As of tasks 8.1 through 9.2 in `adopt-effect-4-backend-architecture`, cart,
-promotion, tax, fulfillment, payment, checkout, order, and notification-event
-follow this split:
+As of tasks 8.1 through 9.8 in `adopt-effect-4-backend-architecture`, the
+normative ownership matrix is maintained in
+[`stateful-workload-ownership.md`](./stateful-workload-ownership.md). The
+following module summary remains useful:
 
 - PostgreSQL Drizzle owns durable cart, line-item, and adjustment persistence.
 - PostgreSQL Drizzle owns durable promotion campaign, promotion, rule, usage

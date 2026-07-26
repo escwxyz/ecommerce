@@ -138,7 +138,7 @@ Alternative considered: implement three runtimes concurrently. Rejected because 
 
 ### 11. Durable Objects are the first actor implementation
 
-The core defines narrow Effect services for keyed actors, serialized commands, timers, durable workflow execution, and state/event persistence. Cloudflare implements them first with Durable Objects and may use Effect SQL's Durable Object SQLite client where appropriate. PostgreSQL remains the authoritative relational system of record; actor-local storage is coordination, workflow, or cache state unless a later spec explicitly transfers ownership.
+The core defines narrow Effect services for keyed actors, serialized commands, timers, durable workflow execution, and state/event persistence. Cloudflare implements them first with Durable Objects. Task 9.7 approved Effect SQL's Durable Object SQLite client for actor-local workloads that require relational queries, indexes, migrations, or multi-statement transactions; the generic keyed actor retains its smaller key-value layout until such a requirement exists. PostgreSQL remains the authoritative relational system of record; actor-local storage is coordination, workflow, cache, timer, or fanout state unless a later spec explicitly transfers ownership. The workload-by-workload authority and recovery matrix is recorded in `docs/stateful-workload-ownership.md`.
 
 Backpine Cloudflare packages and `durable-effect` are implementation references, not core contracts. Rivet is deferred to a parity evaluation covering consistency, timers, recovery, placement, latency, deployment, operations, and cost.
 
@@ -205,5 +205,4 @@ Rollback is source-level because there is no production data. Each slice remains
 - Which PostgreSQL deployment and Hyperdrive configuration will be the first Cloudflare integration target?
 - Can Better Auth operate behind Effect HTTP and the new storage boundary without retaining Kysely, or does auth require a temporary isolated persistence seam?
 - What generated-client surface from Effect `HttpApi` best supports the browser SDK without importing server runtime code?
-- Which actor workloads beyond the existing cart cache justify Durable Object ownership, and what data remains exclusively in PostgreSQL?
 - Which telemetry exporter is operationally appropriate for the first Cloudflare stage?
