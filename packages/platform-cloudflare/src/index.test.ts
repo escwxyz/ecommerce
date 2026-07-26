@@ -13,9 +13,12 @@ import {
   defineSandboxPlugin,
   defineWorkflow,
   createEventCollector,
+  createInMemoryWorkflowStateStore,
   createInMemoryWorkflowMetadataStore,
   createSequenceIdGenerator,
   createStaticClock,
+  QueuePublisherService,
+  WorkflowRuntimeService,
 } from "@ecommerce/core";
 import {
   createFakeNotificationProvider,
@@ -27,13 +30,17 @@ import { Effect } from "effect";
 import {
   activateSandboxPlugin,
   createCloudflareQueuePublisher,
+  createCloudflareQueuePublisherLayer,
   createCloudflareQueuedNotificationProvider,
+  CloudflareQueuePublishFailure,
   createCartCacheDurableObjectName,
   createCloudflareCartCacheRepository,
   composeSandboxPluginDispatch,
   createCloudflareSandboxPluginRunner,
   createCloudflareStatefulCoordinator,
   createCloudflareWorkflowRuntime,
+  createCloudflareWorkflowRuntimeLayer,
+  CloudflareWorkflowRuntimeFailure,
   createInMemorySandboxPluginMetadataStore,
   createInMemorySandboxStorage,
   createNotificationEventQueuePublisher,
@@ -1066,6 +1073,56 @@ describe("cloudflare workflow runtime adapter", () => {
     });
   });
 
+  it("provides Cloudflare queue publishers through Effect Layers and typed failures", async () => {
+    const telemetryEvents: unknown[] = [];
+    const failingQueue = {
+      metrics: async () => ({
+        backlogBytes: 0,
+        backlogCount: 0,
+      }),
+      send: async () => {
+        throw new Error("queue unavailable");
+      },
+      sendBatch: async () => undefined,
+    } as unknown as Queue<never>;
+    const message = defineQueueMessage({
+      correlationId: "corr_queue_layer",
+      id: "msg_queue_layer",
+      idempotencyKey: "queue:layer",
+      payload: { ok: true },
+      queueName: "commerce-work",
+      type: "commerce.test",
+    });
+    const layer = createCloudflareQueuePublisherLayer({
+      clock: createStaticClock(new Date("2026-06-06T12:30:00.000Z")),
+      queue: failingQueue,
+      telemetry: {
+        record: (event) => {
+          telemetryEvents.push(event);
+        },
+      },
+    });
+
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* publishWithLayer() {
+          const publisher = yield* QueuePublisherService;
+          return yield* Effect.tryPromise({
+            catch: (cause) => cause,
+            try: () => publisher.publish(message),
+          });
+        }).pipe(Effect.provide(layer))
+      )
+    ).rejects.toBeInstanceOf(CloudflareQueuePublishFailure);
+    expect(telemetryEvents).toMatchObject([
+      {
+        correlationId: "corr_queue_layer",
+        kind: "queue.publish.failed",
+        messageId: "msg_queue_layer",
+      },
+    ]);
+  });
+
   it("does not duplicate queued or coordinated work for duplicate workflow starts", async () => {
     const workflowBinding = createFakeWorkflowBinding();
     const fakeQueue = createFakeQueue();
@@ -1164,6 +1221,113 @@ describe("cloudflare workflow runtime adapter", () => {
     expect(metadata.records.get(first.runId)?.idempotencyKey).toBe(
       "checkout:cart_2"
     );
+  });
+
+  it("deduplicates workflow starts across runtime instances with shared state", async () => {
+    const workflowBinding = createFakeWorkflowBinding();
+    const fakeQueue = createFakeQueue();
+    const { publisher } = createEventCollector();
+    const state = createInMemoryWorkflowStateStore();
+    const telemetryEvents: unknown[] = [];
+    const clock = createStaticClock(new Date("2026-06-06T14:00:00.000Z"));
+    const workflow = defineWorkflow({
+      key: "checkout.workflow-state",
+      version: 1,
+      steps: [],
+    });
+    const request = {
+      workflow,
+      correlationId: "corr_state_dedupe",
+      idempotencyKey: "checkout:state",
+      input: { cartId: "cart_state" },
+    } as const;
+    const firstRuntime = createCloudflareWorkflowRuntime({
+      bindings: {
+        dispatchQueue: fakeQueue.queue as Queue<never>,
+        workflow: workflowBinding.binding,
+      },
+      clock,
+      ids: createSequenceIdGenerator(["run_cf_state_1", "evt_cf_state_1"]),
+      publisher,
+      stateStore: state.store,
+      telemetry: {
+        record: (event) => {
+          telemetryEvents.push(event);
+        },
+      },
+    });
+
+    const first = await firstRuntime.start(request);
+    const secondRuntime = createCloudflareWorkflowRuntime({
+      bindings: {
+        dispatchQueue: fakeQueue.queue as Queue<never>,
+        workflow: workflowBinding.binding,
+      },
+      clock,
+      ids: createSequenceIdGenerator(["run_cf_state_2", "evt_cf_state_2"]),
+      publisher,
+      stateStore: state.store,
+    });
+    const second = await secondRuntime.start(request);
+
+    expect(second.runId).toBe(first.runId);
+    expect(fakeQueue.messages).toHaveLength(1);
+    expect(state.states.get(first.runId)).toMatchObject({
+      correlationId: "corr_state_dedupe",
+      historyReference: "cloudflare:run_cf_state_1",
+      idempotencyKey: "checkout:state",
+      schemaVersion: 1,
+      status: "pending",
+      workflowKey: "checkout.workflow-state",
+    });
+    expect(telemetryEvents).toContainEqual(
+      expect.objectContaining({
+        kind: "workflow.start.succeeded",
+        runId: "run_cf_state_1",
+      })
+    );
+  });
+
+  it("provides Cloudflare workflow runtimes through Effect Layers and typed failures", async () => {
+    const { publisher } = createEventCollector();
+    const workflow = defineWorkflow({
+      key: "checkout.workflow-layer",
+      version: 1,
+      steps: [],
+    });
+    const layer = createCloudflareWorkflowRuntimeLayer({
+      bindings: {
+        workflow: {
+          create: async () => {
+            throw new Error("workflow binding unavailable");
+          },
+          createBatch: async (): Promise<WorkflowInstance[]> => [],
+          get: async () => {
+            throw new Error("not expected");
+          },
+        } as unknown as Workflow<unknown>,
+      },
+      clock: createStaticClock(new Date("2026-06-06T14:30:00.000Z")),
+      ids: createSequenceIdGenerator(["run_cf_layer"]),
+      publisher,
+    });
+
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* startWithLayer() {
+          const runtime = yield* WorkflowRuntimeService;
+          return yield* Effect.tryPromise({
+            catch: (cause) => cause,
+            try: () =>
+              runtime.start({
+                workflow,
+                correlationId: "corr_workflow_layer",
+                input: {},
+              }),
+          });
+        }).pipe(Effect.provide(layer))
+      )
+    ).rejects.toBeInstanceOf(CloudflareWorkflowRuntimeFailure);
   });
 
   it("reconciles Cloudflare instance status back to the shared contract", async () => {

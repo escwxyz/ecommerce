@@ -58,7 +58,7 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
-As of 2026-07-26, tasks 1.1 through 9.2 of
+As of 2026-07-26, tasks 1.1 through 9.3 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
 customer/product/region-sales-channel/pricing/inventory foundational slices,
 plus the cart, promotion, tax, fulfillment, payment, checkout, order, and
@@ -205,6 +205,14 @@ architecture:
   the deterministic in-memory runtime can persist, recover, skip completed
   side effects, and record failed/compensated outcomes without importing
   Cloudflare, Drizzle, Hono, oRPC, or module runtime adapters.
+- Section 9.3 wires the Cloudflare workflow and queue adapters into
+  runtime-neutral Effect service Layers. Queue publishing and workflow binding,
+  dispatch queue, Durable Object coordinator, metadata/state-store, and
+  lifecycle-event failures are normalized to schema-backed tagged errors at the
+  platform boundary, while bounded telemetry records successful and failed
+  queue/workflow runtime operations. The Cloudflare workflow adapter can now
+  persist and recover schema-versioned workflow state through the shared
+  `CommerceWorkflowStateStore` contract when one is provided.
 
 ## Current Gaps
 
@@ -219,9 +227,10 @@ architecture:
   composition still uses temporary server-owned Promise facades over migrated
   downstream services until section 9 introduces durable workflow/runtime Layer
   composition. Newly migrated module code must not depend on those facades.
-- Workflow durable schemas and the deterministic recovery harness are now
-  defined, but task 9.3 still needs to adapt the Cloudflare workflow/queue
-  runtime Layers to the same state-store and typed-failure contract.
+- Task 9.4 still needs to connect transactional outbox claiming to idempotent
+  Cloudflare queue delivery. Until then, the queue/runtime Layers exist, but
+  committed outbox rows are not yet drained through the new section-9 delivery
+  loop.
 - The Hono Worker remains the deployed compatibility entrypoint while the
   Effect Worker foundation accumulates migrated module groups. Cart, promotion,
   tax, fulfillment, payment, checkout, order, and notification-event are

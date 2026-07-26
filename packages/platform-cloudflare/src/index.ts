@@ -7,6 +7,11 @@ export {
 } from "./cart-cache";
 export {
   createCloudflareQueuePublisher,
+  createCloudflareQueuePublisherLayer,
+  publishCloudflareQueueMessageEffect,
+  CloudflareQueuePublishFailure,
+  type CloudflareQueueTelemetryEvent,
+  type CloudflareQueueTelemetrySink,
   type CloudflareQueuePublisherOptions,
 } from "./queue";
 export {
@@ -71,6 +76,10 @@ export {
 } from "./stateful";
 export {
   createCloudflareWorkflowRuntime,
+  createCloudflareWorkflowRuntimeLayer,
+  CloudflareWorkflowRuntimeFailure,
+  type CloudflareWorkflowTelemetryEvent,
+  type CloudflareWorkflowTelemetrySink,
   type CloudflareWorkflowDispatchMessage,
   type CloudflareWorkflowPayload,
   type CloudflareWorkflowRuntimeBindings,
