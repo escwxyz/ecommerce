@@ -207,6 +207,78 @@ describe("Cloudflare keyed actor boundary", () => {
     });
   });
 
+  it("recovers command deduplication and state after an actor restart", async () => {
+    const storage = createStorage();
+    let handlerCalls = 0;
+    const createHost = () =>
+      createKeyedActorDurableObjectHandler({
+        clock: {
+          now: () => new Date("2026-07-26T13:00:01.000Z"),
+        },
+        handle: () =>
+          Effect.sync(() => {
+            handlerCalls += 1;
+            return {
+              output: { mutationCount: handlerCalls },
+              state: { mutationCount: handlerCalls },
+            };
+          }),
+        ownership,
+        storage,
+      });
+    const firstHost = createHost();
+    const firstLayer = createCloudflareKeyedActorLayer({
+      namespace: {
+        getByName: () => ({
+          fetch: (request: Request) => firstHost.fetch(request),
+        }),
+      },
+    });
+
+    const first = await Effect.runPromise(
+      Effect.gen(function* () {
+        const actor = yield* KeyedActorService;
+        return yield* actor.dispatch(command);
+      }).pipe(Effect.provide(firstLayer))
+    );
+
+    const restartedHost = createHost();
+    const restartedLayer = createCloudflareKeyedActorLayer({
+      namespace: {
+        getByName: () => ({
+          fetch: (request: Request) => restartedHost.fetch(request),
+        }),
+      },
+    });
+    const recovered = await Effect.runPromise(
+      Effect.gen(function* () {
+        const actor = yield* KeyedActorService;
+        const stateStore = yield* KeyedActorStateStoreService;
+        const duplicate = yield* actor.dispatch(command);
+        const state = yield* stateStore.get({
+          actor: command.actor,
+          stateName: ownership.stateName,
+        });
+        return {
+          duplicate,
+          state: Option.getOrUndefined(state),
+        };
+      }).pipe(Effect.provide(restartedLayer))
+    );
+
+    expect(first.duplicate).toBe(false);
+    expect(recovered.duplicate).toMatchObject({
+      duplicate: true,
+      output: { mutationCount: 1 },
+      stateVersion: 1,
+    });
+    expect(recovered.state).toMatchObject({
+      state: { mutationCount: 1 },
+      stateVersion: 1,
+    });
+    expect(handlerCalls).toBe(1);
+  });
+
   it("maps malformed Durable Object results to typed command failures", async () => {
     const layer = createCloudflareKeyedActorLayer({
       namespace: {
@@ -291,5 +363,78 @@ describe("Cloudflare keyed actor boundary", () => {
       stateVersion: 1,
     });
     expect(await storage.getAlarm()).toBe(new Date(timer.dueAt).getTime());
+  });
+
+  it("recovers and dispatches a due timer after an actor restart", async () => {
+    const storage = createStorage();
+    const scheduledHost = createKeyedActorDurableObjectHandler({
+      clock: {
+        now: () => new Date("2026-07-26T13:00:01.000Z"),
+      },
+      handle: () => Effect.succeed({ output: null }),
+      ownership,
+      storage,
+    });
+    const scheduledLayer = createCloudflareKeyedActorLayer({
+      namespace: {
+        getByName: () => ({
+          fetch: (request: Request) => scheduledHost.fetch(request),
+        }),
+      },
+    });
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const timers = yield* KeyedActorTimerService;
+        yield* timers.schedule(timer);
+      }).pipe(Effect.provide(scheduledLayer))
+    );
+
+    let handlerCalls = 0;
+    const restartedHost = createKeyedActorDurableObjectHandler({
+      clock: {
+        now: () => new Date("2026-07-27T13:00:01.000Z"),
+      },
+      handle: () =>
+        Effect.sync(() => {
+          handlerCalls += 1;
+          return { output: { expired: true } };
+        }),
+      ownership,
+      storage,
+    });
+
+    await restartedHost.alarm();
+
+    const restartedLayer = createCloudflareKeyedActorLayer({
+      namespace: {
+        getByName: () => ({
+          fetch: (request: Request) => restartedHost.fetch(request),
+        }),
+      },
+    });
+    const recovered = await Effect.runPromise(
+      Effect.gen(function* () {
+        const actor = yield* KeyedActorService;
+        const timers = yield* KeyedActorTimerService;
+        const duplicate = yield* actor.dispatch(command);
+        const storedTimer = yield* timers.get({
+          actor: command.actor,
+          timerId: timer.timerId,
+        });
+        return {
+          duplicate,
+          storedTimer: Option.getOrUndefined(storedTimer),
+        };
+      }).pipe(Effect.provide(restartedLayer))
+    );
+
+    expect(handlerCalls).toBe(1);
+    expect(recovered.duplicate).toMatchObject({
+      duplicate: true,
+      output: { expired: true },
+    });
+    expect(recovered.storedTimer).toBeUndefined();
+    expect(await storage.getAlarm()).toBeNull();
   });
 });

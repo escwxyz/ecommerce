@@ -101,8 +101,8 @@
 - [x] 9.6 Implement the Durable Object actor Layer and Effect Schema message boundary
 - [x] 9.7 Evaluate Effect SQL Durable Object SQLite for applicable actor-local state
 - [x] 9.8 Document PostgreSQL versus actor-local ownership for every stateful workload
-- [ ] 9.9 Verify interruption, retry, replay, duplicate delivery, compensation, actor restart, and timer recovery
-- [ ] 9.10 Create a deferred Rivet parity-evaluation change with consistency, recovery, operations, latency, and cost criteria
+- [x] 9.9 Verify interruption, retry, replay, duplicate delivery, compensation, actor restart, and timer recovery
+- [x] 9.10 Create a deferred Rivet parity-evaluation change with consistency, recovery, operations, latency, and cost criteria
 
 ## 10. Effect-native plugin architecture
 

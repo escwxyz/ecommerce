@@ -149,8 +149,19 @@ Task 9.6 implements the first permanent Cloudflare actor adapter:
 The old Promise coordinator remains only at cart and inventory's temporary
 migration input. Its Cloudflare facade now dispatches through the permanent
 Effect Layer and schema protocol. Task 12.5 removes that facade, the legacy
-core types, and the temporary class export alias. Task 9.9 owns comprehensive
-restart, interruption, duplicate-delivery, and timer-recovery verification.
+core types, and the temporary class export alias.
+
+Task 9.9 completes the portable and Cloudflare recovery gate:
+
+- actual Effect interruption leaves a workflow resumable and does not record a
+  failed step or trigger compensation;
+- declared retry policies execute up to their bounded attempt limit and persist
+  retry dispositions plus scheduled backoff metadata;
+- workflow replay reuses completed outcomes and terminal compensation;
+- outbox replay preserves stable queue and domain idempotency identity;
+- restarted actor hosts reuse durable command results and state snapshots; and
+- due timers survive actor restart, dispatch once, and are removed only after a
+  successful command result is durable.
 
 As of tasks 8.1 through 9.8 in `adopt-effect-4-backend-architecture`, the
 normative ownership matrix is maintained in
@@ -208,7 +219,11 @@ operations do not use distributed transactions.
 Core actor contracts must not import Cloudflare or Rivet APIs and must have
 deterministic test Layers. Rivet is deferred until it demonstrates parity for
 consistency, timers, recovery, placement, latency, deployment, operations, and
-cost.
+cost. The apply-ready
+`openspec/changes/evaluate-rivet-stateful-runtime-parity/` change defines the
+shared workload fixtures, hard correctness gates, measurement evidence, and
+adopt/defer/reject decision record. Completing that evaluation cannot replace
+the production adapter directly; adoption requires a separate accepted change.
 
 Backpine's Cloudflare Effect packages and `durable-effect` are implementation
 references only. Adopted code must pass the selected Effect 4 version,

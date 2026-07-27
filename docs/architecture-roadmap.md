@@ -58,7 +58,7 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
-As of 2026-07-26, tasks 1.1 through 9.6 of
+As of 2026-07-27, tasks 1.1 through 9.10 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
 customer/product/region-sales-channel/pricing/inventory foundational slices,
 plus the cart, promotion, tax, fulfillment, payment, checkout, order, and
@@ -248,6 +248,19 @@ architecture:
   commerce records, projections, outbox state, and queryable workflow metadata;
   actor-local storage owns only declared coordination, cache, workflow-history,
   timer, and fanout state; queues are transit rather than authority.
+- Section 9.9 completes the deterministic recovery gate. The in-memory workflow
+  runtime now preserves real Effect interruption without turning it into a
+  failed step or compensation, executes declared retry policies, and persists
+  every failed attempt with retry disposition and bounded backoff metadata.
+  Tests prove replay skips completed side effects, terminal compensation is not
+  repeated, outbox replay preserves queue identity, restarted actors reuse
+  durable command/state records, and due timers dispatch after actor restart.
+- Section 9.10 creates the deferred
+  `evaluate-rivet-stateful-runtime-parity` change. It requires Rivet to
+  implement the same portable contracts and pass hard consistency,
+  idempotency, interruption, restart, and timer-recovery gates before latency,
+  placement, deployment, operations, or cost trade-offs can support a separate
+  production-adoption proposal.
 
 ## Current Gaps
 
@@ -277,9 +290,10 @@ architecture:
   deduplication, state, and timer hosting with a no-op command interpreter.
   Commerce-specific actor behavior must compose
   `createKeyedActorDurableObjectHandler` with its own typed command handler.
-  Ownership is recorded in `docs/stateful-workload-ownership.md`; task 9.9
-  supplies the broader interruption, restart, duplicate-delivery, and
-  timer-recovery evidence.
+  Ownership is recorded in `docs/stateful-workload-ownership.md`; task 9.9 now
+  supplies interruption, restart, duplicate-delivery, and timer-recovery
+  evidence for the generic host, but production commerce actors still need
+  workload-specific handlers and runtime Layer composition.
 - The Hono Worker remains the deployed compatibility entrypoint while the
   Effect Worker foundation accumulates migrated module groups. Cart, promotion,
   tax, fulfillment, payment, checkout, order, and notification-event are

@@ -1,4 +1,5 @@
-import { Schema, type Effect } from "effect";
+import { Schema } from "effect";
+import type { Effect } from "effect";
 
 import type { CommerceEventEnvelope } from "../events/index";
 
@@ -11,9 +12,7 @@ export type CommerceWorkflowHistoryReference = string;
 
 const isCanonicalIsoDateTime = (value: string): boolean => {
   const parsed = new Date(value);
-  return (
-    !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value
-  );
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
 };
 
 const isPositiveInteger = (value: number): boolean =>
@@ -27,9 +26,7 @@ export const CommerceWorkflowTrimmedStringSchema = Schema.NonEmptyString.pipe(
 );
 
 export const CommerceWorkflowKeySchema =
-  CommerceWorkflowTrimmedStringSchema.pipe(
-    Schema.brand("CommerceWorkflowKey")
-  );
+  CommerceWorkflowTrimmedStringSchema.pipe(Schema.brand("CommerceWorkflowKey"));
 
 export const CommerceWorkflowVersionSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter(isPositiveInteger))
@@ -554,13 +551,25 @@ export const describeWorkflowDefinition = (
   version: definition.version,
 });
 
+/**
+ * Converts a foreign step failure into durable workflow error metadata.
+ *
+ * Schema-backed tagged errors retain `_tag` and `retryable` so runtime adapters
+ * can apply declared retry policy without persisting concrete error classes.
+ */
 export const createWorkflowRunError = (
   error: unknown
 ): CommerceWorkflowRunError => {
   if (error instanceof Error) {
+    const taggedError = "_tag" in error ? error._tag : undefined;
+    const retryableError = "retryable" in error ? error.retryable : undefined;
+
     return {
       name: error.name,
       message: error.message,
+      retryable:
+        typeof retryableError === "boolean" ? retryableError : undefined,
+      tag: typeof taggedError === "string" ? taggedError : undefined,
     };
   }
 
