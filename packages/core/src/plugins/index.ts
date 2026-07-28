@@ -5,7 +5,6 @@ import type { AdminPermissionDescriptor } from "../admin/index";
 import { normalizeAdminPermission } from "../admin/index";
 import type {
   CommerceAdminSurface,
-  CommerceModuleApiFragment,
   CommerceModuleDefinition,
 } from "../modules/index";
 import {
@@ -21,15 +20,28 @@ import {
   composeCommercePermissions,
   createCommercePermissionValidator,
 } from "../permissions/index";
-import type {
-  CommerceWorkflowDefinition,
-  CommerceWorkflowStep,
-} from "../workflows/index";
+import type { NativePluginExecutableContribution } from "./native-plugin-contributions";
 import { createNativePluginManifest } from "./native-plugin-manifest";
 import type {
   NativePluginManifest,
   NativePluginManifestInput,
 } from "./native-plugin-manifest";
+
+export {
+  defineNativePluginApiGroupContribution,
+  defineNativePluginEventHandlerContribution,
+  defineNativePluginProviderContribution,
+  defineNativePluginServiceContribution,
+  defineNativePluginWorkflowContribution,
+  type NativePluginApiGroupContribution,
+  type NativePluginApiHandlerLayer,
+  type NativePluginEventHandlerContribution,
+  type NativePluginExecutableContribution,
+  type NativePluginExecutableContributionKind,
+  type NativePluginProviderContribution,
+  type NativePluginServiceContribution,
+  type NativePluginWorkflowContribution,
+} from "./native-plugin-contributions";
 
 export {
   NativePluginCapabilityKeySchema,
@@ -121,17 +133,6 @@ export interface SandboxPluginEntrypoint {
   readonly key: string;
   readonly kind: SandboxPluginEntrypointKind;
   readonly exportName?: string;
-}
-
-export interface CommercePluginProviderDescriptor<
-  Implementation = unknown,
-  Kind extends string = string,
-> {
-  readonly key: string;
-  readonly contractKey: string;
-  readonly kind: Kind;
-  readonly label?: string;
-  readonly implementation?: Implementation;
 }
 
 export interface CommercePluginExtensionPoint {
@@ -322,11 +323,11 @@ export interface NativePluginLifecycle<Error = never, Requirements = never> {
 export interface NativePluginContributions {
   readonly modules?: readonly CommerceModuleDefinition[];
   readonly permissions?: readonly CommercePermissionDescriptor[];
-  readonly apiFragments?: readonly CommerceModuleApiFragment[];
-  readonly providers?: readonly CommercePluginProviderDescriptor[];
-  readonly lifecycleHooks?: readonly string[];
-  readonly workflowSteps?: readonly CommerceWorkflowStep[];
-  readonly workflows?: readonly CommerceWorkflowDefinition[];
+  readonly services?: readonly NativePluginExecutableContribution<"Service">[];
+  readonly providers?: readonly NativePluginExecutableContribution<"Provider">[];
+  readonly apiGroups?: readonly NativePluginExecutableContribution<"ApiGroup">[];
+  readonly workflows?: readonly NativePluginExecutableContribution<"Workflow">[];
+  readonly eventHandlers?: readonly NativePluginExecutableContribution<"EventHandler">[];
   readonly adminSurfaces?: readonly CommerceAdminSurface[];
   readonly storage?: readonly CommercePluginStorageDeclaration[];
 }
@@ -345,16 +346,45 @@ export interface NativePluginRegistration<
   readonly state: NativePluginLifecycleState;
 }
 
-export interface NativePluginComposition {
-  readonly plugins: readonly NativePluginRegistration[];
-  readonly activePlugins: readonly NativePluginRegistration[];
+type NativePluginContributionValue<
+  Plugin extends NativePluginRegistration,
+  Key extends keyof NativePluginContributions,
+> =
+  Plugin extends NativePluginRegistration<infer Contributions>
+    ? NonNullable<Contributions[Key]> extends readonly (infer Contribution)[]
+      ? Contribution
+      : never
+    : never;
+
+export interface NativePluginComposition<
+  Plugins extends readonly NativePluginRegistration[] =
+    readonly NativePluginRegistration[],
+> {
+  readonly plugins: Plugins;
+  readonly activePlugins: readonly Plugins[number][];
   readonly modules: readonly CommerceModuleDefinition[];
   readonly moduleGraph: ReturnType<typeof composeCommerceModules>;
   readonly permissions: CommercePermissionComposition;
-  readonly apiFragments: readonly CommerceModuleApiFragment[];
-  readonly providers: readonly CommercePluginProviderDescriptor[];
-  readonly workflowSteps: readonly CommerceWorkflowStep[];
-  readonly workflows: readonly CommerceWorkflowDefinition[];
+  readonly services: readonly NativePluginContributionValue<
+    Plugins[number],
+    "services"
+  >[];
+  readonly providers: readonly NativePluginContributionValue<
+    Plugins[number],
+    "providers"
+  >[];
+  readonly apiGroups: readonly NativePluginContributionValue<
+    Plugins[number],
+    "apiGroups"
+  >[];
+  readonly workflows: readonly NativePluginContributionValue<
+    Plugins[number],
+    "workflows"
+  >[];
+  readonly eventHandlers: readonly NativePluginContributionValue<
+    Plugins[number],
+    "eventHandlers"
+  >[];
   readonly adminSurfaces: readonly CommerceAdminSurface[];
   readonly storage: readonly CommercePluginStorageDeclaration[];
 }
@@ -720,10 +750,13 @@ const assertUniqueValue = ({
   seen.set(value, ownerLabel);
 };
 
-const collectActiveContributions = <Contribution>(
-  plugins: readonly NativePluginRegistration[],
+const collectActiveContributions = <
+  const Plugins extends readonly NativePluginRegistration[],
+  Contribution,
+>(
+  plugins: Plugins,
   getContributions: (
-    plugin: NativePluginRegistration
+    plugin: Plugins[number]
   ) => readonly Contribution[] | undefined
 ): Contribution[] => {
   const contributions: Contribution[] = [];
@@ -735,12 +768,37 @@ const collectActiveContributions = <Contribution>(
   return contributions;
 };
 
+function collectExecutableContributions<
+  Plugin extends NativePluginRegistration,
+  Key extends
+    | "apiGroups"
+    | "eventHandlers"
+    | "providers"
+    | "services"
+    | "workflows",
+>(
+  plugins: readonly Plugin[],
+  key: Key
+): NativePluginContributionValue<Plugin, Key>[];
+function collectExecutableContributions(
+  plugins: readonly NativePluginRegistration[],
+  key: "apiGroups" | "eventHandlers" | "providers" | "services" | "workflows"
+): unknown[] {
+  const contributions: unknown[] = [];
+
+  for (const plugin of plugins) {
+    contributions.push(...(plugin.contributions[key] ?? []));
+  }
+
+  return contributions;
+}
+
 export const composeNativePlugins = <
   const Plugins extends readonly NativePluginRegistration[],
 >(
   plugins: Plugins,
   options: NativePluginCompositionOptions = {}
-): NativePluginComposition => {
+): NativePluginComposition<Plugins> => {
   const pluginIds = new Map<string, string>();
 
   for (const plugin of plugins) {
@@ -752,7 +810,9 @@ export const composeNativePlugins = <
     });
   }
 
-  const activePlugins = plugins.filter((plugin) => plugin.state === "active");
+  const activePlugins: Plugins[number][] = plugins.filter(
+    (plugin) => plugin.state === "active"
+  );
   const modules = collectActiveContributions(
     activePlugins,
     (plugin) => plugin.contributions.modules
@@ -796,30 +856,22 @@ export const composeNativePlugins = <
       activePlugins,
       (plugin) => plugin.contributions.adminSurfaces
     ),
-    apiFragments: collectActiveContributions(
+    apiGroups: collectExecutableContributions(activePlugins, "apiGroups"),
+    eventHandlers: collectExecutableContributions(
       activePlugins,
-      (plugin) => plugin.contributions.apiFragments
+      "eventHandlers"
     ),
     moduleGraph,
     modules,
     permissions,
     plugins,
-    providers: collectActiveContributions(
-      activePlugins,
-      (plugin) => plugin.contributions.providers
-    ),
+    providers: collectExecutableContributions(activePlugins, "providers"),
+    services: collectExecutableContributions(activePlugins, "services"),
     storage: collectActiveContributions(
       activePlugins,
       (plugin) => plugin.contributions.storage
     ),
-    workflowSteps: collectActiveContributions(
-      activePlugins,
-      (plugin) => plugin.contributions.workflowSteps
-    ),
-    workflows: collectActiveContributions(
-      activePlugins,
-      (plugin) => plugin.contributions.workflows
-    ),
+    workflows: collectExecutableContributions(activePlugins, "workflows"),
   };
 };
 

@@ -248,49 +248,76 @@ export type WorkflowStepHandler<
   Input = unknown,
   Output = unknown,
   Error = never,
+  Requirements = never,
 > = (
   input: Input,
   context: CommerceWorkflowContext
-) => Effect.Effect<CommerceWorkflowStepResult<Output>, Error>;
+) => Effect.Effect<CommerceWorkflowStepResult<Output>, Error, Requirements>;
 
 export type WorkflowCompensationHandler<
   Input = unknown,
   Output = unknown,
   Error = never,
+  Requirements = never,
 > = (
   input: Input,
   output: Output,
   context: CommerceWorkflowContext
-) => Effect.Effect<void, Error>;
+) => Effect.Effect<void, Error, Requirements>;
 
 export interface CommerceWorkflowCompensation<
   Input = unknown,
   Output = unknown,
   Error = never,
+  Requirements = never,
 > {
   readonly name: string;
   readonly policy?: CommerceWorkflowCompensationPolicy;
-  readonly compensate: WorkflowCompensationHandler<Input, Output, Error>;
+  readonly compensate: WorkflowCompensationHandler<
+    Input,
+    Output,
+    Error,
+    Requirements
+  >;
 }
 
 export interface CommerceWorkflowStep<
   Input = unknown,
   Output = unknown,
   Error = never,
+  Requirements = never,
 > {
   readonly name: string;
   readonly retryPolicy?: CommerceWorkflowRetryPolicy;
   readonly schemaVersion?: CommerceWorkflowSchemaVersion;
-  readonly run: WorkflowStepHandler<Input, Output, Error>;
-  readonly compensation?: CommerceWorkflowCompensation<Input, Output, Error>;
+  readonly run: WorkflowStepHandler<Input, Output, Error, Requirements>;
+  readonly compensation?: CommerceWorkflowCompensation<
+    Input,
+    Output,
+    Error,
+    Requirements
+  >;
 }
 
-export interface CommerceWorkflowDefinition<Input = unknown, Output = unknown> {
+export interface CommerceWorkflowDefinition<
+  Input = unknown,
+  Output = unknown,
+  Error = never,
+  Requirements = never,
+> {
   readonly key: CommerceWorkflowKey;
   readonly version: CommerceWorkflowVersion;
   readonly schemaVersion?: CommerceWorkflowSchemaVersion;
-  // oxlint-disable-next-line typescript/no-explicit-any
-  readonly steps: readonly CommerceWorkflowStep<Input, any, any>[];
+  // Workflow definitions intentionally contain steps with heterogeneous output
+  // types; the durable runtime narrows each output through its step definition.
+  // oxlint-disable typescript/no-explicit-any
+  readonly steps: readonly CommerceWorkflowStep<
+    Input,
+    any,
+    Error,
+    Requirements
+  >[];
+  // oxlint-enable typescript/no-explicit-any
   readonly resolveOutput?: (
     attempts: readonly CommerceWorkflowStepAttempt[]
   ) => Output;
@@ -324,7 +351,7 @@ export interface CommerceWorkflowStartRequest<
   Output = unknown,
   Metadata extends Record<string, unknown> = Record<string, unknown>,
 > {
-  readonly workflow: CommerceWorkflowDefinition<Input, Output>;
+  readonly workflow: CommerceWorkflowDefinition<Input, Output, unknown>;
   readonly input: Input;
   readonly correlationId: string;
   readonly causationId?: string;
@@ -515,13 +542,19 @@ export const defineWorkflowStep = <
   Input = unknown,
   Output = unknown,
   Error = never,
+  Requirements = never,
 >(
-  step: CommerceWorkflowStep<Input, Output, Error>
-): CommerceWorkflowStep<Input, Output, Error> => step;
+  step: CommerceWorkflowStep<Input, Output, Error, Requirements>
+): CommerceWorkflowStep<Input, Output, Error, Requirements> => step;
 
-export const defineWorkflow = <Input = unknown, Output = unknown>(
-  definition: CommerceWorkflowDefinition<Input, Output>
-): CommerceWorkflowDefinition<Input, Output> => definition;
+export const defineWorkflow = <
+  Input = unknown,
+  Output = unknown,
+  Error = never,
+  Requirements = never,
+>(
+  definition: CommerceWorkflowDefinition<Input, Output, Error, Requirements>
+): CommerceWorkflowDefinition<Input, Output, Error, Requirements> => definition;
 
 /**
  * Creates the durable, schema-versioned descriptor for a workflow definition.
@@ -530,8 +563,8 @@ export const defineWorkflow = <Input = unknown, Output = unknown>(
  * descriptor is the adapter-neutral shape that can be stored, replayed, and
  * compared across in-memory, Cloudflare, or future workflow runtimes.
  */
-export const describeWorkflowDefinition = (
-  definition: CommerceWorkflowDefinition
+export const describeWorkflowDefinition = <Input, Output, Error, Requirements>(
+  definition: CommerceWorkflowDefinition<Input, Output, Error, Requirements>
 ): CommerceWorkflowDefinitionDescriptor => ({
   key: Schema.decodeUnknownSync(CommerceWorkflowKeySchema)(definition.key),
   schemaVersion: definition.schemaVersion ?? definition.version,

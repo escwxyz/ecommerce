@@ -177,7 +177,12 @@ portable capability to declare a namespaced key plus whether it is required.
 Capability keys identify runtime-neutral service contracts; they are not auth
 permissions and must not name Cloudflare bindings, SQL/Drizzle clients,
 secrets, or another concrete runtime. Executable Layers and contribution
-implementations are deliberately outside the serializable manifest.
+implementations are deliberately outside the serializable manifest. Trusted
+plugin services and providers pair portable service tags with implementation
+Layers; API contributions retain their `HttpApiGroup` schemas and handler
+Layers; workflow and event contributions retain typed Effect requirements plus
+the Layers that satisfy them. Runtime composition validates the manifest before
+using any of these executable values.
 
 Workflow durable messages use `@ecommerce/core/workflows` schemas for
 descriptors, persisted run state, step outcomes, retry policy, retry

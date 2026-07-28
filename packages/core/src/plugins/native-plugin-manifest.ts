@@ -83,7 +83,8 @@ export const NativePluginCapabilityListSchema = Schema.Array(
  * Versioned, serializable manifest for a trusted in-process plugin.
  *
  * Executable contributions and Effect Layers are intentionally excluded:
- * task 10.2 composes those values only after this manifest has decoded.
+ * native plugin composition retains those values only after this manifest has
+ * decoded.
  */
 export const NativePluginManifestSchema = Schema.Struct({
   capabilities: NativePluginCapabilityListSchema,

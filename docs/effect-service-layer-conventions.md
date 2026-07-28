@@ -49,6 +49,25 @@ assembled application. Tests select deterministic or in-memory Layers. Avoid
 module-level `Effect.run*` calls outside explicit application, command, or test
 composition roots.
 
+## Trusted native plugins
+
+Trusted native-plugin manifests remain serializable data, while executable
+contributions use the contracts exported from `@ecommerce/core/plugins`:
+
+- service and provider contributions pair a portable `Context.Service` tag with
+  the Layer that implements it;
+- API contributions carry an Effect `HttpApiGroup` plus its handler Layer and
+  identify the admin or storefront surface;
+- workflow steps retain their typed Effect failures and requirements, and the
+  workflow contribution supplies the Layer for those requirements;
+- event handlers return `Effect<void, E, R>` and declare the Layer that
+  satisfies `R`.
+
+Concrete provider SDKs, Cloudflare bindings, SQL clients, and secrets stay
+inside adapter Layers. Plugin registration and composition must preserve
+concrete tag and Layer types; heterogeneous registries use the closed
+contribution `_tag` vocabulary rather than erasing executable values to `any`.
+
 ## Tests
 
 Place new tests in a nested `__tests__/` folder. Every runtime-neutral service

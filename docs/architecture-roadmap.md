@@ -58,7 +58,7 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
-As of 2026-07-28, tasks 1.1 through 10.1 of
+As of 2026-07-28, tasks 1.1 through 10.2 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
 customer/product/region-sales-channel/pricing/inventory foundational slices,
 plus the cart, promotion, tax, fulfillment, payment, checkout, order, and
@@ -267,6 +267,14 @@ architecture:
   before retaining executable contributions. Capability keys are namespaced
   runtime-neutral service identifiers rather than auth permissions, bindings,
   SQL clients, or secrets.
+- Section 10.2 replaces trusted-plugin executable descriptors with typed
+  Effect contribution contracts. Services and providers contribute concrete
+  service tags plus Layers; API extensions contribute Effect `HttpApiGroup`
+  contracts and handler Layers; workflow and event handlers expose their Effect
+  requirements and the Layers that satisfy them. Heterogeneous plugin
+  composition preserves each contribution's inferred tag and Layer types
+  without weakening the registry to `any`, and plugin API groups compose
+  directly through the canonical API assembler.
 
 ## Current Gaps
 
@@ -318,11 +326,11 @@ architecture:
 - Better Auth remains behind the Effect auth adapter with a temporary D1/Kysely
   persistence seam. Replacement or deeper Effect integration remains a follow-up
   research/change item.
-- Native plugin manifests now decode through Effect Schema, but executable
-  service/provider/API/workflow/event contribution Layers, lifecycle telemetry,
-  and deterministic composition tests remain tasks 10.2 and 10.3. Sandboxed
-  manifests and bridge messages remain on their legacy validation path until
-  task 10.4.
+- Native plugin manifests and executable contribution contracts are now
+  Effect-native. Deterministic capability validation, duplicate contribution
+  checks, lifecycle execution, and plugin telemetry remain task 10.3.
+  Sandboxed manifests and bridge messages remain on their legacy validation
+  path until task 10.4.
 - Repository-wide removal of Hono, oRPC, Zod, Kysely, and completed temporary
   bridges is deferred to section 12 after all dependent slices migrate.
 
