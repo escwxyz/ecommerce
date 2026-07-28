@@ -21,7 +21,12 @@ describe("native plugin contracts", () => {
     const analyticsModule = defineCommerceModule({ key: "analytics" });
     const plugin = defineNativePlugin({
       manifest: {
-        capabilities: ["admin:read"],
+        capabilities: [
+          {
+            key: "commerce:admin-metadata",
+            required: true,
+          },
+        ],
         id: "analytics",
         version: "1.0.0",
       },
@@ -69,7 +74,12 @@ describe("native plugin contracts", () => {
     });
 
     expect(plugin.manifest).toMatchObject({
-      capabilities: ["admin:read"],
+      capabilities: [
+        {
+          key: "commerce:admin-metadata",
+          required: true,
+        },
+      ],
       id: "analytics",
       tier: "native",
       version: "1.0.0",
@@ -151,7 +161,7 @@ describe("native plugin contracts", () => {
     const composition = composeNativePlugins([activePlugin, inactivePlugin]);
 
     expect(
-      composition.activePlugins.map((plugin) => plugin.manifest.id)
+      composition.activePlugins.map((plugin) => String(plugin.manifest.id))
     ).toEqual(["active-plugin"]);
     expect(composition.adminSurfaces.map((surface) => surface.key)).toEqual([
       "active:navigation",

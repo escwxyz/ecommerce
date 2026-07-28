@@ -58,7 +58,7 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
-As of 2026-07-27, tasks 1.1 through 9.10 of
+As of 2026-07-28, tasks 1.1 through 10.1 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
 customer/product/region-sales-channel/pricing/inventory foundational slices,
 plus the cart, promotion, tax, fulfillment, payment, checkout, order, and
@@ -261,6 +261,12 @@ architecture:
   idempotency, interruption, restart, and timer-recovery gates before latency,
   placement, deployment, operations, or cost trade-offs can support a separate
   production-adoption proposal.
+- Section 10.1 replaces trusted native-plugin manifest interfaces with a
+  versioned Effect Schema. Registration now decodes validated plugin IDs,
+  semantic versions, and structured required/optional capability declarations
+  before retaining executable contributions. Capability keys are namespaced
+  runtime-neutral service identifiers rather than auth permissions, bindings,
+  SQL clients, or secrets.
 
 ## Current Gaps
 
@@ -312,6 +318,11 @@ architecture:
 - Better Auth remains behind the Effect auth adapter with a temporary D1/Kysely
   persistence seam. Replacement or deeper Effect integration remains a follow-up
   research/change item.
+- Native plugin manifests now decode through Effect Schema, but executable
+  service/provider/API/workflow/event contribution Layers, lifecycle telemetry,
+  and deterministic composition tests remain tasks 10.2 and 10.3. Sandboxed
+  manifests and bridge messages remain on their legacy validation path until
+  task 10.4.
 - Repository-wide removal of Hono, oRPC, Zod, Kysely, and completed temporary
   bridges is deferred to section 12 after all dependent slices migrate.
 

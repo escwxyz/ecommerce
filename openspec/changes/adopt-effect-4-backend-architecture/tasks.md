@@ -106,7 +106,7 @@
 
 ## 10. Effect-native plugin architecture
 
-- [ ] 10.1 Replace native plugin manifests with Effect Schemas and runtime-neutral capability declarations
+- [x] 10.1 Replace native plugin manifests with Effect Schemas and runtime-neutral capability declarations
 - [ ] 10.2 Replace native plugin service/provider/API/workflow/event contributions with Effect contracts and Layers
 - [ ] 10.3 Add deterministic native plugin validation, composition, lifecycle, and telemetry tests
 - [ ] 10.4 Replace sandbox manifest and bridge request/response schemas with Effect Schema

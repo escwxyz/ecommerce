@@ -25,6 +25,27 @@ import type {
   CommerceWorkflowDefinition,
   CommerceWorkflowStep,
 } from "../workflows/index";
+import { createNativePluginManifest } from "./native-plugin-manifest";
+import type {
+  NativePluginManifest,
+  NativePluginManifestInput,
+} from "./native-plugin-manifest";
+
+export {
+  NativePluginCapabilityKeySchema,
+  NativePluginCapabilityListSchema,
+  NativePluginCapabilitySchema,
+  NativePluginIdSchema,
+  NativePluginManifestSchema,
+  NativePluginSchemaVersionSchema,
+  NativePluginTrimmedStringSchema,
+  NativePluginVersionSchema,
+  createNativePluginManifest,
+  decodeNativePluginManifest,
+  type NativePluginCapability,
+  type NativePluginManifest,
+  type NativePluginManifestInput,
+} from "./native-plugin-manifest";
 
 export type CommercePluginTier = "native" | "sandbox";
 
@@ -318,9 +339,7 @@ export interface CommercePluginRegistration {
 export interface NativePluginRegistration<
   Contributions extends NativePluginContributions = NativePluginContributions,
 > {
-  readonly manifest: CommercePluginManifest & {
-    readonly tier: "native";
-  };
+  readonly manifest: NativePluginManifest;
   readonly contributions: Contributions;
   readonly lifecycle?: NativePluginLifecycle;
   readonly state: NativePluginLifecycleState;
@@ -356,22 +375,25 @@ export interface NativePluginLifecycleTransition {
   readonly to: NativePluginLifecycleState;
 }
 
+/**
+ * Defines a trusted plugin only after its serializable manifest decodes.
+ *
+ * Executable contributions remain separate from the manifest so platform
+ * resources can be supplied later through portable Effect requirements.
+ */
 export const defineNativePlugin = <
   const Contributions extends NativePluginContributions =
     NativePluginContributions,
 >(registration: {
   readonly contributions?: Contributions;
   readonly lifecycle?: NativePluginLifecycle;
-  readonly manifest: Omit<CommercePluginManifest, "tier">;
+  readonly manifest: NativePluginManifestInput;
   readonly modules?: readonly string[];
   readonly state?: NativePluginLifecycleState;
 }): NativePluginRegistration<Contributions> => ({
   ...registration,
   contributions: (registration.contributions ?? {}) as Contributions,
-  manifest: {
-    ...registration.manifest,
-    tier: "native",
-  },
+  manifest: createNativePluginManifest(registration.manifest),
   state: registration.state ?? "active",
 });
 

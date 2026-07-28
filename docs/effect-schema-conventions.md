@@ -170,6 +170,15 @@ Decode `unknown` at every trust boundary:
 - provider webhooks and third-party API responses;
 - native plugin manifests and sandbox bridge messages.
 
+Native trusted-plugin manifests use
+`@ecommerce/core/plugins`'s `NativePluginManifestSchema`. The schema versions
+the manifest, validates plugin identity and semantic version, and requires each
+portable capability to declare a namespaced key plus whether it is required.
+Capability keys identify runtime-neutral service contracts; they are not auth
+permissions and must not name Cloudflare bindings, SQL/Drizzle clients,
+secrets, or another concrete runtime. Executable Layers and contribution
+implementations are deliberately outside the serializable manifest.
+
 Workflow durable messages use `@ecommerce/core/workflows` schemas for
 descriptors, persisted run state, step outcomes, retry policy, retry
 disposition, and compensation policy. Executable `Effect` handlers stay on
