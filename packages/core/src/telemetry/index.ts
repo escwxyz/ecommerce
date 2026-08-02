@@ -12,6 +12,7 @@ const MAX_ATTRIBUTE_STRING_LENGTH = 256;
 
 export const commerceOperationNames = [
   "plugin.lifecycle",
+  "plugin.sandbox.bridge",
   "store.read",
   "unknown",
 ] as const;

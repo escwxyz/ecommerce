@@ -28,9 +28,13 @@ The bridge context contains plugin identity, plugin version, tenant/scope, lifec
 
 Bridge context, permission-check inputs, operations, audit events, runtime
 errors, grant policies, and entrypoint responses are decoded through Effect
-Schema before host policy logic consumes them. Capability-service execution,
-deadlines, quotas, and durable audit persistence are implemented in the next
-section of the plugin migration.
+Schema before host policy logic consumes them. The core
+`SandboxCapabilityBridgeService` enforces granted capabilities, absolute
+deadlines, and per-scope quotas before invoking a host-provided Effect handler.
+Every allow or deny decision records durable audit evidence and bridge execution
+uses `plugin.sandbox.bridge` telemetry. Worker Loader execution is adapted to
+this service in task 10.7; until then the Cloudflare bridge preserves its
+existing Promise facade.
 
 Initial bridge methods cover:
 

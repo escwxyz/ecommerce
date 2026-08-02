@@ -291,6 +291,13 @@ architecture:
   runtime errors, and entrypoint responses. Existing helper APIs preserve their
   public behavior while decoding manifests and bridge messages before they cross
   into host policy code.
+- Section 10.5 adds the runtime-neutral `SandboxCapabilityBridgeService`.
+  Sandbox bridge invocations now decode context and operation messages,
+  enforce granted capabilities, absolute deadlines, and per-scope quotas before
+  host dispatch, return schema-backed `SandboxBridgeFailure` values, record
+  allow/deny evidence through `DurableAudit`, and wrap execution in
+  `plugin.sandbox.bridge` telemetry. Worker Loader integration still uses the
+  existing Promise bridge until task 10.7 adapts it to this Effect service.
 
 ## Current Gaps
 
@@ -346,9 +353,10 @@ architecture:
   lifecycle dispatch, and lifecycle telemetry are Effect-native. Production
   hosts must pass their portable capability set to composition and persist any
   lifecycle state they need outside the runtime-neutral contract. Sandboxed
-  manifests and bridge messages are now Effect Schema-backed, but the
-  Effect-hosted capability bridge services, grants, deadlines, quotas, and audit
-  persistence remain task 10.5.
+  manifests, bridge messages, capability enforcement, deadlines, quotas, typed
+  failures, durable audit records, and core bridge telemetry are now
+  Effect-native. Worker Loader execution is not yet adapted to the new bridge
+  service; that remains task 10.7.
 - Repository-wide removal of Hono, oRPC, Zod, Kysely, and completed temporary
   bridges is deferred to section 12 after all dependent slices migrate.
 

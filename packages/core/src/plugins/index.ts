@@ -38,6 +38,20 @@ import {
 } from "./sandbox-plugin-schema";
 
 export {
+  SandboxBridgeFailure,
+  SandboxCapabilityBridgeService,
+  createSandboxCapabilityBridgeLayer,
+  createSandboxCapabilityBridgeService,
+  invokeSandboxBridgeOperation,
+  type SandboxBridgeQuota,
+  type SandboxCapabilityBridgeHandler,
+  type SandboxCapabilityBridgeHandlerInput,
+  type SandboxCapabilityBridgeInvocation,
+  type SandboxCapabilityBridgeOptions,
+  type SandboxCapabilityBridgeServiceShape,
+} from "./sandbox-bridge-service";
+
+export {
   defineNativePluginApiGroupContribution,
   defineNativePluginEventHandlerContribution,
   defineNativePluginProviderContribution,

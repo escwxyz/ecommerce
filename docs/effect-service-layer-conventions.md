@@ -76,6 +76,14 @@ Effect telemetry. The multi-plugin dispatcher is sequential by plugin ID so
 install, activation, upgrade, deactivation, and uninstall behavior does not
 depend on discovery order.
 
+Sandbox bridge hosts use `SandboxCapabilityBridgeService` rather than passing
+host resources directly to plugin code. The service decodes bridge context and
+operation messages, checks granted capabilities, deadlines, and quotas, records
+allow/deny decisions through `DurableAudit`, and only then invokes the
+host-supplied Effect handler. Handler implementations stay in platform adapter
+Layers and must not expose SQL clients, raw Cloudflare bindings, secrets, or the
+host Effect runtime to sandboxed plugins.
+
 ## Tests
 
 Place new tests in a nested `__tests__/` folder. Every runtime-neutral service
