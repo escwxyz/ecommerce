@@ -56,6 +56,7 @@ import type {
   CloudflareWorkerCode,
   CloudflareWorkerLoaderBinding,
   NotificationEventQueueMessage,
+  SandboxBridge,
 } from "./index";
 
 const createFakeWorkflowBinding = () => {
@@ -1612,6 +1613,89 @@ describe("cloudflare sandbox plugin runtime", () => {
     expect(loadedCode?.globalOutbound).toBeNull();
   });
 
+  it("passes only the mediated Effect-backed bridge to Worker Loader entrypoints", async () => {
+    const plugin = createSandboxPlugin();
+    let exposedEnv: Record<string, unknown> | undefined;
+    const loader: CloudflareWorkerLoaderBinding = {
+      get: () => {
+        throw new Error("unused");
+      },
+      load: () => ({
+        getEntrypoint: () => ({
+          fetch: async (_request, env) => {
+            exposedEnv = env as Record<string, unknown>;
+            const sandboxEnv = env as {
+              readonly bridge: Pick<SandboxBridge, "routeResponse">;
+            };
+
+            return Response.json(
+              await sandboxEnv.bridge.routeResponse({
+                body: {
+                  mediated: true,
+                },
+                status: 200,
+                type: "routeResponse",
+              })
+            );
+          },
+        }),
+      }),
+    };
+
+    const result = await createCloudflareSandboxPluginRunner({ loader }).invoke(
+      {
+        bridgeContext: createBridgeContext(),
+        compatibilityDate: "2026-06-04",
+        entrypointKey: "tax.quote",
+        manifest: plugin.manifest,
+        policy: {
+          canActivate: true,
+          deniedAllowedHosts: [],
+          deniedCapabilities: [],
+          deniedStorageNamespaces: [],
+          grantedAllowedHosts: [],
+          grantedCapabilities: ["bridge:log", "route:respond"],
+          grantedStorageNamespaces: [],
+          pluginId: "tax-sandbox",
+        },
+      }
+    );
+
+    expect(exposedEnv).toBeDefined();
+    expect(Object.keys(exposedEnv ?? {}).toSorted()).toEqual([
+      "bridge",
+      "context",
+    ]);
+    expect(Object.keys(exposedEnv?.bridge ?? {}).toSorted()).toEqual([
+      "commerceAction",
+      "emitEvent",
+      "fetch",
+      "log",
+      "routeResponse",
+      "storageRead",
+      "storageWrite",
+    ]);
+    expect(JSON.stringify(Object.keys(exposedEnv ?? {}))).not.toMatch(
+      /(?:binding|database|durable|env|loader|postgres|secret|sql|storage)/iu
+    );
+    expect(result.response).toEqual({
+      body: {
+        mediated: true,
+      },
+      status: 200,
+      type: "routeResponse",
+    });
+    expect(result.auditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          decision: "allow",
+          operationType: "routeResponse",
+          pluginId: "tax-sandbox",
+        }),
+      ])
+    );
+  });
+
   it("enforces bridge capability, outbound host, and storage scope", async () => {
     const auditEvents: unknown[] = [];
     const storage = createInMemorySandboxStorage();
@@ -1680,6 +1764,167 @@ describe("cloudflare sandbox plugin runtime", () => {
           operationType: "routeResponse",
         }),
       ])
+    );
+  });
+
+  it("classifies Worker Loader invalid responses and defects with invoke audit evidence", async () => {
+    const plugin = createSandboxPlugin();
+    const createLoaderReturning = (
+      response: unknown
+    ): CloudflareWorkerLoaderBinding => ({
+      get: () => {
+        throw new Error("unused");
+      },
+      load: () => ({
+        getEntrypoint: () => ({
+          fetch: async () => response,
+        }),
+      }),
+    });
+
+    await expect(
+      createCloudflareSandboxPluginRunner({
+        loader: createLoaderReturning({ malformed: true }),
+      }).invoke({
+        bridgeContext: createBridgeContext(),
+        compatibilityDate: "2026-06-04",
+        entrypointKey: "tax.quote",
+        manifest: plugin.manifest,
+        policy: {
+          canActivate: true,
+          deniedAllowedHosts: [],
+          deniedCapabilities: [],
+          deniedStorageNamespaces: [],
+          grantedAllowedHosts: [],
+          grantedCapabilities: ["bridge:log"],
+          grantedStorageNamespaces: [],
+          pluginId: "tax-sandbox",
+        },
+      })
+    ).rejects.toMatchObject({
+      code: "invalid-response",
+      message: "Sandbox entrypoint returned an invalid response shape.",
+    });
+
+    const defectAuditEvents: unknown[] = [];
+    const defectiveLoader: CloudflareWorkerLoaderBinding = {
+      get: () => {
+        throw new Error("unused");
+      },
+      load: () => ({
+        getEntrypoint: () => ({
+          fetch: async () => {
+            throw new Error("sandbox defect");
+          },
+        }),
+      }),
+    };
+
+    await expect(
+      createCloudflareSandboxPluginRunner({
+        audit: {
+          emit: (event) => {
+            defectAuditEvents.push(event);
+          },
+        },
+        loader: defectiveLoader,
+      }).invoke({
+        bridgeContext: createBridgeContext(),
+        compatibilityDate: "2026-06-04",
+        entrypointKey: "tax.quote",
+        manifest: plugin.manifest,
+        policy: {
+          canActivate: true,
+          deniedAllowedHosts: [],
+          deniedCapabilities: [],
+          deniedStorageNamespaces: [],
+          grantedAllowedHosts: [],
+          grantedCapabilities: ["bridge:log"],
+          grantedStorageNamespaces: [],
+          pluginId: "tax-sandbox",
+        },
+      })
+    ).rejects.toMatchObject({
+      code: "platform-execution-failed",
+      message: "sandbox defect",
+      reason: "defect",
+    });
+    expect(defectAuditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          decision: "deny",
+          operationType: "invoke",
+          reason: "sandbox defect",
+        }),
+      ])
+    );
+  });
+
+  it("classifies Worker Loader invocation timeouts without exposing raw host state", async () => {
+    const plugin = createSandboxPlugin();
+    const auditEvents: unknown[] = [];
+    const loader: CloudflareWorkerLoaderBinding = {
+      get: () => {
+        throw new Error("unused");
+      },
+      load: () => ({
+        getEntrypoint: () => ({
+          fetch: () =>
+            new Promise((resolve) => {
+              setTimeout(() => {
+                resolve(
+                  Response.json({
+                    decision: "continue",
+                    type: "hook",
+                  })
+                );
+              }, 50);
+            }),
+        }),
+      }),
+    };
+
+    await expect(
+      createCloudflareSandboxPluginRunner({
+        audit: {
+          emit: (event) => {
+            auditEvents.push(event);
+          },
+        },
+        invocationTimeoutMs: 1,
+        loader,
+      }).invoke({
+        bridgeContext: createBridgeContext(),
+        compatibilityDate: "2026-06-04",
+        entrypointKey: "tax.quote",
+        manifest: plugin.manifest,
+        policy: {
+          canActivate: true,
+          deniedAllowedHosts: [],
+          deniedCapabilities: [],
+          deniedStorageNamespaces: [],
+          grantedAllowedHosts: [],
+          grantedCapabilities: ["bridge:log"],
+          grantedStorageNamespaces: [],
+          pluginId: "tax-sandbox",
+        },
+      })
+    ).rejects.toMatchObject({
+      code: "platform-execution-failed",
+      message: "Sandbox plugin invocation timed out after 1ms.",
+      reason: "timeout",
+    });
+    expect(auditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          decision: "deny",
+          operationType: "invoke",
+          reason: "Sandbox plugin invocation timed out after 1ms.",
+        }),
+      ])
+    );
+    expect(JSON.stringify(auditEvents)).not.toMatch(
+      /(?:binding|database|loader|postgres|secret|sql)/iu
     );
   });
 

@@ -296,8 +296,25 @@ architecture:
   enforce granted capabilities, absolute deadlines, and per-scope quotas before
   host dispatch, return schema-backed `SandboxBridgeFailure` values, record
   allow/deny evidence through `DurableAudit`, and wrap execution in
-  `plugin.sandbox.bridge` telemetry. Worker Loader integration still uses the
-  existing Promise bridge until task 10.7 adapts it to this Effect service.
+  `plugin.sandbox.bridge` telemetry.
+- Section 10.6 locks sandbox host-resource boundaries with tests. Sandbox
+  storage namespaces and bridge contexts now reject reserved host-resource
+  names such as `secrets` and `sql`; core plugin contracts ban direct SQL,
+  database adapter, Cloudflare binding, and platform-runtime imports; and the
+  Cloudflare sandbox adapter verifies Worker Loader entrypoints receive only
+  mediated `bridge` plus decoded `context` values.
+- Section 10.7 adapts Worker Loader execution to the new bridge contract. The
+  sandbox-facing Cloudflare bridge remains a narrow Promise facade because
+  sandbox workers call methods imperatively, but every facade operation now
+  routes through `SandboxCapabilityBridgeService` first. The platform adapter
+  provides a `DurableAudit` Layer that mirrors core allow/deny audit evidence
+  into sandbox audit events before platform-specific storage, egress, auth, or
+  response handling continues.
+- Section 10.8 verifies the sandbox runner and bridge failure boundaries.
+  Credential-free tests now cover activation gating, malformed Effect Schema
+  bridge messages, capability denial, denied outbound hosts, storage namespace
+  isolation, invalid Worker Loader responses, sandbox defects, host-side
+  invocation timeouts, and sanitized invoke audit records.
 
 ## Current Gaps
 
@@ -354,9 +371,11 @@ architecture:
   hosts must pass their portable capability set to composition and persist any
   lifecycle state they need outside the runtime-neutral contract. Sandboxed
   manifests, bridge messages, capability enforcement, deadlines, quotas, typed
-  failures, durable audit records, and core bridge telemetry are now
-  Effect-native. Worker Loader execution is not yet adapted to the new bridge
-  service; that remains task 10.7.
+  failures, durable audit records, core bridge telemetry, reserved namespace
+  rejection, sandbox host-resource boundary tests, Worker Loader bridge
+  execution, and sandbox runner failure verification are now Effect-native.
+  Production smoke coverage against a real Worker Loader binding remains a
+  credential-gated Cloudflare runtime check.
 - Repository-wide removal of Hono, oRPC, Zod, Kysely, and completed temporary
   bridges is deferred to section 12 after all dependent slices migrate.
 

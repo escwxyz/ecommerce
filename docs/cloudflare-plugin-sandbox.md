@@ -21,6 +21,9 @@ order, but schema decoding owns the untrusted boundary and rejects malformed
 identity, version, bundle, entrypoint, storage, and bridge capability values.
 
 The host treats manifest capabilities as requested access. Activation creates the granted policy used at runtime, and activation fails if required capabilities, hosts, or storage namespaces are denied.
+Storage namespaces are plugin-local bridge resources and must not use reserved
+host-resource names such as `binding`, `cloudflare`, `runtime`, `secret`,
+`secrets`, or `sql`.
 
 ## Bridge Model
 
@@ -32,9 +35,13 @@ Schema before host policy logic consumes them. The core
 `SandboxCapabilityBridgeService` enforces granted capabilities, absolute
 deadlines, and per-scope quotas before invoking a host-provided Effect handler.
 Every allow or deny decision records durable audit evidence and bridge execution
-uses `plugin.sandbox.bridge` telemetry. Worker Loader execution is adapted to
-this service in task 10.7; until then the Cloudflare bridge preserves its
-existing Promise facade.
+uses `plugin.sandbox.bridge` telemetry. The Cloudflare Worker Loader adapter
+keeps a sandbox-facing Promise facade for worker code, but each facade method
+routes through `SandboxCapabilityBridgeService` before platform-specific
+storage, egress, auth, event, commerce action, or response handling continues.
+The platform runner also applies a host-side invocation timeout so sandbox code
+that never returns is classified as a platform execution failure with timeout
+reasoning and correlated invoke audit evidence.
 
 Initial bridge methods cover:
 
@@ -56,9 +63,21 @@ The first implementation uses R2 for immutable plugin code bundles and D1 for pl
 - Plugin storage data is mediated by bridge methods and scoped by tenant, plugin ID, plugin version, namespace, and key.
 
 Plugins never receive raw R2, D1, KV, environment, or secret bindings.
+Local boundary tests enforce that the Cloudflare Worker Loader entrypoint
+receives only the mediated `bridge` facade and decoded `context`, and that the
+facade exposes only capability-checked methods rather than loader, storage,
+SQL, secret, environment, or raw binding handles.
 
 ## Local Development
 
-Local tests validate manifest normalization, activation grants, bridge authorization, egress decisions, storage scoping, lifecycle filtering, response validation, and package boundaries. Full Worker Loader isolation depends on Cloudflare runtime behavior, so local tests use a fake Worker Loader binding and keep direct Loader API usage behind `SandboxPluginRunner`.
+Local tests validate manifest normalization, activation grants, bridge
+authorization, egress decisions, storage scoping, reserved host-resource name
+rejection, mediated Worker Loader environment shape, lifecycle filtering,
+Effect-backed Worker Loader bridge dispatch, malformed bridge messages,
+response validation, invocation timeout classification, sandbox defect
+classification, sanitized invoke audit records, and package boundaries. Full
+Worker Loader isolation depends on Cloudflare runtime behavior, so local tests
+use a fake Worker Loader binding and keep direct Loader API usage behind
+`SandboxPluginRunner`.
 
 Cloudflare smoke coverage should stay small and focused on verifying that the configured Worker Loader binding can load an immutable bundle, pass the bridge environment, and return a typed response. Runtime bundling, marketplace upload flows, Dynamic Workflows, and Workers for Platforms dispatch namespaces are follow-up changes.

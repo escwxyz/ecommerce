@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { Schema } from "effect";
 
 import {
+  SandboxBridgeContextSchema,
   SandboxBridgeOperationSchema,
   SandboxEntrypointResponseSchema,
   SandboxPluginManifestSchema,
@@ -142,6 +143,52 @@ describe("sandbox plugin Effect schemas", () => {
           id: "bad",
           version: "1.0.0",
         },
+      })
+    ).toThrow();
+  });
+
+  it("rejects reserved host-resource names at sandbox storage boundaries", () => {
+    const manifest = {
+      bundle: {
+        integrity: {
+          algorithm: "sha256",
+          value: "hash",
+        },
+        mainModule: "src/index.js",
+        r2Key: "plugins/bad/index.js",
+        version: "1.0.0+hash",
+      },
+      capabilities: ["bridge:storage"],
+      entrypoints: [
+        {
+          key: "bad.route",
+          kind: "route",
+        },
+      ],
+      id: "bad",
+      schemaVersion: 1,
+      storage: [
+        {
+          namespace: "secrets",
+        },
+      ],
+      tier: "sandbox",
+      version: "1.0.0",
+    };
+
+    expect(() =>
+      Schema.decodeUnknownSync(SandboxPluginManifestSchema)(manifest)
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(SandboxBridgeContextSchema)({
+        correlationId: "corr_1",
+        grantedAllowedHosts: [],
+        grantedCapabilities: ["bridge:storage"],
+        grantedStorageNamespaces: ["sql"],
+        lifecycleState: "active",
+        pluginId: "tax-sandbox",
+        pluginVersion: "1.0.0",
+        tenantId: "tenant_1",
       })
     ).toThrow();
   });

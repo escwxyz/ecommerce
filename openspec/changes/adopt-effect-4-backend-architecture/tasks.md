@@ -111,9 +111,9 @@
 - [x] 10.3 Add deterministic native plugin validation, composition, lifecycle, and telemetry tests
 - [x] 10.4 Replace sandbox manifest and bridge request/response schemas with Effect Schema
 - [x] 10.5 Implement Effect-hosted capability bridge services with grants, typed failures, deadlines, quotas, and audit events
-- [ ] 10.6 Prohibit host runtime, SQL, secrets, and raw binding exposure through sandbox boundary tests
-- [ ] 10.7 Adapt Worker Loader execution to the new bridge contract
-- [ ] 10.8 Verify sandbox activation, malformed messages, capability denial, egress, storage isolation, timeout, and defect handling
+- [x] 10.6 Prohibit host runtime, SQL, secrets, and raw binding exposure through sandbox boundary tests
+- [x] 10.7 Adapt Worker Loader execution to the new bridge contract
+- [x] 10.8 Verify sandbox activation, malformed messages, capability denial, egress, storage isolation, timeout, and defect handling
 
 ## 11. Observability and operations
 

@@ -4,6 +4,17 @@ const pluginIdentifierPattern =
   /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*(?::[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*)*$/u;
 const semanticVersionPattern =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
+const reservedHostResourceNames = new Set([
+  "binding",
+  "bindings",
+  "cloudflare",
+  "durable-object",
+  "durable-objects",
+  "runtime",
+  "secret",
+  "secrets",
+  "sql",
+]);
 const isPositiveInteger = (value: number): boolean =>
   Number.isInteger(value) && value > 0;
 
@@ -45,6 +56,18 @@ export const SandboxBridgeCapabilityListSchema = Schema.Array(
 
 export const SandboxPluginAllowedHostSchema = SandboxPluginTrimmedStringSchema;
 
+export const SandboxPluginStorageNamespaceSchema =
+  SandboxPluginTrimmedStringSchema.pipe(
+    Schema.check(
+      Schema.makeFilter(
+        (value: string): boolean => !reservedHostResourceNames.has(value)
+      )
+    )
+  );
+
+export type SandboxPluginStorageNamespace =
+  typeof SandboxPluginStorageNamespaceSchema.Type;
+
 export const SandboxPluginLifecycleStateSchema = Schema.Literals([
   "active",
   "failed",
@@ -76,7 +99,7 @@ export const SandboxBridgeOperationTypeSchema = Schema.Literals([
 
 export const CommercePluginStorageDeclarationSchema = Schema.Struct({
   description: Schema.optional(SandboxPluginTrimmedStringSchema),
-  namespace: SandboxPluginTrimmedStringSchema,
+  namespace: SandboxPluginStorageNamespaceSchema,
 });
 
 export type CommercePluginStorageDeclaration =
@@ -232,10 +255,10 @@ export const SandboxPluginGrantPolicySchema = Schema.Struct({
   canActivate: Schema.Boolean,
   deniedAllowedHosts: Schema.Array(SandboxPluginAllowedHostSchema),
   deniedCapabilities: SandboxBridgeCapabilityListSchema,
-  deniedStorageNamespaces: Schema.Array(SandboxPluginTrimmedStringSchema),
+  deniedStorageNamespaces: Schema.Array(SandboxPluginStorageNamespaceSchema),
   grantedAllowedHosts: Schema.Array(SandboxPluginAllowedHostSchema),
   grantedCapabilities: SandboxBridgeCapabilityListSchema,
-  grantedStorageNamespaces: Schema.Array(SandboxPluginTrimmedStringSchema),
+  grantedStorageNamespaces: Schema.Array(SandboxPluginStorageNamespaceSchema),
   pluginId: SandboxPluginIdSchema,
 });
 
@@ -256,7 +279,7 @@ export const SandboxBridgeContextSchema = Schema.Struct({
   correlationId: SandboxPluginTrimmedStringSchema,
   grantedAllowedHosts: Schema.Array(SandboxPluginAllowedHostSchema),
   grantedCapabilities: SandboxBridgeCapabilityListSchema,
-  grantedStorageNamespaces: Schema.Array(SandboxPluginTrimmedStringSchema),
+  grantedStorageNamespaces: Schema.Array(SandboxPluginStorageNamespaceSchema),
   lifecycleState: SandboxPluginLifecycleStateSchema,
   operationInput: Schema.optional(Schema.Unknown),
   pluginId: SandboxPluginIdSchema,

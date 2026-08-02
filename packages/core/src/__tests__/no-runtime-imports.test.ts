@@ -20,12 +20,17 @@ const scanCoreImportBoundary = (rootDir: string) =>
     boundary: createLegacyBackendImportBoundary({
       extraForbiddenSpecifiers: [
         "@ecommerce/db",
+        "@ecommerce/db-postgres",
         "@ecommerce/platform-cloudflare",
         "@ecommerce/ui",
+        "@effect/sql",
+        "@effect/sql-pg",
         "drizzle-orm/d1",
         "drizzle-orm/libsql",
         "drizzle-orm/node-postgres",
         "drizzle-orm/postgres-js",
+        "pg",
+        "postgres",
       ],
       packageName: "@ecommerce/core",
       rootDir,

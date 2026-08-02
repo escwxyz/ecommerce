@@ -82,7 +82,16 @@ operation messages, checks granted capabilities, deadlines, and quotas, records
 allow/deny decisions through `DurableAudit`, and only then invokes the
 host-supplied Effect handler. Handler implementations stay in platform adapter
 Layers and must not expose SQL clients, raw Cloudflare bindings, secrets, or the
-host Effect runtime to sandboxed plugins.
+host Effect runtime to sandboxed plugins. Sandbox storage namespaces are
+plugin-local names, not host resources; reserved names such as `binding`,
+`cloudflare`, `runtime`, `secret`, `secrets`, and `sql` are rejected at the
+Effect Schema boundary.
+Platform adapters that expose imperative sandbox worker APIs should keep that
+facade thin and route every operation through `SandboxCapabilityBridgeService`
+before invoking host-specific storage, egress, auth, event, commerce action, or
+response logic. Sandbox runner adapters should add their own host-side
+invocation timeout because bridge operation deadlines do not protect defects or
+non-returning code outside a bridge call.
 
 ## Tests
 

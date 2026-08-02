@@ -116,6 +116,7 @@ export {
   SandboxPluginRegistrationSchema,
   SandboxPluginRuntimeErrorSchema,
   SandboxPluginSchemaVersionSchema,
+  SandboxPluginStorageNamespaceSchema,
   SandboxPluginTrimmedStringSchema,
   SandboxPluginVersionSchema,
   SandboxRouteResponseSchema,

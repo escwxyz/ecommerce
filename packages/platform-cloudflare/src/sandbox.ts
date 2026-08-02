@@ -1,16 +1,19 @@
 import {
-  assertSandboxBridgeCapability,
+  createSandboxCapabilityBridgeService,
   createSandboxPluginGrantPolicy,
   createSandboxRuntimeError,
+  DurableAudit,
   isSandboxEntrypointResponse,
   normalizeCommercePermission,
   normalizeSandboxAllowedHost,
 } from "@ecommerce/core";
 import type {
   CommercePermissionInput,
+  DurableAuditEvent,
   SandboxAuditEvent,
   SandboxBridgeCapability,
   SandboxBridgeContext,
+  SandboxBridgeOperation,
   SandboxBridgePermissionCheckInput,
   SandboxEntrypointResponse,
   SandboxPluginBundleReference,
@@ -19,6 +22,7 @@ import type {
   SandboxPluginManifest,
   SandboxPluginRuntimeError,
 } from "@ecommerce/core";
+import { Effect, Layer } from "effect";
 
 export interface CloudflareWorkerCode {
   readonly compatibilityDate: string;
@@ -68,6 +72,14 @@ export interface SandboxPluginRunner {
 export interface CreateSandboxPluginRunnerOptions {
   readonly loader?: CloudflareWorkerLoaderBinding;
   readonly audit?: SandboxAuditSink;
+  /**
+   * Host-side guard for a Worker Loader entrypoint invocation.
+   *
+   * The core bridge still enforces per-operation deadlines. This timeout
+   * protects the platform runner when sandbox code never returns or defects
+   * outside a bridge operation.
+   */
+  readonly invocationTimeoutMs?: number;
 }
 
 export interface SandboxAuditSink {
@@ -239,43 +251,6 @@ const createAuditEvent = ({
   tenantId: context.tenantId,
 });
 
-const requireCapability = async ({
-  context,
-  operationType,
-  capability,
-  resource,
-  audit,
-}: {
-  readonly context: SandboxBridgeContext;
-  readonly operationType: string;
-  readonly capability: SandboxBridgeCapability;
-  readonly resource?: string;
-  readonly audit?: SandboxAuditSink;
-}): Promise<SandboxAuditEvent | null> => {
-  const denial = assertSandboxBridgeCapability(context, {
-    capability,
-    resource,
-    type: operationType as never,
-  });
-
-  if (denial) {
-    await emitAudit(audit, denial);
-    return denial;
-  }
-
-  await emitAudit(
-    audit,
-    createAuditEvent({
-      context,
-      decision: "allow",
-      operationType,
-      reason: `Capability "${capability}" granted.`,
-      resource,
-    })
-  );
-  return null;
-};
-
 const scopedStorageKey = ({
   context,
   namespace,
@@ -292,6 +267,193 @@ const scopedStorageKey = ({
     namespace,
     key,
   ].join(":");
+
+const getAuditAttributeString = (
+  event: DurableAuditEvent,
+  key: string
+): string | undefined => {
+  const value = event.attributes[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+};
+
+const durableAuditEventToSandboxAuditEvent = (
+  context: SandboxBridgeContext,
+  event: DurableAuditEvent
+): SandboxAuditEvent => ({
+  correlationId: event.correlation.requestId,
+  decision:
+    getAuditAttributeString(event, "decision") === "deny" ? "deny" : "allow",
+  lifecycleState: context.lifecycleState,
+  operationType:
+    getAuditAttributeString(event, "operationType") ?? event.eventType,
+  pluginId: getAuditAttributeString(event, "pluginId") ?? context.pluginId,
+  reason: getAuditAttributeString(event, "reason") ?? event.eventType,
+  resource: getAuditAttributeString(event, "resource"),
+  tenantId: getAuditAttributeString(event, "tenantId") ?? context.tenantId,
+});
+
+const createSandboxDurableAuditLayer = (
+  context: SandboxBridgeContext,
+  audit: SandboxAuditSink | undefined
+): Layer.Layer<DurableAudit> =>
+  Layer.succeed(
+    DurableAudit,
+    DurableAudit.of({
+      record: (event) =>
+        Effect.promise(() =>
+          emitAudit(audit, durableAuditEventToSandboxAuditEvent(context, event))
+        ),
+    })
+  );
+
+type SandboxBridgeFailureCode =
+  | "capability-denied"
+  | "deadline-exceeded"
+  | "invalid-input"
+  | "quota-exceeded";
+
+interface SandboxBridgeFailureRecord {
+  readonly _tag: "SandboxBridgeFailure";
+  readonly code: SandboxBridgeFailureCode;
+  readonly correlationId?: string;
+  readonly message: string;
+  readonly pluginId: string;
+  readonly reason?: string;
+  readonly resource?: string;
+}
+
+const isSandboxBridgeFailureCode = (
+  value: unknown
+): value is SandboxBridgeFailureCode =>
+  value === "capability-denied" ||
+  value === "deadline-exceeded" ||
+  value === "invalid-input" ||
+  value === "quota-exceeded";
+
+const isSandboxBridgeFailureRecord = (
+  value: unknown
+): value is SandboxBridgeFailureRecord => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    value._tag === "SandboxBridgeFailure" &&
+    isSandboxBridgeFailureCode(value.code) &&
+    typeof value.message === "string" &&
+    typeof value.pluginId === "string"
+  );
+};
+
+const sandboxBridgeFailureToRuntimeError = (
+  failure: SandboxBridgeFailureRecord,
+  context: SandboxBridgeContext
+): SandboxPluginRuntimeError =>
+  createSandboxRuntimeError({
+    code:
+      failure.code === "capability-denied"
+        ? "capability-denied"
+        : "invalid-input",
+    correlationId: failure.correlationId ?? context.correlationId,
+    message: failure.message,
+    pluginId: failure.pluginId,
+    reason: failure.reason ?? failure.resource,
+  });
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const extractSandboxBridgeFailure = (
+  cause: unknown
+): SandboxBridgeFailureRecord | undefined => {
+  if (!isRecord(cause) || !Array.isArray(cause.reasons)) {
+    return undefined;
+  }
+
+  for (const reason of cause.reasons) {
+    if (!isRecord(reason)) {
+      continue;
+    }
+
+    const { error } = reason;
+    if (isSandboxBridgeFailureRecord(error)) {
+      return error;
+    }
+  }
+
+  return undefined;
+};
+
+const createBridgeExecutionFailure = (
+  context: SandboxBridgeContext
+): SandboxPluginRuntimeError =>
+  createSandboxRuntimeError({
+    code: "platform-execution-failed",
+    correlationId: context.correlationId,
+    message: "Sandbox bridge audit persistence failed.",
+    pluginId: context.pluginId,
+  });
+
+const sandboxRuntimeErrorCodes = new Set<SandboxPluginRuntimeError["code"]>([
+  "capability-denied",
+  "egress-denied",
+  "invalid-auth-scope",
+  "invalid-input",
+  "invalid-response",
+  "platform-capability-unavailable",
+  "platform-execution-failed",
+  "storage-denied",
+]);
+
+const isSandboxRuntimeError = (
+  value: unknown
+): value is SandboxPluginRuntimeError => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.code === "string" &&
+    sandboxRuntimeErrorCodes.has(
+      value.code as SandboxPluginRuntimeError["code"]
+    ) &&
+    typeof value.message === "string" &&
+    typeof value.pluginId === "string"
+  );
+};
+
+const createCoreBridgeInvoker = ({
+  audit,
+  context,
+}: {
+  readonly audit?: SandboxAuditSink;
+  readonly context: SandboxBridgeContext;
+}) => {
+  const bridgeService = createSandboxCapabilityBridgeService({
+    handler: () => Effect.void,
+  });
+  const auditLayer = createSandboxDurableAuditLayer(context, audit);
+
+  return async (
+    operation: SandboxBridgeOperation,
+    payload?: unknown
+  ): Promise<void> => {
+    const exit = await Effect.runPromiseExit(
+      bridgeService
+        .invoke({ context, operation, payload })
+        .pipe(Effect.provide(auditLayer))
+    );
+
+    if (exit._tag === "Success") {
+      return;
+    }
+
+    const bridgeFailure = extractSandboxBridgeFailure(exit.cause);
+    throw bridgeFailure
+      ? sandboxBridgeFailureToRuntimeError(bridgeFailure, context)
+      : createBridgeExecutionFailure(context);
+  };
+};
 
 const assertStorageNamespace = async ({
   context,
@@ -389,25 +551,18 @@ export const createSandboxBridge = ({
     permissionValidator?.(permission);
   }
 
+  const runBridgeOperation = createCoreBridgeInvoker({ audit, context });
+
   return {
     commerceAction: async (action: string, input: unknown) => {
-      const denial = await requireCapability({
-        audit,
-        capability: "commerce:read",
-        context,
-        operationType: "commerce",
-        resource: action,
-      });
-
-      if (denial) {
-        throw createSandboxRuntimeError({
-          code: "capability-denied",
-          message: denial.reason,
-          pluginId: context.pluginId,
-          correlationId: context.correlationId,
-          reason: action,
-        });
-      }
+      await runBridgeOperation(
+        {
+          capability: "commerce:read",
+          resource: action,
+          type: "commerce",
+        },
+        { action, input }
+      );
 
       const requiredPermissionInput = commerceActionPermissions[action];
       const requiredPermission = requiredPermissionInput
@@ -456,42 +611,26 @@ export const createSandboxBridge = ({
       return handler(input);
     },
     emitEvent: async (name: string, payload: unknown) => {
-      const denial = await requireCapability({
-        audit,
-        capability: "bridge:events",
-        context,
-        operationType: "emitEvent",
-        resource: name,
-      });
-
-      if (denial) {
-        throw createSandboxRuntimeError({
-          code: "capability-denied",
-          message: denial.reason,
-          pluginId: context.pluginId,
-          correlationId: context.correlationId,
-          reason: name,
-        });
-      }
+      await runBridgeOperation(
+        {
+          capability: "bridge:events",
+          resource: name,
+          type: "emitEvent",
+        },
+        { name, payload }
+      );
 
       await eventSink?.(name, payload);
     },
     fetch: async (input: string | URL | Request, init?: RequestInit) => {
-      const denial = await requireCapability({
-        audit,
-        capability: "bridge:fetch",
-        context,
-        operationType: "fetch",
-      });
-
-      if (denial) {
-        throw createSandboxRuntimeError({
-          code: "capability-denied",
-          message: denial.reason,
-          pluginId: context.pluginId,
-          correlationId: context.correlationId,
-        });
-      }
+      await runBridgeOperation(
+        {
+          capability: "bridge:fetch",
+          resource: input instanceof Request ? input.url : String(input),
+          type: "fetch",
+        },
+        { init, input }
+      );
 
       if (!isSandboxOutboundHostAllowed(context, input)) {
         const event = createAuditEvent({
@@ -514,32 +653,22 @@ export const createSandboxBridge = ({
       return fetcher(input, init);
     },
     log: (level: "debug" | "error" | "info" | "warn", message: string) => {
-      void emitAudit(
-        audit,
-        createAuditEvent({
-          context,
-          decision: "allow",
-          operationType: "log",
-          reason: `${level}:${message}`,
-        })
+      void runBridgeOperation(
+        {
+          capability: "bridge:log",
+          type: "log",
+        },
+        { level, message }
       );
     },
     routeResponse: async (response: SandboxEntrypointResponse) => {
-      const denial = await requireCapability({
-        audit,
-        capability: "route:respond",
-        context,
-        operationType: "routeResponse",
-      });
-
-      if (denial) {
-        throw createSandboxRuntimeError({
-          code: "capability-denied",
-          message: denial.reason,
-          pluginId: context.pluginId,
-          correlationId: context.correlationId,
-        });
-      }
+      await runBridgeOperation(
+        {
+          capability: "route:respond",
+          type: "routeResponse",
+        },
+        response
+      );
 
       if (!isSandboxEntrypointResponse(response)) {
         throw createSandboxRuntimeError({
@@ -553,45 +682,27 @@ export const createSandboxBridge = ({
       return response;
     },
     storageRead: async (namespace: string, key: string) => {
-      const denial = await requireCapability({
-        audit,
-        capability: "bridge:storage",
-        context,
-        operationType: "storageRead",
-        resource: namespace,
-      });
-
-      if (denial) {
-        throw createSandboxRuntimeError({
-          code: "capability-denied",
-          message: denial.reason,
-          pluginId: context.pluginId,
-          correlationId: context.correlationId,
-          reason: namespace,
-        });
-      }
+      await runBridgeOperation(
+        {
+          capability: "bridge:storage",
+          resource: namespace,
+          type: "storageRead",
+        },
+        { key, namespace }
+      );
 
       await assertStorageNamespace({ audit, context, namespace });
       return storage?.get(scopedStorageKey({ context, key, namespace }));
     },
     storageWrite: async (namespace: string, key: string, value: unknown) => {
-      const denial = await requireCapability({
-        audit,
-        capability: "bridge:storage",
-        context,
-        operationType: "storageWrite",
-        resource: namespace,
-      });
-
-      if (denial) {
-        throw createSandboxRuntimeError({
-          code: "capability-denied",
-          message: denial.reason,
-          pluginId: context.pluginId,
-          correlationId: context.correlationId,
-          reason: namespace,
-        });
-      }
+      await runBridgeOperation(
+        {
+          capability: "bridge:storage",
+          resource: namespace,
+          type: "storageWrite",
+        },
+        { key, namespace, value }
+      );
 
       await assertStorageNamespace({ audit, context, namespace });
       await storage?.put(scopedStorageKey({ context, key, namespace }), value);
@@ -637,9 +748,49 @@ const parseEntrypointResponse = async (
   return candidate;
 };
 
+const createSandboxInvocationTimeoutError = (
+  input: SandboxPluginRunnerInput,
+  timeoutMs: number
+): SandboxPluginRuntimeError =>
+  createSandboxRuntimeError({
+    code: "platform-execution-failed",
+    correlationId: input.bridgeContext.correlationId,
+    message: `Sandbox plugin invocation timed out after ${timeoutMs}ms.`,
+    pluginId: input.manifest.id,
+    reason: "timeout",
+  });
+
+const withOptionalInvocationTimeout = <Value>({
+  input,
+  promise,
+  timeoutMs,
+}: {
+  readonly input: SandboxPluginRunnerInput;
+  readonly promise: Promise<Value>;
+  readonly timeoutMs?: number;
+}): Promise<Value> => {
+  if (typeof timeoutMs !== "number") {
+    return promise;
+  }
+
+  return Effect.runPromise(
+    Effect.tryPromise({
+      catch: (error) => error,
+      try: () => promise,
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: `${timeoutMs} millis`,
+        orElse: () =>
+          Effect.fail(createSandboxInvocationTimeoutError(input, timeoutMs)),
+      })
+    )
+  );
+};
+
 export const createCloudflareSandboxPluginRunner = ({
   loader,
   audit,
+  invocationTimeoutMs,
 }: CreateSandboxPluginRunnerOptions): SandboxPluginRunner => ({
   invoke: async (input: SandboxPluginRunnerInput) => {
     if (!loader) {
@@ -700,20 +851,28 @@ export const createCloudflareSandboxPluginRunner = ({
     );
 
     try {
-      const response = await parseEntrypointResponse(
-        await workerEntrypoint.fetch(
-          input.request ??
-            new Request("https://sandbox-plugin.internal/entrypoint", {
-              method: "POST",
-            }),
-          {
-            bridge,
-            context: input.bridgeContext,
-          }
-        ),
-        input.manifest.id,
-        input.bridgeContext.correlationId
-      );
+      const response = await withOptionalInvocationTimeout({
+        input,
+        promise: workerEntrypoint
+          .fetch(
+            input.request ??
+              new Request("https://sandbox-plugin.internal/entrypoint", {
+                method: "POST",
+              }),
+            {
+              bridge,
+              context: input.bridgeContext,
+            }
+          )
+          .then((value) =>
+            parseEntrypointResponse(
+              value,
+              input.manifest.id,
+              input.bridgeContext.correlationId
+            )
+          ),
+        timeoutMs: invocationTimeoutMs,
+      });
 
       return {
         auditEvents: events,
@@ -721,21 +880,18 @@ export const createCloudflareSandboxPluginRunner = ({
         response,
       };
     } catch (error) {
-      const runtimeError = createSandboxRuntimeError({
-        code:
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          typeof error.code === "string"
-            ? (error.code as SandboxPluginRuntimeError["code"])
-            : "platform-execution-failed",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Sandbox plugin execution failed.",
-        pluginId: input.manifest.id,
-        correlationId: input.bridgeContext.correlationId,
-      });
+      const runtimeError = isSandboxRuntimeError(error)
+        ? error
+        : createSandboxRuntimeError({
+            code: "platform-execution-failed",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Sandbox plugin execution failed.",
+            pluginId: input.manifest.id,
+            correlationId: input.bridgeContext.correlationId,
+            reason: "defect",
+          });
 
       await emitAudit(
         auditSink,
