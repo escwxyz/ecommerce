@@ -93,6 +93,16 @@ export {
   type CloudflareStatefulCoordinatorOptions,
 } from "./stateful";
 export {
+  createCloudflareTelemetryLayer,
+  withCloudflareTelemetry,
+  type CloudflareTelemetryConsole,
+  type CloudflareTelemetryLayerOptions,
+  type CloudflareTelemetryLogRecord,
+  type CloudflareTelemetryMessage,
+  type CloudflareTelemetryRecord,
+  type CloudflareTelemetrySpanRecord,
+} from "./telemetry";
+export {
   createCloudflareWorkflowRuntime,
   createCloudflareWorkflowRuntimeLayer,
   CloudflareWorkflowRuntimeFailure,

@@ -376,6 +376,11 @@ architecture:
   execution, and sandbox runner failure verification are now Effect-native.
   Production smoke coverage against a real Worker Loader binding remains a
   credential-gated Cloudflare runtime check.
+- Section 11.1 selects the first Cloudflare telemetry exporter. The platform
+  package now exposes `createCloudflareTelemetryLayer`, a Workers Logs exporter
+  that installs Effect logger and tracer Layers and writes sanitized structured
+  log/span records to the Worker `console`. Metric shipping and broader
+  correlation propagation remain in the later observability tasks.
 - Repository-wide removal of Hono, oRPC, Zod, Kysely, and completed temporary
   bridges is deferred to section 12 after all dependent slices migrate.
 

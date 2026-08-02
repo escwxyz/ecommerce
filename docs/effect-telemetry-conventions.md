@@ -2,8 +2,11 @@
 
 Effect logging, spans, metrics, and Causes are the backend telemetry model.
 Runtime-neutral packages emit telemetry through Effect primitives; platform
-composition provides exporters. Cloudflare exporter selection remains deferred
-to OpenSpec task 11.1.
+composition provides exporters. The first Cloudflare exporter is
+`createCloudflareTelemetryLayer` in `@ecommerce/platform-cloudflare`, which
+emits structured Effect log and completed-span records to the Worker `console`
+so Cloudflare Workers Logs can collect them without an additional credentialed
+service.
 
 ## Structured logs and spans
 
@@ -29,6 +32,23 @@ to OpenSpec task 11.1.
   finalizes it with the commerce Exit. Span acquisition/finalization and the
   completion log/metric are isolated so exporter failures, defects, and
   interruptions do not change a commerce result or Cause.
+- The initial Cloudflare console exporter records logs and spans. Exporter
+  support for metric shipping is deferred to the later metric taxonomy/export
+  tasks; core still records the bounded operation metric through Effect.
+
+## Cloudflare Workers Logs exporter
+
+- `createCloudflareTelemetryLayer` installs an Effect logger and tracer Layer
+  for Cloudflare runtime composition.
+- Log records include level, timestamp, bounded message values, and sanitized
+  annotations.
+- Span records emit only on completion and include span name, trace/span IDs,
+  sampled flag, duration, event count, sanitized attributes, and a bounded
+  outcome.
+- The exporter does not serialize Causes, stack traces, arbitrary objects, SQL,
+  provider bodies, secrets, or raw request/response values.
+- `withCloudflareTelemetry` is a convenience wrapper for platform tests and
+  small runtime compositions.
 
 ## Redaction
 

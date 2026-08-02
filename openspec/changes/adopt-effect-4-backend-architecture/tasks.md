@@ -117,7 +117,7 @@
 
 ## 11. Observability and operations
 
-- [ ] 11.1 Select and implement the first Cloudflare telemetry exporter Layer
+- [x] 11.1 Select and implement the first Cloudflare telemetry exporter Layer
 - [ ] 11.2 Propagate correlation and trace context across HTTP, Service Bindings, SQL, workflows, queues, actors, plugins, and providers
 - [ ] 11.3 Add shared redaction and attribute-cardinality policies
 - [ ] 11.4 Add metrics that distinguish typed rejections, defects, interruptions, retries, compensation, and poison messages
