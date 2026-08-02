@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { Effect as EffectType } from "effect/Effect";
 
 import type { AdminPermissionDescriptor } from "../admin/index";
@@ -28,6 +28,14 @@ import type {
   NativePluginManifest,
   NativePluginManifestInput,
 } from "./native-plugin-manifest";
+import {
+  createSandboxPluginManifest,
+  SandboxBridgeContextSchema,
+  SandboxBridgeOperationSchema,
+  SandboxEntrypointResponseSchema,
+  SandboxPluginGrantPolicySchema,
+  SandboxPluginRuntimeErrorSchema,
+} from "./sandbox-plugin-schema";
 
 export {
   defineNativePluginApiGroupContribution,
@@ -60,6 +68,47 @@ export {
   type NativePluginManifest,
   type NativePluginManifestInput,
 } from "./native-plugin-manifest";
+
+export {
+  CommercePermissionDescriptorSchema,
+  CommercePermissionInputSchema,
+  CommercePluginContributionSetSchema,
+  CommercePluginExtensionPointSchema,
+  CommercePluginStorageDeclarationSchema,
+  SandboxAdminMetadataResponseSchema,
+  SandboxAuditDecisionSchema,
+  SandboxAuditEventSchema,
+  SandboxBridgeAuthContextSchema,
+  SandboxBridgeCapabilityListSchema,
+  SandboxBridgeCapabilitySchema,
+  SandboxBridgeContextSchema,
+  SandboxBridgeOperationSchema,
+  SandboxBridgeOperationTypeSchema,
+  SandboxBridgePermissionCheckInputSchema,
+  SandboxEntrypointResponseSchema,
+  SandboxHookResponseSchema,
+  SandboxLifecycleResponseSchema,
+  SandboxPluginAllowedHostSchema,
+  SandboxPluginBundleIntegritySchema,
+  SandboxPluginBundleReferenceSchema,
+  SandboxPluginEntrypointKindSchema,
+  SandboxPluginEntrypointListSchema,
+  SandboxPluginEntrypointSchema,
+  SandboxPluginGrantPolicySchema,
+  SandboxPluginIdSchema,
+  SandboxPluginLifecycleCompatibilitySchema,
+  SandboxPluginLifecycleStateSchema,
+  SandboxPluginManifestSchema,
+  SandboxPluginRegistrationSchema,
+  SandboxPluginRuntimeErrorSchema,
+  SandboxPluginSchemaVersionSchema,
+  SandboxPluginTrimmedStringSchema,
+  SandboxPluginVersionSchema,
+  SandboxRouteResponseSchema,
+  SandboxWorkflowStepResponseSchema,
+  createSandboxPluginManifest,
+  decodeSandboxPluginManifest,
+} from "./sandbox-plugin-schema";
 
 export type CommercePluginTier = "native" | "sandbox";
 
@@ -154,6 +203,7 @@ export interface CommercePluginContributionSet {
 export interface CommercePluginManifest {
   readonly id: string;
   readonly version: string;
+  readonly schemaVersion: number;
   readonly tier: CommercePluginTier;
   readonly capabilities: readonly string[];
   readonly allowedHosts?: readonly string[];
@@ -168,9 +218,10 @@ export interface SandboxPluginLifecycleCompatibility {
 
 export interface SandboxPluginManifest extends Omit<
   CommercePluginManifest,
-  "capabilities" | "tier"
+  "capabilities" | "schemaVersion" | "tier"
 > {
   readonly tier: "sandbox";
+  readonly schemaVersion: number;
   readonly capabilities: readonly SandboxBridgeCapability[];
   readonly entrypoints: readonly SandboxPluginEntrypoint[];
   readonly bundle: SandboxPluginBundleReference;
@@ -568,11 +619,20 @@ const assertValidSandboxEntrypoints = (
 };
 
 export const defineSandboxPlugin = (registration: {
-  readonly manifest: Omit<SandboxPluginManifest, "tier">;
+  readonly manifest: Omit<SandboxPluginManifest, "schemaVersion" | "tier"> & {
+    readonly schemaVersion?: number;
+  };
   readonly permissionValidator?: (permission: CommercePermissionInput) => void;
   readonly state?: SandboxPluginLifecycleState;
 }): SandboxPluginRegistration => {
-  const manifest: SandboxPluginManifest = {
+  assertValidSandboxBundle(registration.manifest.bundle);
+  assertValidSandboxEntrypoints(registration.manifest.entrypoints);
+  assertValidContributionSet(
+    registration.manifest.contributions,
+    registration.permissionValidator
+  );
+
+  const decodedManifest = createSandboxPluginManifest({
     ...registration.manifest,
     allowedHosts: toUniqueSorted(
       (registration.manifest.allowedHosts ?? []).map(
@@ -583,7 +643,10 @@ export const defineSandboxPlugin = (registration: {
     storage: registration.manifest.storage
       ? [...registration.manifest.storage]
       : undefined,
-    tier: "sandbox",
+  });
+  const manifest: SandboxPluginManifest = {
+    ...decodedManifest,
+    contributions: registration.manifest.contributions,
   };
 
   assertNonEmptyString(manifest.id, "Sandbox plugin ID");
@@ -591,10 +654,6 @@ export const defineSandboxPlugin = (registration: {
   assertSupportedSandboxCapabilities(manifest.capabilities);
   assertValidSandboxBundle(manifest.bundle);
   assertValidSandboxEntrypoints(manifest.entrypoints);
-  assertValidContributionSet(
-    manifest.contributions,
-    registration.permissionValidator
-  );
 
   for (const storage of manifest.storage ?? []) {
     assertNonEmptyString(storage.namespace, "Sandbox storage namespace");
@@ -659,7 +718,7 @@ export const createSandboxPluginGrantPolicy = ({
     )
   );
 
-  return {
+  return Schema.decodeUnknownSync(SandboxPluginGrantPolicySchema)({
     canActivate:
       deniedCapabilities.length === 0 &&
       deniedHosts.length === 0 &&
@@ -671,65 +730,45 @@ export const createSandboxPluginGrantPolicy = ({
     grantedCapabilities: acceptedCapabilities,
     grantedStorageNamespaces: acceptedStorage,
     pluginId: manifest.id,
-  };
+  });
 };
 
 export const createSandboxRuntimeError = (
   error: SandboxPluginRuntimeError
-): SandboxPluginRuntimeError => error;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+): SandboxPluginRuntimeError =>
+  Schema.decodeUnknownSync(SandboxPluginRuntimeErrorSchema)(error);
 
 export const isSandboxEntrypointResponse = (
   value: unknown
-): value is SandboxEntrypointResponse => {
-  if (!isRecord(value) || typeof value.type !== "string") {
-    return false;
-  }
-
-  switch (value.type) {
-    case "adminMetadata": {
-      return Array.isArray(value.surfaces);
-    }
-    case "hook": {
-      return value.decision === "continue" || value.decision === "stop";
-    }
-    case "lifecycle":
-    case "workflowStep": {
-      return true;
-    }
-    case "routeResponse": {
-      return (
-        typeof value.status === "number" &&
-        Number.isInteger(value.status) &&
-        value.status >= 100 &&
-        value.status <= 599
-      );
-    }
-    default: {
-      return false;
-    }
-  }
-};
+): value is SandboxEntrypointResponse =>
+  Schema.is(SandboxEntrypointResponseSchema)(value);
 
 export const assertSandboxBridgeCapability = (
   context: SandboxBridgeContext,
   operation: SandboxBridgeOperation
 ): SandboxAuditEvent | null => {
-  if (context.grantedCapabilities.includes(operation.capability)) {
+  const decodedContext = Schema.decodeUnknownSync(SandboxBridgeContextSchema)(
+    context
+  );
+  const decodedOperation = Schema.decodeUnknownSync(
+    SandboxBridgeOperationSchema
+  )(operation);
+
+  if (
+    decodedContext.grantedCapabilities.includes(decodedOperation.capability)
+  ) {
     return null;
   }
 
   return {
-    correlationId: context.correlationId,
+    correlationId: decodedContext.correlationId,
     decision: "deny",
-    lifecycleState: context.lifecycleState,
-    operationType: operation.type,
-    pluginId: context.pluginId,
-    reason: `Capability "${operation.capability}" is not granted.`,
-    resource: operation.resource,
-    tenantId: context.tenantId,
+    lifecycleState: decodedContext.lifecycleState,
+    operationType: decodedOperation.type,
+    pluginId: decodedContext.pluginId,
+    reason: `Capability "${decodedOperation.capability}" is not granted.`,
+    resource: decodedOperation.resource,
+    tenantId: decodedContext.tenantId,
   };
 };
 

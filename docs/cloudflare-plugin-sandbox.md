@@ -15,11 +15,22 @@ A sandbox manifest declares:
 - `storage`: declared storage namespaces mediated by the host bridge.
 - `contributions`: route, hook, workflow step, and admin metadata keys that can participate in dispatch when the plugin is active.
 
+The manifest is decoded through `SandboxPluginManifestSchema` before
+activation. Helper APIs keep normalizing hostnames and deterministic capability
+order, but schema decoding owns the untrusted boundary and rejects malformed
+identity, version, bundle, entrypoint, storage, and bridge capability values.
+
 The host treats manifest capabilities as requested access. Activation creates the granted policy used at runtime, and activation fails if required capabilities, hosts, or storage namespaces are denied.
 
 ## Bridge Model
 
 The bridge context contains plugin identity, plugin version, tenant/scope, lifecycle state, granted capabilities, granted hosts, granted storage namespaces, auth/session policy, and correlation ID. Bridge methods enforce that context before calling host services.
+
+Bridge context, permission-check inputs, operations, audit events, runtime
+errors, grant policies, and entrypoint responses are decoded through Effect
+Schema before host policy logic consumes them. Capability-service execution,
+deadlines, quotas, and durable audit persistence are implemented in the next
+section of the plugin migration.
 
 Initial bridge methods cover:
 

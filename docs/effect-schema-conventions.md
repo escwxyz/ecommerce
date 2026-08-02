@@ -187,6 +187,16 @@ capability against the host-supplied portable capability set and rejects
 duplicate executable contribution keys or storage namespaces before Layer
 construction.
 
+Sandboxed plugin manifests and bridge messages use the
+`@ecommerce/core/plugins` sandbox schemas. The sandbox manifest schema owns
+plugin identity, semantic version, bundle reference and integrity, declared
+entrypoints, requested bridge capabilities, host allowlists, storage
+declarations, and contribution metadata. Bridge schemas own request context,
+permission checks, operations, audit events, runtime errors, grant policies, and
+entrypoint responses. These schemas remain runtime-neutral: they describe
+portable bridge identifiers and serialized messages, not Worker Loader handles,
+SQL clients, secrets, or Cloudflare bindings.
+
 Workflow durable messages use `@ecommerce/core/workflows` schemas for
 descriptors, persisted run state, step outcomes, retry policy, retry
 disposition, and compensation policy. Executable `Effect` handlers stay on

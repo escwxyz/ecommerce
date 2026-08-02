@@ -109,7 +109,7 @@
 - [x] 10.1 Replace native plugin manifests with Effect Schemas and runtime-neutral capability declarations
 - [x] 10.2 Replace native plugin service/provider/API/workflow/event contributions with Effect contracts and Layers
 - [x] 10.3 Add deterministic native plugin validation, composition, lifecycle, and telemetry tests
-- [ ] 10.4 Replace sandbox manifest and bridge request/response schemas with Effect Schema
+- [x] 10.4 Replace sandbox manifest and bridge request/response schemas with Effect Schema
 - [ ] 10.5 Implement Effect-hosted capability bridge services with grants, typed failures, deadlines, quotas, and audit events
 - [ ] 10.6 Prohibit host runtime, SQL, secrets, and raw binding exposure through sandbox boundary tests
 - [ ] 10.7 Adapt Worker Loader execution to the new bridge contract

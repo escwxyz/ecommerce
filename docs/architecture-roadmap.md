@@ -285,6 +285,12 @@ architecture:
   shared Effect telemetry policy. Deterministic tests cover validation,
   composition, lifecycle success/defect behavior, and telemetry capture without
   Cloudflare bindings.
+- Section 10.4 replaces sandbox manifest and bridge message validation with
+  Effect Schema. `@ecommerce/core/plugins` now owns schemas for sandbox
+  manifests, grant policies, bridge contexts, bridge operations, audit events,
+  runtime errors, and entrypoint responses. Existing helper APIs preserve their
+  public behavior while decoding manifests and bridge messages before they cross
+  into host policy code.
 
 ## Current Gaps
 
@@ -340,8 +346,9 @@ architecture:
   lifecycle dispatch, and lifecycle telemetry are Effect-native. Production
   hosts must pass their portable capability set to composition and persist any
   lifecycle state they need outside the runtime-neutral contract. Sandboxed
-  manifests and bridge messages remain on their legacy validation path until
-  task 10.4.
+  manifests and bridge messages are now Effect Schema-backed, but the
+  Effect-hosted capability bridge services, grants, deadlines, quotas, and audit
+  persistence remain task 10.5.
 - Repository-wide removal of Hono, oRPC, Zod, Kysely, and completed temporary
   bridges is deferred to section 12 after all dependent slices migrate.
 
