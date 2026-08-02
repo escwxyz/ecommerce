@@ -14,10 +14,19 @@ import { regionSalesChannelAdminMetadata } from "@ecommerce/region-sales-channel
 import { storeAdminMetadata } from "@ecommerce/store/admin";
 import { taxAdminMetadata } from "@ecommerce/tax/admin";
 
-import type { Context } from "./context";
 import { validateBuiltinCommercePermission } from "./permissions";
 
-const getContextPermissionKeys = (context: Context): readonly string[] => {
+export interface AdminMetadataContext {
+  readonly auth?: unknown;
+  readonly authorization?: unknown;
+  readonly session: {
+    readonly user?: unknown | null;
+  } | null;
+}
+
+const getContextPermissionKeys = (
+  context: AdminMetadataContext
+): readonly string[] => {
   const user =
     typeof context.session?.user === "object" && context.session.user !== null
       ? (context.session.user as Record<string, unknown>)
@@ -31,7 +40,7 @@ const getContextPermissionKeys = (context: Context): readonly string[] => {
     : [];
 };
 
-export const createAdminMetadataModel = (context: Context) =>
+export const createAdminMetadataModel = (context: AdminMetadataContext) =>
   composeAdminMetadata({
     contributions: [
       storeAdminMetadata,

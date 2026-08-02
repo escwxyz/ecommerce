@@ -12,18 +12,17 @@ const unusedDatabase = {};
 describe("server commerce runtime", () => {
   it("registers persistent module routes but omits checkout without providers", () => {
     const runtime = createServerCommerceRuntime({ db: unusedDatabase });
-    const routeKeys = Object.keys(runtime.apiAssembly.router);
 
     expect(runtime.checkoutConfigured).toBe(false);
-    expect(routeKeys).not.toContain("customerGet");
-    expect(routeKeys).not.toContain("taxCalculate");
-    expect(routeKeys).not.toContain("paymentCollectionCreate");
-    expect(routeKeys).not.toContain("fulfillmentCreate");
-    expect(routeKeys).not.toContain("orderCreateFromCheckout");
-    expect(routeKeys).not.toContain("checkoutComplete");
+    expect(runtime.services.customer).toBeDefined();
+    expect(runtime.services.tax).toBeDefined();
+    expect(runtime.services.payment).toBeDefined();
+    expect(runtime.services.fulfillment).toBeDefined();
+    expect(runtime.services.order).toBeDefined();
+    expect(runtime.services.checkout).toBeUndefined();
   });
 
-  it("composes the checkout service without restoring legacy oRPC routes", () => {
+  it("composes the checkout service without restoring legacy route assembly", () => {
     const runtime = createServerCommerceRuntime({
       ...createDevelopmentCommerceProviderRegistries(),
       db: unusedDatabase,
@@ -31,9 +30,7 @@ describe("server commerce runtime", () => {
 
     expect(runtime.checkoutConfigured).toBe(true);
     expect(runtime.services.checkout).toBeDefined();
-    expect(Object.keys(runtime.apiAssembly.router)).not.toContain(
-      "checkoutComplete"
-    );
+    expect("apiAssembly" in runtime).toBe(false);
   });
 
   it("rejects incomplete checkout provider composition", () => {

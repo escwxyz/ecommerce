@@ -1,6 +1,6 @@
 # ecommerce
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines React, TanStack Start, Hono, ORPC, and more.
+This project started from [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack) and is being migrated into a Cloudflare-first, Effect-native commerce platform.
 
 ## Features
 
@@ -8,25 +8,25 @@ This project was created with [Better-T-Stack](https://github.com/AmanVarshney01
 - **TanStack Start** - SSR framework with TanStack Router
 - **TailwindCSS** - Utility-first CSS for rapid UI development
 - **Shared UI package** - shadcn/ui primitives live in `packages/ui`
-- **Hono** - Lightweight, performant server framework
-- **oRPC** - End-to-end type-safe APIs with OpenAPI integration
+- **Effect HTTP** - Backend admin/storefront API contracts and Worker runtime
+- **Effect Schema** - Backend validation and typed error contracts
 - **workers** - Runtime environment
-- **Kysely** - Type-safe SQL query builder for primary relational storage
-- **Cloudflare D1** - First production primary database adapter
+- **Drizzle + Effect SQL PostgreSQL** - Target primary relational persistence
+- **Cloudflare Hyperdrive** - First PostgreSQL connectivity target
 - **Authentication** - Better-Auth
 - **Oxlint** - Oxlint + Oxfmt (linting & formatting)
 - **Turborepo** - Optimized monorepo build system
 
 ## Architecture
 
-The repo is moving from a bootstrap app into a Cloudflare-first commerce platform. The accepted blueprint and implementation roadmap live in:
+The repo is moving from a bootstrap app into a Cloudflare-first, Medusa-inspired commerce platform. The active Effect 4 blueprint and implementation roadmap live in:
 
-- `openspec/changes/define-cloudflare-commerce-blueprint/`
+- `openspec/changes/adopt-effect-4-backend-architecture/`
 - `docs/architecture-roadmap.md`
 
 Agents and contributors should read those before changing package boundaries, module structure, plugin architecture, auth contracts, or database adapters.
 
-The first implementation slice is now in place as `packages/core`, which holds the platform-independent runtime kernel for shared service contracts, module definitions, events, workflows, plugins, and boundary tests.
+Effect is the backend application model for services, dependencies, schemas, HTTP, SQL, workflows, plugins, and observability. The frontend remains conventional React/TanStack Start code and consumes typed SDK/API packages without importing backend runtime Layers.
 
 ## Getting Started
 
@@ -38,10 +38,10 @@ bun install
 
 ## Database Setup
 
-This project uses Cloudflare D1 for the first production primary database adapter, with Kysely as the shared commerce query/migration layer.
+This project targets PostgreSQL through Drizzle and Effect SQL, with Cloudflare Hyperdrive as the first deployment connectivity path. Legacy D1/Kysely pieces are being removed through the active section 12 cleanup tasks.
 
-1. Start the local D1 database (optional):
-   D1 local development and migrations are handled automatically by Alchemy during dev and deploy.
+1. Start the local database/runtime adapter needed for the slice you are testing.
+   PostgreSQL is the target adapter; D1 remains only where temporary compatibility seams still exist.
 
 2. Update your `.env` file in the `apps/server` directory with the appropriate connection details if needed.
 
@@ -90,8 +90,7 @@ If you want to add app-specific blocks instead of shared primitives, run the sha
 
 The deployment stack lives in `packages/infra/alchemy.run.ts` and uses Alchemy v2's Effect stack model:
 
-- `Cloudflare.D1Database` provisions the shared D1 database and applies SQL files from `packages/db-d1/src/migrations/sql`.
-- `Cloudflare.Worker` deploys the Hono + oRPC API from `apps/server/src/index.ts`.
+- `Cloudflare.Worker` deploys the Effect HTTP backend from `apps/server/src/index.ts`.
 - `Cloudflare.Vite` deploys the TanStack Start admin app from `apps/web`.
 - Runtime values are declared through Alchemy `env` bindings. The installed Alchemy v2 beta uses `env`, not the older `bindings` property, and `Cloudflare.Vite`, not `TanStackStart`.
 
@@ -116,7 +115,7 @@ Useful commands:
 - `bun run test`: run local no-credential tests
 - `bun run test:integration`: run credential-gated Alchemy deploy smoke tests
 
-The frontend remains ordinary React/TanStack Start code. Effect is reserved for infrastructure, backend runtime support, and tests.
+The frontend remains ordinary React/TanStack Start code. Backend Effect runtime code stays in server, package, infrastructure, and test boundaries.
 
 ## Git Hooks and Formatting
 
@@ -134,10 +133,10 @@ ecommerce/
 │   ├── modules/                 # Planned commerce modules
 │   ├── platform-cloudflare/     # Planned Cloudflare runtime adapters
 │   ├── ui/                      # Shared admin UI primitives
-│   ├── api/                     # oRPC router assembly
+│   ├── api/                     # Effect HTTP API contracts and assembly
 │   ├── auth/                    # Shared auth contracts and runtime factory
-│   ├── db/                      # Shared Kysely database contracts and migration coordination
-│   ├── db-d1/                   # Cloudflare D1 Kysely adapter and D1 migration artifacts
+│   ├── db/                      # Shared database contracts and migration coordination
+│   ├── db-postgres/             # PostgreSQL Drizzle/Effect SQL adapter and migrations
 │   ├── infra/                   # Alchemy stacks and Cloudflare resources
 │   ├── env/                     # Typed environment access
 │   └── config/                  # Shared TS/build/tooling config
@@ -153,10 +152,12 @@ ecommerce/
 - `bun run dev:web`: Start only the web application
 - `bun run dev:server`: Start only the server
 - `bun run check-types`: Check TypeScript types across all apps
-- `bun run db:push`: Apply local D1 migrations from the D1 adapter package
-- `bun run db:generate`: Validate Kysely migration definitions
+- `bun run db:push`: Apply local database migrations for the active adapter package
+- `bun run db:generate`: Validate migration definitions for the active adapter package
 - `bun run check`: Run Oxlint and Oxfmt
 
 ## Todos
 
-- migrate oRPC with Effect when https://github.com/utopyin/effect-orpc/pull/10 is ready
+- Legacy backend oRPC has been removed in favor of Effect HTTP contracts; any
+  remaining frontend oRPC usage is temporary until the admin client migrates to
+  Effect-derived API typing.

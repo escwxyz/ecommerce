@@ -399,6 +399,11 @@ architecture:
   Worker now routes commerce traffic through the Effect HTTP runtime and mounts
   Better Auth directly at its temporary adapter path; oRPC, Zod, Kysely, and
   completed temporary bridges are removed by the remaining section 12 tasks.
+- Section 12.2 removes the backend oRPC router/procedure/client assembly from
+  `packages/api` and the server runtime. The root oRPC catalog entries remain
+  temporarily because the currently untracked admin frontend workspace still
+  declares oRPC catalog dependencies; remove those entries when the frontend
+  admin client is migrated or the untracked workspace is reconciled.
 
 ## Slice Completion Rule
 

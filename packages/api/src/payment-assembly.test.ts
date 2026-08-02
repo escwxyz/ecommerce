@@ -7,17 +7,10 @@ import {
   authorizationEvaluator,
   builtinPermissionStatement,
 } from "./permissions";
-import { createBuiltinRouteFragments } from "./routers";
 
 describe("payment API and admin assembly", () => {
   it("includes payment permissions in builtin permission composition", () => {
     expect(builtinPermissionStatement.payment).toEqual(["read", "write"]);
-  });
-
-  it("keeps migrated payment operations out of legacy oRPC composition", () => {
-    expect(
-      createBuiltinRouteFragments().map((fragment) => fragment.key)
-    ).toEqual(["builtin:core"]);
   });
 
   it("includes payment Effect HTTP operations in canonical admin composition", () => {

@@ -10,17 +10,10 @@ import {
   authorizationEvaluator,
   builtinPermissionStatement,
 } from "./permissions";
-import { createBuiltinRouteFragments } from "./routers";
 
 describe("order API and admin assembly", () => {
   it("includes order permissions in builtin permission composition", () => {
     expect(builtinPermissionStatement.order).toEqual(["read", "write"]);
-  });
-
-  it("keeps migrated order operations out of legacy oRPC composition", () => {
-    expect(
-      createBuiltinRouteFragments().map((fragment) => fragment.key)
-    ).toEqual(["builtin:core"]);
   });
 
   it("includes order Effect HTTP operations in canonical admin composition", () => {

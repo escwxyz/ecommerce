@@ -10,18 +10,11 @@ import {
   authorizationEvaluator,
   builtinPermissionStatement,
 } from "./permissions";
-import { createBuiltinRouteFragments } from "./routers";
 
 describe("notification event API and admin assembly", () => {
   it("includes notification-event permissions in builtin permission composition", () => {
     expect(builtinPermissionStatement.event).toEqual(["read", "write"]);
     expect(builtinPermissionStatement.notification).toEqual(["read", "write"]);
-  });
-
-  it("keeps migrated notification-event operations out of legacy oRPC composition", () => {
-    expect(
-      createBuiltinRouteFragments().map((routeFragment) => routeFragment.key)
-    ).toEqual(["builtin:core"]);
   });
 
   it("includes notification-event Effect HTTP operations in canonical admin composition", () => {

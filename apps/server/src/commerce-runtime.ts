@@ -1,4 +1,3 @@
-import { createApiRootAssembly } from "@ecommerce/api";
 import type { CartRepository, CartServiceShape } from "@ecommerce/cart";
 import {
   createCartIdEffect,
@@ -344,8 +343,8 @@ export const createServerCommerceRuntime = ({
     );
   }
 
-  // Retained while Hono/auth compatibility composition still passes a D1
-  // binding; notification-event no longer consumes D1 after task 8.8.
+  // Retained only while the temporary auth/D1 compatibility seam exists.
+  // Notification-event no longer consumes D1 after task 8.8.
   void db;
 
   const repositories = {
@@ -435,12 +434,11 @@ export const createServerCommerceRuntime = ({
   /*
    * Temporary checkout compatibility bridge.
    *
-   * Task 7.4 removed the pricing D1 repository and legacy oRPC routes after
+   * Task 7.4 removed the pricing D1 repository and legacy route path after
    * moving pricing to Effect HTTP + PostgreSQL. Checkout remains a section-8
    * legacy Promise orchestrator, so it receives only this development golden
    * path facade. Do not extend this into a general pricing adapter. Delete it
-   * in task 8.6 when checkout orchestration moves to Effect services and can
-   * depend on the migrated pricing Layer directly.
+   * in task 12.5 with the remaining completed temporary checkout bridges.
    */
   const checkoutPricingService = {
     calculatePrice: (input: Record<string, unknown>) => {
@@ -478,13 +476,13 @@ export const createServerCommerceRuntime = ({
   /*
    * Temporary checkout compatibility bridge.
    *
-   * Task 7.5 removes the inventory D1 repository, Kysely schema, seed rows, and
-   * legacy oRPC route after migrating inventory to Effect HTTP + PostgreSQL.
+   * Task 7.5 removed the inventory D1 repository, Kysely schema, seed rows, and
+   * legacy route path after migrating inventory to Effect HTTP + PostgreSQL.
    * Checkout remains a section-8 legacy Promise orchestrator, so this facade
    * preserves only the development golden-path availability and reservation
    * semantics that were previously supplied by D1 seed rows. It is not a module
-   * adapter and must be deleted in task 8.6 when checkout moves to Effect and
-   * consumes migrated module service Layers directly.
+   * adapter and must be deleted in task 12.5 with the remaining completed
+   * temporary checkout bridges.
    */
   const checkoutInventoryService = {
     adjustInventory: () => Promise.resolve({}),
@@ -540,13 +538,13 @@ export const createServerCommerceRuntime = ({
   /*
    * Temporary checkout compatibility bridge.
    *
-   * Task 7.3 removed the region/sales-channel D1 repository and legacy oRPC
+   * Task 7.3 removed the region/sales-channel D1 repository and legacy
    * routes after moving that module to Effect HTTP + PostgreSQL. Checkout is
    * still a section-8 legacy Promise orchestrator, so it cannot consume the new
    * Effect services directly without widening this task into checkout
    * migration. Keep this server-owned facade deterministic and limited to the
-   * development golden-path IDs. Delete it in task 8.6 when checkout orchestration
-   * moves to Effect and can depend on migrated module service Layers directly.
+   * development golden-path IDs. Delete it in task 12.5 with the remaining
+   * completed temporary checkout bridges.
    */
   const checkoutRegionService = {
     validateRegionConstraints: (input: Record<string, unknown>) => {
@@ -596,8 +594,8 @@ export const createServerCommerceRuntime = ({
    * Mirrors only the development storefront publishability invariant that the
    * deleted D1 `sales_channel_product` seed row used to provide. Do not extend
    * this into a general sales-channel adapter; migrated code must use the
-   * Effect HTTP/Layer-backed region-sales-channel module. Task 8.6 removes this
-   * facade with the legacy checkout API/schema path.
+   * Effect HTTP/Layer-backed region-sales-channel module. Task 12.5 removes
+   * this facade with the remaining completed temporary checkout bridges.
    */
   const checkoutSalesChannelService = {
     checkProductPublishability: (input: Record<string, unknown>) => {
@@ -689,17 +687,12 @@ export const createServerCommerceRuntime = ({
           tax: createCheckoutTaxPromiseFacade(services.tax),
         }
       : undefined;
-  const checkout = checkoutServices
-    ? { ...checkoutServices }
-    : undefined;
+  const checkout = checkoutServices ? { ...checkoutServices } : undefined;
   const checkoutService = checkout
     ? createCheckoutService(checkout)
     : undefined;
 
-  const apiAssembly = createApiRootAssembly({ routes: {} });
-
   return {
-    apiAssembly,
     checkoutConfigured: checkout !== undefined,
     repositories,
     services: {

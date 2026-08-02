@@ -12,7 +12,6 @@ import {
   authorizationEvaluator,
   builtinPermissionStatement,
 } from "./permissions";
-import { createBuiltinRouteFragments } from "./routers";
 
 describe("checkout API and admin assembly", () => {
   it("includes checkout permissions in builtin permission composition", () => {
@@ -20,12 +19,6 @@ describe("checkout API and admin assembly", () => {
       "execute",
       "read",
     ]);
-  });
-
-  it("keeps migrated checkout operations out of legacy oRPC composition", () => {
-    expect(
-      createBuiltinRouteFragments().map((fragment) => fragment.key)
-    ).toEqual(["builtin:core"]);
   });
 
   it("includes checkout Effect HTTP operations in canonical admin composition", () => {
