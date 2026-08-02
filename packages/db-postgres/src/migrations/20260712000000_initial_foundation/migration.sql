@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS "commerce_outbox" (
   "transaction_id" text NOT NULL,
   "correlation_id" text,
   "causation_id" text,
+  "trace_id" text,
   "workflow_run_id" text,
   "subject_type" text,
   "subject_id" text,

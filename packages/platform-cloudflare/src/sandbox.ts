@@ -114,6 +114,7 @@ export interface SandboxPluginMetadataStore {
 export interface SandboxPluginAuditIndexRecord {
   readonly pluginId: string;
   readonly correlationId: string;
+  readonly traceId?: string;
   readonly operationType: string;
   readonly decision: SandboxAuditEvent["decision"];
   readonly reason: string;
@@ -249,6 +250,7 @@ const createAuditEvent = ({
   reason,
   resource,
   tenantId: context.tenantId,
+  traceId: context.traceId,
 });
 
 const scopedStorageKey = ({
@@ -290,6 +292,7 @@ const durableAuditEventToSandboxAuditEvent = (
   reason: getAuditAttributeString(event, "reason") ?? event.eventType,
   resource: getAuditAttributeString(event, "resource"),
   tenantId: getAuditAttributeString(event, "tenantId") ?? context.tenantId,
+  traceId: event.correlation.traceId ?? context.traceId,
 });
 
 const createSandboxDurableAuditLayer = (
@@ -320,6 +323,7 @@ interface SandboxBridgeFailureRecord {
   readonly pluginId: string;
   readonly reason?: string;
   readonly resource?: string;
+  readonly traceId?: string;
 }
 
 const isSandboxBridgeFailureCode = (
@@ -358,6 +362,7 @@ const sandboxBridgeFailureToRuntimeError = (
     message: failure.message,
     pluginId: failure.pluginId,
     reason: failure.reason ?? failure.resource,
+    traceId: failure.traceId ?? context.traceId,
   });
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
@@ -392,6 +397,7 @@ const createBridgeExecutionFailure = (
     correlationId: context.correlationId,
     message: "Sandbox bridge audit persistence failed.",
     pluginId: context.pluginId,
+    traceId: context.traceId,
   });
 
 const sandboxRuntimeErrorCodes = new Set<SandboxPluginRuntimeError["code"]>([
@@ -482,6 +488,7 @@ const assertStorageNamespace = async ({
     pluginId: context.pluginId,
     correlationId: context.correlationId,
     reason: namespace,
+    traceId: context.traceId,
   });
 };
 
@@ -592,6 +599,7 @@ export const createSandboxBridge = ({
             pluginId: context.pluginId,
             correlationId: context.correlationId,
             reason: requiredPermission,
+            traceId: context.traceId,
           });
         }
       }
@@ -605,6 +613,7 @@ export const createSandboxBridge = ({
           pluginId: context.pluginId,
           correlationId: context.correlationId,
           reason: action,
+          traceId: context.traceId,
         });
       }
 
@@ -647,6 +656,7 @@ export const createSandboxBridge = ({
           pluginId: context.pluginId,
           correlationId: context.correlationId,
           reason: event.resource,
+          traceId: context.traceId,
         });
       }
 
@@ -676,6 +686,7 @@ export const createSandboxBridge = ({
           message: "Sandbox route response shape is invalid.",
           pluginId: context.pluginId,
           correlationId: context.correlationId,
+          traceId: context.traceId,
         });
       }
 
@@ -732,7 +743,8 @@ const createWorkerCode = (
 const parseEntrypointResponse = async (
   value: Response | unknown,
   pluginId: string,
-  correlationId: string
+  correlationId: string,
+  traceId?: string
 ): Promise<SandboxEntrypointResponse> => {
   const candidate = value instanceof Response ? await value.json() : value;
 
@@ -742,6 +754,7 @@ const parseEntrypointResponse = async (
       message: "Sandbox entrypoint returned an invalid response shape.",
       pluginId,
       correlationId,
+      traceId,
     });
   }
 
@@ -758,6 +771,7 @@ const createSandboxInvocationTimeoutError = (
     message: `Sandbox plugin invocation timed out after ${timeoutMs}ms.`,
     pluginId: input.manifest.id,
     reason: "timeout",
+    traceId: input.bridgeContext.traceId,
   });
 
 const withOptionalInvocationTimeout = <Value>({
@@ -799,6 +813,7 @@ export const createCloudflareSandboxPluginRunner = ({
         message: "Cloudflare Worker Loader binding is required.",
         pluginId: input.manifest.id,
         correlationId: input.bridgeContext.correlationId,
+        traceId: input.bridgeContext.traceId,
       });
     }
 
@@ -812,6 +827,7 @@ export const createCloudflareSandboxPluginRunner = ({
         message: `Sandbox entrypoint "${input.entrypointKey}" is not declared.`,
         pluginId: input.manifest.id,
         correlationId: input.bridgeContext.correlationId,
+        traceId: input.bridgeContext.traceId,
       });
     }
 
@@ -868,7 +884,8 @@ export const createCloudflareSandboxPluginRunner = ({
             parseEntrypointResponse(
               value,
               input.manifest.id,
-              input.bridgeContext.correlationId
+              input.bridgeContext.correlationId,
+              input.bridgeContext.traceId
             )
           ),
         timeoutMs: invocationTimeoutMs,
@@ -891,6 +908,7 @@ export const createCloudflareSandboxPluginRunner = ({
             pluginId: input.manifest.id,
             correlationId: input.bridgeContext.correlationId,
             reason: "defect",
+            traceId: input.bridgeContext.traceId,
           });
 
       await emitAudit(

@@ -29,6 +29,7 @@ export interface CloudflareQueueTelemetryEvent {
   readonly kind: "queue.publish.failed" | "queue.publish.succeeded";
   readonly messageId: string;
   readonly queueName: string;
+  readonly traceId?: string;
   readonly type: string;
   readonly correlationId: string;
   readonly workflowRunId?: string;
@@ -76,6 +77,7 @@ export const createCloudflareQueuePublisher = ({
         kind: "queue.publish.failed",
         messageId: message.id,
         queueName: message.queueName,
+        traceId: message.traceId,
         type: message.type,
         workflowRunId: message.workflowRunId,
       });
@@ -87,6 +89,7 @@ export const createCloudflareQueuePublisher = ({
       kind: "queue.publish.succeeded",
       messageId: message.id,
       queueName: message.queueName,
+      traceId: message.traceId,
       type: message.type,
       workflowRunId: message.workflowRunId,
     });

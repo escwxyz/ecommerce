@@ -64,6 +64,7 @@ export const outboxRecordToQueueMessage = (
   payload: record.event.payload,
   queueName: record.topic,
   subject: record.event.subject,
+  traceId: record.event.traceId,
   type: record.event.name,
   workflowRunId: record.event.workflowRunId,
 });

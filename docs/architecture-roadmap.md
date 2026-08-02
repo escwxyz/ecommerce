@@ -379,8 +379,13 @@ architecture:
 - Section 11.1 selects the first Cloudflare telemetry exporter. The platform
   package now exposes `createCloudflareTelemetryLayer`, a Workers Logs exporter
   that installs Effect logger and tracer Layers and writes sanitized structured
-  log/span records to the Worker `console`. Metric shipping and broader
-  correlation propagation remain in the later observability tasks.
+  log/span records to the Worker `console`.
+- Section 11.2 adds the shared `CorrelationContext` propagation helpers and
+  carries optional trace identity across HTTP ingress, storefront SDK HTTP and
+  Service Binding transports, PostgreSQL outbox rows, queue messages, workflow
+  state/events/dispatch, Durable Object actor commands, sandbox plugin bridge
+  context, and provider operation inputs. Metric shipping remains in the later
+  observability tasks.
 - Repository-wide removal of Hono, oRPC, Zod, Kysely, and completed temporary
   bridges is deferred to section 12 after all dependent slices migrate.
 

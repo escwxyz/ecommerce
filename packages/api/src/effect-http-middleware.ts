@@ -15,6 +15,7 @@ import type {
   OperationTelemetryOptions,
 } from "@ecommerce/core/telemetry";
 import {
+  correlationContextFromHeaders,
   sanitizeTelemetryAttributes,
   withOperationTelemetry,
 } from "@ecommerce/core/telemetry";
@@ -51,6 +52,7 @@ export const EffectHttpRequestIdGenerator =
 
 /** Request-scoped values installed before endpoint handlers run. */
 export interface EffectHttpRequestContext {
+  readonly correlation: CorrelationContext;
   readonly deadlineAtEpochMillis: number;
   readonly headers: Headers;
   readonly identity: EffectHttpRequestIdentity;
@@ -156,27 +158,6 @@ export interface CreateEffectHttpRequestContextOptions {
   readonly path: string;
 }
 
-const getHeader = (
-  headers: Readonly<Record<string, string | undefined>>,
-  name: string
-): string | undefined => {
-  const value = headers[name.toLowerCase()] ?? headers[name];
-  return value && value.trim().length > 0 ? value.trim() : undefined;
-};
-
-const getTraceId = (
-  headers: Readonly<Record<string, string | undefined>>
-): string | undefined => {
-  const explicitTraceId = getHeader(headers, "x-trace-id");
-  if (explicitTraceId) {
-    return explicitTraceId;
-  }
-
-  const traceparent = getHeader(headers, "traceparent");
-  const traceId = traceparent?.split("-")[1];
-  return traceId && traceId.length > 0 ? traceId : undefined;
-};
-
 const getRequestPath = (request: HttpServerRequest): string => {
   const url = new URL(request.url, "http://effect-http.local");
   return url.pathname;
@@ -278,17 +259,20 @@ export const createEffectHttpRequestContext = ({
   Effect.gen(function* createContext() {
     const generator = yield* EffectHttpRequestIdGenerator;
     const generatedRequestId = yield* generator.nextId();
-    const requestId = getHeader(headers, "x-request-id") ?? generatedRequestId;
-    const correlationId = getHeader(headers, "x-correlation-id") ?? requestId;
+    const correlation = correlationContextFromHeaders(
+      headers,
+      generatedRequestId
+    );
     const startedAtEpochMillis = yield* Clock.currentTimeMillis;
 
     return {
       deadlineAtEpochMillis: startedAtEpochMillis + defaultDeadlineMillis,
+      correlation,
       headers: createHeaders(headers),
       identity: {
-        correlationId,
-        requestId,
-        traceId: getTraceId(headers),
+        correlationId: correlation.operationId ?? correlation.requestId,
+        requestId: correlation.requestId,
+        traceId: correlation.traceId,
       },
       method,
       path,
@@ -491,9 +475,8 @@ export const withEffectHttpTelemetry = <A, E, R>(
           httpPath: context.path,
         }),
         correlation: {
-          operationId: context.identity.correlationId,
-          requestId: context.identity.requestId,
-          traceId: context.identity.traceId,
+          ...context.correlation,
+          operationId: context.correlation.operationId,
         } satisfies CorrelationContext,
       })
     )

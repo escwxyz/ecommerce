@@ -271,6 +271,7 @@ export interface SandboxBridgeContext {
   readonly tenantId: string;
   readonly scopeId?: string;
   readonly correlationId: string;
+  readonly traceId?: string;
   readonly lifecycleState: SandboxPluginLifecycleState;
   readonly grantedCapabilities: readonly SandboxBridgeCapability[];
   readonly grantedAllowedHosts: readonly string[];
@@ -299,6 +300,7 @@ export interface SandboxAuditEvent {
   readonly decision: SandboxAuditDecision;
   readonly reason: string;
   readonly correlationId: string;
+  readonly traceId?: string;
   readonly tenantId: string;
   readonly lifecycleState?: SandboxPluginLifecycleState;
   readonly entrypointKey?: string;
@@ -318,6 +320,7 @@ export interface SandboxPluginRuntimeError {
   readonly message: string;
   readonly pluginId: string;
   readonly correlationId?: string;
+  readonly traceId?: string;
   readonly reason?: string;
 }
 
@@ -373,6 +376,7 @@ export interface NativePluginLifecycleContext {
   readonly toState: NativePluginLifecycleState;
   readonly fromVersion?: string;
   readonly toVersion?: string;
+  readonly traceId?: string;
 }
 
 export type NativePluginLifecycleHook<Error = never, Requirements = never> = (
@@ -784,6 +788,7 @@ export const assertSandboxBridgeCapability = (
     reason: `Capability "${decodedOperation.capability}" is not granted.`,
     resource: decodedOperation.resource,
     tenantId: decodedContext.tenantId,
+    traceId: decodedContext.traceId,
   };
 };
 

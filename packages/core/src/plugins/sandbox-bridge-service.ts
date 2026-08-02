@@ -32,6 +32,7 @@ export class SandboxBridgeFailure extends Schema.TaggedErrorClass<SandboxBridgeF
     reason: Schema.optional(Schema.NonEmptyString),
     resource: Schema.optional(Schema.NonEmptyString),
     tenantId: Schema.NonEmptyString,
+    traceId: Schema.optional(Schema.NonEmptyString),
   }
 ) {}
 
@@ -102,6 +103,7 @@ const fallbackContext = (context: unknown): SandboxBridgeFailureContext => ({
   lifecycleState: getStringProperty(context, "lifecycleState"),
   pluginId: getStringProperty(context, "pluginId") ?? UNKNOWN_VALUE,
   tenantId: getStringProperty(context, "tenantId") ?? UNKNOWN_VALUE,
+  traceId: getStringProperty(context, "traceId"),
 });
 
 const fallbackOperationType = (operation: unknown): string =>
@@ -112,6 +114,7 @@ interface SandboxBridgeFailureContext {
   readonly lifecycleState?: string;
   readonly pluginId: string;
   readonly tenantId: string;
+  readonly traceId?: string;
 }
 
 const contextFromDecoded = (
@@ -121,6 +124,7 @@ const contextFromDecoded = (
   lifecycleState: context.lifecycleState,
   pluginId: context.pluginId,
   tenantId: context.tenantId,
+  traceId: context.traceId,
 });
 
 const createAuditEvent = ({
@@ -149,6 +153,7 @@ const createAuditEvent = ({
   },
   correlation: {
     requestId: context.correlationId ?? UNKNOWN_VALUE,
+    traceId: context.traceId,
   },
   eventId: [
     "sandbox-bridge",
@@ -203,6 +208,7 @@ const failWithAudit = ({
           reason,
           resource,
           tenantId: context.tenantId,
+          traceId: context.traceId,
         })
       )
     )
@@ -216,11 +222,13 @@ const decodeContext = (
     catch: () =>
       new SandboxBridgeFailure({
         code: "invalid-input",
+        correlationId: fallbackContext(context).correlationId,
         message: "Sandbox bridge context failed schema decoding.",
         operationType: UNKNOWN_VALUE,
         pluginId: fallbackContext(context).pluginId,
         reason: "context",
         tenantId: fallbackContext(context).tenantId,
+        traceId: fallbackContext(context).traceId,
       }),
   });
 
@@ -240,6 +248,7 @@ const decodeOperation = (
         pluginId: context.pluginId,
         reason: "operation",
         tenantId: context.tenantId,
+        traceId: context.traceId,
       }),
   });
 
@@ -426,6 +435,7 @@ export const createSandboxCapabilityBridgeService = ({
         correlation: {
           requestId:
             getStringProperty(input.context, "correlationId") ?? UNKNOWN_VALUE,
+          traceId: getStringProperty(input.context, "traceId"),
         },
         name: "plugin.sandbox.bridge",
       });

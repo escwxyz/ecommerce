@@ -1133,6 +1133,7 @@ describe("cloudflare workflow runtime adapter", () => {
       idempotencyKey: "queue:layer",
       payload: { ok: true },
       queueName: "commerce-work",
+      traceId: "trace_queue_layer",
       type: "commerce.test",
     });
     const layer = createCloudflareQueuePublisherLayer({
@@ -1161,6 +1162,7 @@ describe("cloudflare workflow runtime adapter", () => {
         correlationId: "corr_queue_layer",
         kind: "queue.publish.failed",
         messageId: "msg_queue_layer",
+        traceId: "trace_queue_layer",
       },
     ]);
   });
@@ -1458,6 +1460,7 @@ const createBridgeContext = () => ({
   pluginId: "tax-sandbox",
   pluginVersion: "1.0.0",
   tenantId: "tenant_1",
+  traceId: "trace_sandbox_1",
 });
 
 describe("cloudflare sandbox plugin runtime", () => {
@@ -1539,6 +1542,7 @@ describe("cloudflare sandbox plugin runtime", () => {
       decision: "allow",
       operationType: "invoke",
       pluginId: "tax-sandbox",
+      traceId: "trace_sandbox_1",
     });
   });
 
@@ -1566,6 +1570,7 @@ describe("cloudflare sandbox plugin runtime", () => {
     ).rejects.toMatchObject({
       code: "platform-capability-unavailable",
       pluginId: "tax-sandbox",
+      traceId: "trace_sandbox_1",
     });
   });
 
@@ -1666,6 +1671,10 @@ describe("cloudflare sandbox plugin runtime", () => {
       "bridge",
       "context",
     ]);
+    expect(exposedEnv?.context).toMatchObject({
+      correlationId: "corr_sandbox_1",
+      traceId: "trace_sandbox_1",
+    });
     expect(Object.keys(exposedEnv?.bridge ?? {}).toSorted()).toEqual([
       "commerceAction",
       "emitEvent",
@@ -1754,14 +1763,17 @@ describe("cloudflare sandbox plugin runtime", () => {
           decision: "deny",
           operationType: "storage",
           resource: "secrets",
+          traceId: "trace_sandbox_1",
         }),
         expect.objectContaining({
           decision: "deny",
           operationType: "fetch",
+          traceId: "trace_sandbox_1",
         }),
         expect.objectContaining({
           decision: "deny",
           operationType: "routeResponse",
+          traceId: "trace_sandbox_1",
         }),
       ])
     );

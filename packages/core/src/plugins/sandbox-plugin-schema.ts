@@ -286,6 +286,7 @@ export const SandboxBridgeContextSchema = Schema.Struct({
   pluginVersion: SandboxPluginVersionSchema,
   scopeId: Schema.optional(SandboxPluginTrimmedStringSchema),
   tenantId: SandboxPluginTrimmedStringSchema,
+  traceId: Schema.optional(SandboxPluginTrimmedStringSchema),
 });
 
 export type SandboxBridgeContext = typeof SandboxBridgeContextSchema.Type;
@@ -346,6 +347,7 @@ export const SandboxAuditEventSchema = Schema.Struct({
   reason: SandboxPluginTrimmedStringSchema,
   resource: Schema.optional(SandboxPluginTrimmedStringSchema),
   tenantId: SandboxPluginTrimmedStringSchema,
+  traceId: Schema.optional(SandboxPluginTrimmedStringSchema),
 });
 
 export type SandboxAuditEvent = typeof SandboxAuditEventSchema.Type;
@@ -365,6 +367,7 @@ export const SandboxPluginRuntimeErrorSchema = Schema.Struct({
   message: SandboxPluginTrimmedStringSchema,
   pluginId: SandboxPluginIdSchema,
   reason: Schema.optional(SandboxPluginTrimmedStringSchema),
+  traceId: Schema.optional(SandboxPluginTrimmedStringSchema),
 });
 
 export type SandboxPluginRuntimeError =

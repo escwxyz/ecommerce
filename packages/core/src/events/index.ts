@@ -15,6 +15,7 @@ export interface CommerceEventEnvelope<
   };
   readonly correlationId?: string;
   readonly causationId?: string;
+  readonly traceId?: string;
   readonly workflowRunId?: string;
 }
 

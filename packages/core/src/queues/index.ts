@@ -17,6 +17,7 @@ export interface CommerceQueueMessageMetadata {
   readonly idempotencyKey: string;
   readonly causationId?: string;
   readonly subject?: CommerceQueueSubject;
+  readonly traceId?: string;
   readonly workflowRunId?: string;
 }
 

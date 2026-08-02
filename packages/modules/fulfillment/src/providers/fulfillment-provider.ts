@@ -1,3 +1,4 @@
+import type { CorrelationContext } from "@ecommerce/core";
 import { Effect } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 
@@ -37,12 +38,14 @@ export interface FulfillmentProviderValidationResult {
 
 export interface FulfillmentProviderRateInput {
   readonly address?: FulfillmentAddress;
+  readonly correlation?: CorrelationContext;
   readonly items?: readonly FulfillmentLineItem[];
   readonly providerServiceId: string;
 }
 
 export interface FulfillmentProviderCreateInput {
   readonly address?: FulfillmentAddress;
+  readonly correlation?: CorrelationContext;
   readonly idempotencyKey: string;
   readonly items: readonly FulfillmentLineItem[];
   readonly orderId: string;
@@ -50,11 +53,13 @@ export interface FulfillmentProviderCreateInput {
 }
 
 export interface FulfillmentProviderCancelInput {
+  readonly correlation?: CorrelationContext;
   readonly providerFulfillmentId: string;
   readonly reason?: string;
 }
 
 export interface FulfillmentProviderTrackInput {
+  readonly correlation?: CorrelationContext;
   readonly providerFulfillmentId: string;
 }
 

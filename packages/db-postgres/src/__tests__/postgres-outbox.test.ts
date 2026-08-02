@@ -32,6 +32,7 @@ const event = createEventEnvelope({
     id: "store_1",
     type: "store",
   },
+  traceId: "trace_1",
   workflowRunId: "workflow_1",
 });
 
@@ -61,6 +62,7 @@ const createOutboxRow = (): CommerceOutboxRow => ({
   status: "claimed",
   subjectId: event.subject?.id ?? null,
   subjectType: event.subject?.type ?? null,
+  traceId: event.traceId ?? null,
   topic: message.topic,
   transactionId: "transaction_1",
   updatedAt: fixedDate,
@@ -92,6 +94,7 @@ describe("PostgreSQL transactional outbox", () => {
       status: "pending",
       subjectId: "store_1",
       subjectType: "store",
+      traceId: "trace_1",
       topic: "commerce.events",
       transactionId: "transaction_1",
       updatedAt: fixedDate,

@@ -26,6 +26,7 @@ const context: SandboxBridgeContext = {
   pluginId: "tax-sandbox",
   pluginVersion: "1.0.0",
   tenantId: "tenant_1",
+  traceId: "trace_sandbox_1",
 };
 
 const storageReadOperation: SandboxBridgeOperation = {
@@ -96,6 +97,7 @@ describe("sandbox capability bridge service", () => {
       },
       correlation: {
         requestId: "corr_1",
+        traceId: "trace_sandbox_1",
       },
       eventType: "sandbox.bridge.allow",
       subjectId: "tax-sandbox",
@@ -139,12 +141,16 @@ describe("sandbox capability bridge service", () => {
     );
     expectSandboxBridgeFailure(failure);
     expect(expectSandboxBridgeFailure(failure).code).toBe("capability-denied");
+    expect(expectSandboxBridgeFailure(failure).traceId).toBe("trace_sandbox_1");
     expect(result.auditEvents).toHaveLength(1);
     expect(result.auditEvents[0]).toMatchObject({
       attributes: {
         decision: "deny",
         operationType: "storageRead",
         reason: 'Capability "bridge:storage" is not granted.',
+      },
+      correlation: {
+        traceId: "trace_sandbox_1",
       },
       eventType: "sandbox.bridge.deny",
     });

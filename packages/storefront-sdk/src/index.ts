@@ -8,5 +8,6 @@ export type {
   StorefrontHttpClient,
   StorefrontHttpClientRequirements,
   StorefrontHttpTransportOptions,
+  StorefrontSdkCorrelationContext,
   StorefrontHttpApi,
 } from "./http";

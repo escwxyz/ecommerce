@@ -23,8 +23,17 @@ export type StorefrontHttpClient<Groups extends HttpApiGroup.Any> =
 export type StorefrontHttpClientRequirements<Groups extends HttpApiGroup.Any> =
   HttpApiGroup.MiddlewareClient<Groups>;
 
+export interface StorefrontSdkCorrelationContext {
+  readonly operationId?: string;
+  readonly parentSpanId?: string;
+  readonly requestId: string;
+  readonly sampled?: boolean;
+  readonly traceId?: string;
+}
+
 export interface StorefrontHttpTransportOptions {
   readonly baseUrl: string | URL;
+  readonly correlation?: StorefrontSdkCorrelationContext;
   readonly fetch?: typeof globalThis.fetch;
   readonly requestInit?: RequestInit;
 }
@@ -35,6 +44,43 @@ export interface CreateStorefrontHttpClientForApiOptions<
 > extends StorefrontHttpTransportOptions {
   readonly api: HttpApi.HttpApi<ApiId, Groups>;
 }
+
+const mergeHeaders = (
+  requestInit: RequestInit | undefined,
+  correlation: StorefrontSdkCorrelationContext | undefined
+): RequestInit | undefined => {
+  if (!correlation) {
+    return requestInit;
+  }
+
+  const headers = new Headers(requestInit?.headers);
+  const propagatedHeaders: Record<string, string> = {
+    "x-correlation-id": correlation.operationId ?? correlation.requestId,
+    "x-request-id": correlation.requestId,
+  };
+  if (correlation.traceId) {
+    propagatedHeaders["x-trace-id"] = correlation.traceId;
+  }
+  if (correlation.traceId && correlation.parentSpanId) {
+    propagatedHeaders.traceparent = [
+      "00",
+      correlation.traceId,
+      correlation.parentSpanId,
+      correlation.sampled ? "01" : "00",
+    ].join("-");
+  }
+
+  for (const [name, value] of Object.entries(propagatedHeaders)) {
+    if (!headers.has(name)) {
+      headers.set(name, value);
+    }
+  }
+
+  return {
+    ...requestInit,
+    headers,
+  };
+};
 
 /**
  * Creates a fetch-based storefront SDK client from an explicit Effect HttpApi
@@ -48,6 +94,7 @@ export const createStorefrontHttpClientForApi = <
 >({
   api,
   baseUrl,
+  correlation,
   fetch,
   requestInit,
 }: CreateStorefrontHttpClientForApiOptions<ApiId, Groups>): Effect.Effect<
@@ -63,12 +110,14 @@ export const createStorefrontHttpClientForApi = <
       ? client
       : Effect.provideService(client, FetchHttpClient.Fetch, fetch);
 
-  return requestInit === undefined
+  const propagatedRequestInit = mergeHeaders(requestInit, correlation);
+
+  return propagatedRequestInit === undefined
     ? clientWithFetch
     : Effect.provideService(
         clientWithFetch,
         FetchHttpClient.RequestInit,
-        requestInit
+        propagatedRequestInit
       );
 };
 

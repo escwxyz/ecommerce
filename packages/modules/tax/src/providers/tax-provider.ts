@@ -1,3 +1,4 @@
+import type { CorrelationContext } from "@ecommerce/core";
 import { Effect } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 
@@ -10,6 +11,7 @@ import type {
 } from "../domain";
 
 export interface TaxProviderCalculationContext {
+  readonly correlation?: CorrelationContext;
   readonly createLineId: () => TaxLine["id"];
   readonly currencyCode: string;
   readonly rates: readonly TaxRateRecord[];

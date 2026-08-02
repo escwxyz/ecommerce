@@ -41,6 +41,11 @@ const provideRequestIdGenerator = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   });
 
 const requestContext = {
+  correlation: {
+    operationId: "corr_1",
+    requestId: "req_1",
+    traceId: "trace_1",
+  },
   deadlineAtEpochMillis: Number.MAX_SAFE_INTEGER,
   headers: new Headers({ cookie: "better-auth.session=token" }),
   identity: {
@@ -135,6 +140,13 @@ describe("Effect HTTP middleware foundation", () => {
     expect(fromHeaders.identity).toEqual({
       correlationId: "corr_header",
       requestId: "req_header",
+      traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+    });
+    expect(fromHeaders.correlation).toEqual({
+      operationId: "corr_header",
+      parentSpanId: "00f067aa0ba902b7",
+      requestId: "req_header",
+      sampled: false,
       traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
     });
     expect(generated.identity.correlationId).toBe("req_generated");

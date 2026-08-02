@@ -15,6 +15,9 @@ import {
 import {
   AuditPersistenceUnavailable,
   DurableAudit,
+  correlationContextFromHeaders,
+  correlationContextToHeaders,
+  correlationContextToTelemetryAttributes,
   isCommerceOperationName,
   operationOutcomeFromCause,
   recordDurableAudit,
@@ -23,6 +26,38 @@ import {
 } from "../index";
 
 describe("Effect telemetry conventions", () => {
+  it("parses, serializes, and sanitizes portable correlation context", () => {
+    const context = correlationContextFromHeaders(
+      {
+        traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        "x-correlation-id": "corr_1",
+        "x-request-id": "req_1",
+      },
+      "req_generated"
+    );
+
+    expect(context).toEqual({
+      operationId: "corr_1",
+      parentSpanId: "00f067aa0ba902b7",
+      requestId: "req_1",
+      sampled: true,
+      traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+    });
+    expect(correlationContextToHeaders(context)).toEqual({
+      traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+      "x-correlation-id": "corr_1",
+      "x-request-id": "req_1",
+      "x-trace-id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    });
+    expect(correlationContextToTelemetryAttributes(context)).toEqual({
+      operationId: "corr_1",
+      parentSpanId: "00f067aa0ba902b7",
+      requestId: "req_1",
+      sampled: true,
+      traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+    });
+  });
+
   it("redacts protected keys and rejects unbounded attribute values", () => {
     const rawSecret = "postgres://commerce:secret@localhost/commerce";
     const attributes = sanitizeTelemetryAttributes({

@@ -70,6 +70,7 @@ export const commerceOutbox = pgTable(
     status: text("status").notNull().default("pending"),
     subjectId: text("subject_id"),
     subjectType: text("subject_type"),
+    traceId: text("trace_id"),
     topic: text("topic").notNull(),
     transactionId: text("transaction_id").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

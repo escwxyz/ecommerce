@@ -1,3 +1,4 @@
+import { correlationContextToHeaders } from "@ecommerce/core";
 import {
   KeyedActorCommandFailure,
   KeyedActorCommandSchema,
@@ -86,10 +87,34 @@ const readFailureMessage = async (response: Response): Promise<string> => {
   }
 };
 
+const actorRequestHeaders = (
+  correlation:
+    | {
+        readonly correlationId: string;
+        readonly requestId?: string;
+        readonly traceId?: string;
+      }
+    | undefined
+): HeadersInit => ({
+  "content-type": "application/json",
+  ...(correlation
+    ? correlationContextToHeaders({
+        operationId: correlation.correlationId,
+        requestId: correlation.requestId ?? correlation.correlationId,
+        traceId: correlation.traceId,
+      })
+    : {}),
+});
+
 const sendActorRequest = (
   namespace: CloudflareKeyedActorNamespace,
   actor: KeyedActorReference,
-  body: unknown
+  body: unknown,
+  correlation?: {
+    readonly correlationId: string;
+    readonly requestId?: string;
+    readonly traceId?: string;
+  }
 ): Effect.Effect<unknown, CloudflareKeyedActorTransportFailureError> =>
   Effect.tryPromise({
     catch: (cause) =>
@@ -103,9 +128,7 @@ const sendActorRequest = (
       const response = await namespace.getByName(actorName(actor)).fetch(
         new Request("https://keyed-actor.internal/", {
           body: JSON.stringify(body),
-          headers: {
-            "content-type": "application/json",
-          },
+          headers: actorRequestHeaders(correlation),
           method: "POST",
         })
       );
@@ -172,10 +195,18 @@ export const createCloudflareKeyedActorLayer = ({
     keyedActorLayer({
       dispatch: (command) =>
         Effect.gen(function* dispatchCloudflareActorCommand() {
-          const body = yield* sendActorRequest(namespace, command.actor, {
-            command,
-            operation: "dispatch",
-          }).pipe(Effect.mapError((cause) => toCommandFailure(command, cause)));
+          const body = yield* sendActorRequest(
+            namespace,
+            command.actor,
+            {
+              command,
+              operation: "dispatch",
+            },
+            {
+              correlationId: command.correlationId,
+              traceId: command.traceId,
+            }
+          ).pipe(Effect.mapError((cause) => toCommandFailure(command, cause)));
           const response = yield* Schema.decodeUnknownEffect(
             CloudflareKeyedActorDispatchResponseSchema
           )(body).pipe(
@@ -232,10 +263,18 @@ export const createCloudflareKeyedActorLayer = ({
           timerId: timer.timerId,
         };
         return Effect.gen(function* scheduleCloudflareActorTimer() {
-          const body = yield* sendActorRequest(namespace, timer.command.actor, {
-            operation: "timer-schedule",
-            timer,
-          }).pipe(Effect.mapError((cause) => toTimerFailure(reference, cause)));
+          const body = yield* sendActorRequest(
+            namespace,
+            timer.command.actor,
+            {
+              operation: "timer-schedule",
+              timer,
+            },
+            {
+              correlationId: timer.command.correlationId,
+              traceId: timer.command.traceId,
+            }
+          ).pipe(Effect.mapError((cause) => toTimerFailure(reference, cause)));
           const response = yield* Schema.decodeUnknownEffect(
             CloudflareKeyedActorTimerResponseSchema
           )(body).pipe(
@@ -338,6 +377,7 @@ export const createCloudflareStatefulCoordinator = ({
             payload: request.payload,
             schemaVersion: 1,
             subject: request.subject,
+            traceId: request.traceId,
             workflowRunId: request.workflowRunId,
           });
           const actors = yield* KeyedActorService;
@@ -353,6 +393,7 @@ export const createCloudflareStatefulCoordinator = ({
             operationName: result.commandName,
             output: result.output as Output,
             subject: result.subject,
+            traceId: result.traceId,
             workflowRunId: result.workflowRunId,
           };
         }).pipe(Effect.provide(layer))

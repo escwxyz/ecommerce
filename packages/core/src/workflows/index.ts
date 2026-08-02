@@ -181,6 +181,7 @@ export const CommerceWorkflowRunStateSchema = Schema.Struct({
   schemaVersion: CommerceWorkflowSchemaVersionSchema,
   status: CommerceWorkflowRunStatusSchema,
   subject: Schema.optional(CommerceWorkflowSubjectSchema),
+  traceId: Schema.optional(CommerceWorkflowTrimmedStringSchema),
   updatedAt: CommerceWorkflowIsoDateTimeStringSchema,
   workflowKey: CommerceWorkflowKeySchema,
   workflowVersion: CommerceWorkflowVersionSchema,
@@ -214,6 +215,7 @@ export interface CommerceWorkflowContext {
   readonly causationId?: string;
   readonly idempotencyKey?: CommerceWorkflowIdempotencyKey;
   readonly subject?: CommerceWorkflowSubject;
+  readonly traceId?: string;
 }
 
 export interface CommerceWorkflowStepResult<Output = unknown> {
@@ -338,6 +340,7 @@ export interface CommerceWorkflowRunRecord<
   readonly causationId?: string;
   readonly idempotencyKey?: CommerceWorkflowIdempotencyKey;
   readonly subject?: CommerceWorkflowSubject;
+  readonly traceId?: string;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly completedAt?: Date;
@@ -358,6 +361,7 @@ export interface CommerceWorkflowStartRequest<
   readonly idempotencyKey?: CommerceWorkflowIdempotencyKey;
   readonly runId?: CommerceWorkflowRunId;
   readonly subject?: CommerceWorkflowSubject;
+  readonly traceId?: string;
   readonly metadata?: Metadata;
 }
 
@@ -379,6 +383,7 @@ export interface CommerceWorkflowMetadataRecord {
   readonly causationId?: string;
   readonly idempotencyKey?: CommerceWorkflowIdempotencyKey;
   readonly subject?: CommerceWorkflowSubject;
+  readonly traceId?: string;
   readonly metadata?: Record<string, unknown>;
   readonly updatedAt: Date;
 }
@@ -478,6 +483,7 @@ interface WorkflowLifecycleEventBase<
   readonly causationId?: string;
   readonly idempotencyKey?: CommerceWorkflowIdempotencyKey;
   readonly subject?: CommerceWorkflowSubject;
+  readonly traceId?: string;
   readonly occurredAt: Date;
 }
 

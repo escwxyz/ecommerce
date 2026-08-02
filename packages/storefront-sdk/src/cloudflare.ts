@@ -6,6 +6,7 @@ import { createStorefrontHttpClientForApi, storefrontSdkHttpApi } from "./http";
 import type {
   StorefrontHttpClient,
   StorefrontHttpClientRequirements,
+  StorefrontSdkCorrelationContext,
 } from "./http";
 
 export const DEFAULT_STOREFRONT_SERVICE_BINDING_BASE_URL =
@@ -28,6 +29,7 @@ export interface StorefrontServiceBinding {
 export interface StorefrontServiceBindingTransportOptions {
   readonly baseUrl?: string | URL;
   readonly binding: StorefrontServiceBinding;
+  readonly correlation?: StorefrontSdkCorrelationContext;
   readonly requestInit?: RequestInit;
 }
 
@@ -62,6 +64,7 @@ export const createStorefrontServiceBindingClientForApi = <
   api,
   baseUrl = DEFAULT_STOREFRONT_SERVICE_BINDING_BASE_URL,
   binding,
+  correlation,
   requestInit,
 }: CreateStorefrontServiceBindingClientForApiOptions<
   ApiId,
@@ -74,6 +77,7 @@ export const createStorefrontServiceBindingClientForApi = <
   createStorefrontHttpClientForApi({
     api,
     baseUrl,
+    correlation,
     fetch: createServiceBindingFetch(binding),
     requestInit,
   });

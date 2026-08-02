@@ -2,7 +2,12 @@ import type {
   ClockServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
-import { ClockService, IdGeneratorService } from "@ecommerce/core";
+import {
+  ClockService,
+  IdGeneratorService,
+  correlationContextFromHeaders,
+  createCorrelationContext,
+} from "@ecommerce/core";
 import { Context, Effect, Layer } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
@@ -145,6 +150,9 @@ const normalizeCurrencyCode = (currencyCode: string): string =>
 
 const mapProviderFailure = (message: string) =>
   new PaymentValidationFailure({ message });
+
+const providerCorrelation = (idempotencyKey: string) =>
+  createCorrelationContext({ requestId: idempotencyKey });
 
 const requireProvider = (
   registry: PaymentProviderRegistry,
@@ -384,6 +392,9 @@ export const createPaymentService = ({
         );
         const providerMethod = yield* provider
           .attachPaymentMethod({
+            correlation: providerCorrelation(
+              `${accountHolder.id}:attach-payment-method:${input.providerPaymentMethodId}`
+            ),
             customerId: accountHolder.providerAccountHolderId,
             providerPaymentMethodId: input.providerPaymentMethodId,
           })
@@ -431,6 +442,7 @@ export const createPaymentService = ({
               currencyCode: session.currencyCode,
             },
             captureMethod: "manual",
+            correlation: providerCorrelation(input.idempotencyKey),
             idempotencyKey: input.idempotencyKey,
             metadata: session.metadata,
             paymentMethodId: method?.providerPaymentMethodId,
@@ -483,6 +495,7 @@ export const createPaymentService = ({
               amount,
               currencyCode: payment.currencyCode,
             },
+            correlation: providerCorrelation(input.idempotencyKey),
             idempotencyKey: input.idempotencyKey,
             paymentIntentId: payment.providerPaymentIntentId,
           })
@@ -523,6 +536,11 @@ export const createPaymentService = ({
         );
         const providerCustomer = yield* provider
           .createCustomer({
+            correlation: providerCorrelation(
+              `account-holder:${input.providerKey}:${
+                input.email ?? input.name ?? "anonymous"
+              }`
+            ),
             email: input.email,
             metadata: input.metadata,
             name: input.name,
@@ -597,6 +615,7 @@ export const createPaymentService = ({
                     currencyCode: collection.currencyCode,
                   },
                   cancelUrl: input.cancelUrl,
+                  correlation: providerCorrelation(input.idempotencyKey),
                   customerId: accountHolder?.providerAccountHolderId,
                   idempotencyKey: input.idempotencyKey,
                   metadata: input.metadata,
@@ -654,7 +673,14 @@ export const createPaymentService = ({
       Effect.gen(function* parsePaymentProviderWebhookEffect() {
         const provider = yield* requireProvider(providerRegistry, providerKey);
         const result = yield* provider
-          .parseWebhook({ headers, payload })
+          .parseWebhook({
+            correlation: correlationContextFromHeaders(
+              headers,
+              `webhook:${providerKey}`
+            ),
+            headers,
+            payload,
+          })
           .pipe(
             Effect.mapError(() =>
               mapProviderFailure("Payment webhook parsing failed.")
@@ -697,6 +723,7 @@ export const createPaymentService = ({
               amount,
               currencyCode: payment.currencyCode,
             },
+            correlation: providerCorrelation(input.idempotencyKey),
             idempotencyKey: input.idempotencyKey,
             paymentIntentId: payment.providerPaymentIntentId,
             reason: input.reason,

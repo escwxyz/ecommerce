@@ -56,6 +56,7 @@ interface PostgresOutboxClaimRow extends Record<string, unknown> {
   readonly status: string;
   readonly subjectId: string | null;
   readonly subjectType: string | null;
+  readonly traceId: string | null;
   readonly topic: string;
   readonly transactionId: string;
   readonly workflowRunId: string | null;
@@ -140,6 +141,7 @@ export const toStoredOutboxRecord = (
       payload: row.payloadJson,
       sourceModule: row.sourceModule ?? undefined,
       subject,
+      traceId: row.traceId ?? undefined,
       workflowRunId: row.workflowRunId ?? undefined,
     },
     idempotencyKey: row.idempotencyKey,
@@ -195,6 +197,7 @@ export const buildPostgresOutboxInsert = <EventName extends string, Payload>({
   status: "pending",
   subjectId: message.event.subject?.id,
   subjectType: message.event.subject?.type,
+  traceId: message.event.traceId,
   topic: message.topic,
   transactionId,
   updatedAt: now,
@@ -359,6 +362,7 @@ const claimPendingOutboxRecords = ({
         ${commerceOutbox.status} AS "status",
         ${commerceOutbox.subjectId} AS "subjectId",
         ${commerceOutbox.subjectType} AS "subjectType",
+        ${commerceOutbox.traceId} AS "traceId",
         ${commerceOutbox.topic} AS "topic",
         ${commerceOutbox.transactionId} AS "transactionId",
         ${commerceOutbox.workflowRunId} AS "workflowRunId"

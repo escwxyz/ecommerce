@@ -42,6 +42,13 @@ describe("storefront Cloudflare Service Binding SDK transport", () => {
       const client = yield* createStorefrontServiceBindingClientForApi({
         api: TestStorefrontApi,
         binding,
+        correlation: {
+          operationId: "corr_sdk",
+          parentSpanId: "00f067aa0ba902b7",
+          requestId: "req_sdk",
+          sampled: true,
+          traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+        },
       });
 
       return yield* client.storefrontHealth.health({});
@@ -54,6 +61,14 @@ describe("storefront Cloudflare Service Binding SDK transport", () => {
     expect(requests[0]?.method).toBe("GET");
     expect(requests[0]?.url).toBe(
       "https://storefront.service-binding/store/health"
+    );
+    expect(requests[0]?.headers.get("x-request-id")).toBe("req_sdk");
+    expect(requests[0]?.headers.get("x-correlation-id")).toBe("corr_sdk");
+    expect(requests[0]?.headers.get("x-trace-id")).toBe(
+      "4bf92f3577b34da6a3ce929d0e0e4736"
+    );
+    expect(requests[0]?.headers.get("traceparent")).toMatch(
+      /^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$/u
     );
   });
 });

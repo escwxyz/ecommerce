@@ -279,6 +279,7 @@ export const createKeyedActorDurableObjectHandler = ({
           schemaVersion: command.schemaVersion,
           stateVersion: nextStateVersion,
           subject: command.subject,
+          traceId: command.traceId,
           workflowRunId: command.workflowRunId,
         },
         "The keyed actor command result is invalid."

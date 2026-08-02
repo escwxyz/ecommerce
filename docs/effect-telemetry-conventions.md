@@ -20,6 +20,23 @@ service.
   and provider-operation identifiers through correlation annotations.
 - Correlation identifiers belong in logs and spans, not metric labels.
 
+## Correlation and trace propagation
+
+- `CorrelationContext` is the portable propagation shape. It carries the
+  request id, optional operation/correlation id, optional causation id, and
+  optional W3C trace identity fields.
+- HTTP ingress reads `x-request-id`, `x-correlation-id`, `x-trace-id`, and
+  `traceparent` through `correlationContextFromHeaders`.
+- HTTP and Service Binding clients serialize context with
+  `correlationContextToHeaders` or the SDK-equivalent header contract.
+- SQL-backed outbox rows persist `trace_id` beside `correlation_id` so
+  post-commit queue delivery does not lose trace identity.
+- Workflow starts, metadata/state projections, lifecycle events, dispatch queue
+  messages, keyed actor commands/results, sandbox plugin bridge context, and
+  provider operation inputs carry optional trace identity. Runtime adapters may
+  forward these values to external SDKs or HTTP-like transports, but must not
+  treat them as authorization inputs.
+
 ## Metrics and Causes
 
 - Metric names and label keys are centrally defined and low-cardinality.

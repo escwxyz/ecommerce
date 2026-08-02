@@ -8,6 +8,7 @@ import {
   EventPublisherService,
   IdGeneratorService,
   createEventEnvelope,
+  createCorrelationContext,
 } from "@ecommerce/core";
 import { Context, Effect, Layer } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
@@ -157,6 +158,9 @@ const createPrefixedId = (
   return nextId.startsWith(prefix) ? nextId : `${prefix}${nextId}`;
 };
 
+const providerCorrelation = (requestId: string) =>
+  createCorrelationContext({ requestId });
+
 const publishFulfillmentEvent = (
   eventPublisher: EventPublisherServiceShape,
   event: Parameters<EventPublisherServiceShape["publish"]>[0]
@@ -281,6 +285,7 @@ export const createFulfillmentService = ({
             fulfillment.providerKey
           );
           yield* provider.cancelFulfillment({
+            correlation: providerCorrelation(input.fulfillmentId),
             providerFulfillmentId: fulfillment.providerFulfillmentId,
             reason: input.reason,
           });
@@ -327,6 +332,7 @@ export const createFulfillmentService = ({
         );
         const validation = yield* provider.validateOption({
           address: input.address,
+          correlation: providerCorrelation(input.idempotencyKey),
           items: input.items,
           providerServiceId: shippingOption.providerServiceId,
         });
@@ -341,6 +347,7 @@ export const createFulfillmentService = ({
 
         const providerFulfillment = yield* provider.createFulfillment({
           address: input.address,
+          correlation: providerCorrelation(input.idempotencyKey),
           idempotencyKey: input.idempotencyKey,
           items: input.items,
           orderId: input.orderId,
@@ -563,6 +570,7 @@ export const createFulfillmentService = ({
           shippingOption.providerKey
         );
         const rate = yield* provider.rate({
+          correlation: providerCorrelation(shippingOptionId),
           providerServiceId: shippingOption.providerServiceId,
         });
 
@@ -601,6 +609,7 @@ export const createFulfillmentService = ({
           fulfillment.providerKey
         );
         const providerShipment = yield* provider.trackShipment({
+          correlation: providerCorrelation(input.fulfillmentId),
           providerFulfillmentId: fulfillment.providerFulfillmentId,
         });
 

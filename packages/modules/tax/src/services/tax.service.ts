@@ -7,6 +7,7 @@ import {
   ClockService,
   EventPublisherService,
   IdGeneratorService,
+  createCorrelationContext,
   createEventEnvelope,
 } from "@ecommerce/core";
 import { Context, Effect, Layer } from "effect";
@@ -140,6 +141,8 @@ const createId = (
 
 const normalizeCode = (value: string): string => value.trim().toUpperCase();
 const normalizeText = (value: string): string => value.trim();
+const providerCorrelation = (requestId: string) =>
+  createCorrelationContext({ requestId });
 
 const publishTaxEvent = (
   eventPublisher: EventPublisherServiceShape,
@@ -202,6 +205,7 @@ export const createTaxService = ({
       const currencyCode = normalizeCode(input.currencyCode);
       const rates = yield* repository.findRatesByRegionId(region.id);
       const providerResult = yield* provider.calculateTax(input, {
+        correlation: providerCorrelation(`tax:${region.id}`),
         createLineId: () =>
           Effect.runSync(
             createTaxLineIdEffect(createId(TAX_LINE_ID_PREFIX, idGenerator))

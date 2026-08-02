@@ -59,10 +59,141 @@ export type OperationOutcome =
   | "success";
 
 export interface CorrelationContext {
+  readonly causationId?: string;
   readonly operationId?: string;
+  readonly parentSpanId?: string;
   readonly requestId: string;
+  readonly sampled?: boolean;
   readonly traceId?: string;
 }
+
+export interface CorrelationHeaderCarrier {
+  readonly traceparent?: string;
+  readonly "x-correlation-id"?: string;
+  readonly "x-request-id"?: string;
+  readonly "x-trace-id"?: string;
+}
+
+export interface CreateCorrelationContextOptions {
+  readonly causationId?: string;
+  readonly correlationId?: string;
+  readonly operationId?: string;
+  readonly parentSpanId?: string;
+  readonly requestId: string;
+  readonly sampled?: boolean;
+  readonly traceId?: string;
+}
+
+const TRACEPARENT_VERSION = "00";
+const TRACEPARENT_FLAGS_SAMPLED = "01";
+const TRACEPARENT_FLAGS_UNSAMPLED = "00";
+
+const getCarrierHeader = (
+  headers: Readonly<Record<string, string | undefined>>,
+  name: keyof CorrelationHeaderCarrier
+): string | undefined => {
+  const value = headers[name] ?? headers[name.toLowerCase()];
+  return value && value.trim().length > 0 ? value.trim() : undefined;
+};
+
+const parseTraceparent = (
+  value: string | undefined
+):
+  | {
+      readonly parentSpanId: string;
+      readonly sampled: boolean;
+      readonly traceId: string;
+    }
+  | undefined => {
+  const parts = value?.split("-");
+  if (!parts || parts.length < 4) {
+    return undefined;
+  }
+
+  const [, traceId, parentSpanId, flags] = parts;
+  if (!traceId || !parentSpanId || !flags) {
+    return undefined;
+  }
+
+  return {
+    parentSpanId,
+    sampled: Number.parseInt(flags, 16) % 2 === 1,
+    traceId,
+  };
+};
+
+/** Normalizes correlation into the portable context used by runtime boundaries. */
+export const createCorrelationContext = ({
+  causationId,
+  correlationId,
+  operationId,
+  parentSpanId,
+  requestId,
+  sampled,
+  traceId,
+}: CreateCorrelationContextOptions): CorrelationContext => ({
+  causationId,
+  operationId: operationId ?? correlationId,
+  parentSpanId,
+  requestId,
+  sampled,
+  traceId,
+});
+
+/** Reads request, correlation, and W3C trace context from a header carrier. */
+export const correlationContextFromHeaders = (
+  headers: Readonly<Record<string, string | undefined>>,
+  fallbackRequestId: string
+): CorrelationContext => {
+  const traceparent = parseTraceparent(
+    getCarrierHeader(headers, "traceparent")
+  );
+
+  return createCorrelationContext({
+    correlationId: getCarrierHeader(headers, "x-correlation-id"),
+    parentSpanId: traceparent?.parentSpanId,
+    requestId: getCarrierHeader(headers, "x-request-id") ?? fallbackRequestId,
+    sampled: traceparent?.sampled,
+    traceId: getCarrierHeader(headers, "x-trace-id") ?? traceparent?.traceId,
+  });
+};
+
+/** Serializes portable correlation into headers for HTTP-like boundaries. */
+export const correlationContextToHeaders = (
+  context: CorrelationContext
+): CorrelationHeaderCarrier => {
+  const headers: Record<string, string> = {
+    "x-correlation-id": context.operationId ?? context.requestId,
+    "x-request-id": context.requestId,
+  };
+
+  if (context.traceId) {
+    headers["x-trace-id"] = context.traceId;
+  }
+  if (context.traceId && context.parentSpanId) {
+    headers.traceparent = [
+      TRACEPARENT_VERSION,
+      context.traceId,
+      context.parentSpanId,
+      context.sampled ? TRACEPARENT_FLAGS_SAMPLED : TRACEPARENT_FLAGS_UNSAMPLED,
+    ].join("-");
+  }
+
+  return headers;
+};
+
+/** Converts correlation context to safe telemetry attributes. */
+export const correlationContextToTelemetryAttributes = (
+  context: CorrelationContext
+): TelemetryAttributes =>
+  sanitizeTelemetryAttributes({
+    causationId: context.causationId,
+    operationId: context.operationId,
+    parentSpanId: context.parentSpanId,
+    requestId: context.requestId,
+    sampled: context.sampled,
+    traceId: context.traceId,
+  });
 
 export interface OperationTelemetryOptions {
   readonly attributes?: Readonly<Record<string, unknown>>;
@@ -202,8 +333,11 @@ export const withOperationTelemetry = <A, E, R>(
   const annotations = sanitizeTelemetryAttributes({
     ...options.attributes,
     operation: operationName,
+    causationId: options.correlation.causationId,
     operationId: options.correlation.operationId,
+    parentSpanId: options.correlation.parentSpanId,
     requestId: options.correlation.requestId,
+    sampled: options.correlation.sampled,
     traceId: options.correlation.traceId,
   });
 

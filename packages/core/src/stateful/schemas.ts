@@ -52,6 +52,7 @@ export const KeyedActorCommandSchema = Schema.Struct({
   payload: Schema.Unknown,
   schemaVersion: KeyedActorSchemaVersionSchema,
   subject: Schema.optional(KeyedActorSubjectSchema),
+  traceId: Schema.optional(KeyedActorTrimmedStringSchema),
   workflowRunId: Schema.optional(KeyedActorTrimmedStringSchema),
 });
 
@@ -76,6 +77,7 @@ export const KeyedActorCommandResultSchema = Schema.Struct({
     )
   ),
   subject: Schema.optional(KeyedActorSubjectSchema),
+  traceId: Schema.optional(KeyedActorTrimmedStringSchema),
   workflowRunId: Schema.optional(KeyedActorTrimmedStringSchema),
 });
 

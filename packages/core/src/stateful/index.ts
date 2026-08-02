@@ -132,6 +132,7 @@ export interface StatefulCoordinationMetadata {
   readonly idempotencyKey: string;
   readonly causationId?: string;
   readonly subject?: StatefulCoordinationSubject;
+  readonly traceId?: string;
   readonly workflowRunId?: string;
 }
 

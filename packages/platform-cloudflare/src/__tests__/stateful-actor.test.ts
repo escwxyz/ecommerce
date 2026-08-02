@@ -30,6 +30,7 @@ const command = Schema.decodeUnknownSync(KeyedActorCommandSchema)({
     lineItemId: "item_1",
   },
   schemaVersion: 1,
+  traceId: "trace_cart_add_item",
 });
 
 const ownership = Schema.decodeUnknownSync(KeyedActorStateOwnershipSchema)({
@@ -205,6 +206,50 @@ describe("Cloudflare keyed actor boundary", () => {
       },
       stateVersion: 1,
     });
+  });
+
+  it("propagates command correlation headers to Durable Object dispatch requests", async () => {
+    const requests: Request[] = [];
+    const layer = createCloudflareKeyedActorLayer({
+      namespace: {
+        getByName: () => ({
+          fetch: async (request: Request) => {
+            requests.push(request);
+            return Response.json({
+              operation: "dispatch-result",
+              result: {
+                actor: command.actor,
+                commandId: command.commandId,
+                commandName: command.commandName,
+                completedAt: "2026-07-26T13:00:01.000Z",
+                correlationId: command.correlationId,
+                duplicate: false,
+                idempotencyKey: command.idempotencyKey,
+                output: null,
+                schemaVersion: 1,
+                stateVersion: 1,
+                traceId: command.traceId,
+              },
+            });
+          },
+        }),
+      },
+    });
+
+    await Effect.runPromise(
+      KeyedActorService.use((actor) => actor.dispatch(command)).pipe(
+        Effect.provide(layer)
+      )
+    );
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.headers.get("x-correlation-id")).toBe(
+      "request_cart_add_item"
+    );
+    expect(requests[0]?.headers.get("x-request-id")).toBe(
+      "request_cart_add_item"
+    );
+    expect(requests[0]?.headers.get("x-trace-id")).toBe("trace_cart_add_item");
   });
 
   it("recovers command deduplication and state after an actor restart", async () => {

@@ -17,6 +17,15 @@ export interface PaymentProviderMoney {
   readonly currencyCode: string;
 }
 
+export interface PaymentProviderCorrelationContext {
+  readonly causationId?: string;
+  readonly operationId?: string;
+  readonly parentSpanId?: string;
+  readonly requestId: string;
+  readonly sampled?: boolean;
+  readonly traceId?: string;
+}
+
 export interface PaymentProviderCustomer {
   readonly email?: string;
   readonly id: string;
@@ -26,6 +35,7 @@ export interface PaymentProviderCustomer {
 }
 
 export interface CreatePaymentProviderCustomerInput {
+  readonly correlation?: PaymentProviderCorrelationContext;
   readonly email?: string;
   readonly metadata?: Record<string, unknown>;
   readonly name?: string;
@@ -42,6 +52,7 @@ export interface PaymentProviderPaymentMethod {
 }
 
 export interface AttachPaymentProviderMethodInput {
+  readonly correlation?: PaymentProviderCorrelationContext;
   readonly customerId: string;
   readonly providerPaymentMethodId: string;
 }
@@ -52,6 +63,7 @@ export interface CreatePaymentProviderCheckoutSessionInput {
   readonly amount?: PaymentProviderMoney;
   readonly cancelUrl: string;
   readonly customerId?: string;
+  readonly correlation?: PaymentProviderCorrelationContext;
   readonly idempotencyKey: string;
   readonly metadata?: Record<string, unknown>;
   readonly mode: PaymentProviderCheckoutMode;
@@ -72,6 +84,7 @@ export interface PaymentProviderCheckoutSession {
 
 export interface CreatePaymentProviderIntentInput {
   readonly amount: PaymentProviderMoney;
+  readonly correlation?: PaymentProviderCorrelationContext;
   readonly captureMethod?: "automatic" | "manual";
   readonly customerId?: string;
   readonly idempotencyKey: string;
@@ -97,12 +110,14 @@ export interface PaymentProviderIntent {
 
 export interface CapturePaymentProviderIntentInput {
   readonly amount?: PaymentProviderMoney;
+  readonly correlation?: PaymentProviderCorrelationContext;
   readonly idempotencyKey: string;
   readonly paymentIntentId: string;
 }
 
 export interface RefundPaymentProviderInput {
   readonly amount?: PaymentProviderMoney;
+  readonly correlation?: PaymentProviderCorrelationContext;
   readonly idempotencyKey: string;
   readonly paymentIntentId: string;
   readonly reason?: string;
@@ -118,6 +133,7 @@ export interface PaymentProviderRefund {
 }
 
 export interface CreatePaymentProviderSubscriptionInput {
+  readonly correlation?: PaymentProviderCorrelationContext;
   readonly customerId: string;
   readonly idempotencyKey: string;
   readonly metadata?: Record<string, unknown>;
@@ -207,6 +223,7 @@ export type PaymentProviderEvent =
   | SubscriptionPaymentEvent;
 
 export interface PaymentProviderWebhookInput {
+  readonly correlation?: PaymentProviderCorrelationContext;
   readonly headers: Readonly<Record<string, string>>;
   readonly payload: string | Uint8Array;
 }

@@ -36,6 +36,7 @@ export interface CloudflareWorkflowPayload {
   readonly causationId?: string;
   readonly idempotencyKey?: string;
   readonly runId: string;
+  readonly traceId?: string;
   readonly metadata?: Record<string, unknown>;
   readonly subject?: {
     readonly type: string;
@@ -48,6 +49,7 @@ export interface CloudflareWorkflowDispatchMessage {
   readonly workflowKey: string;
   readonly workflowVersion: number;
   readonly correlationId: string;
+  readonly traceId?: string;
 }
 
 export interface CloudflareWorkflowRuntimeOptions {
@@ -104,6 +106,7 @@ export interface CloudflareWorkflowTelemetryEvent {
   readonly idempotencyKey?: string;
   readonly runId?: string;
   readonly status?: CommerceWorkflowRunStatus;
+  readonly traceId?: string;
   readonly workflowKey?: string;
   readonly workflowVersion?: number;
 }
@@ -196,6 +199,7 @@ const toMetadataRecord = (
   causationId: run.causationId,
   idempotencyKey: run.idempotencyKey,
   subject: run.subject,
+  traceId: run.traceId,
   metadata: run.metadata,
   updatedAt: run.updatedAt,
 });
@@ -211,6 +215,7 @@ const fromMetadataRecord = (
   metadata: record.metadata,
   runId: record.runId,
   status: record.status,
+  traceId: record.traceId,
   updatedAt: record.updatedAt,
   workflowKey: record.workflowKey,
   workflowVersion: record.workflowVersion,
@@ -251,6 +256,7 @@ const toRunState = (
     createdAt: toIso(record.createdAt),
     historyReference: record.historyReference,
     idempotencyKey: record.idempotencyKey,
+    traceId: record.traceId,
     input: record.input,
     metadata: record.metadata,
     nextStepIndex,
@@ -294,6 +300,7 @@ const fromRunState = (
   runId: state.runId,
   status: state.status,
   subject: state.subject,
+  traceId: state.traceId,
   updatedAt: fromIso(state.updatedAt),
   workflowKey: state.workflowKey,
   workflowVersion: state.workflowVersion,
@@ -331,6 +338,7 @@ const publishLifecycleEvent = async ({
     causationId: run.causationId,
     idempotencyKey: run.idempotencyKey,
     subject: run.subject,
+    traceId: run.traceId,
     type: name,
     ...(runError ? { error: runError } : {}),
     ...(run.output !== undefined &&
@@ -346,6 +354,7 @@ const publishLifecycleEvent = async ({
     emittedAt: run.updatedAt,
     correlationId: run.correlationId,
     causationId: run.causationId,
+    traceId: run.traceId,
     workflowRunId: run.runId,
     subject: run.subject,
   });
@@ -359,6 +368,7 @@ const publishLifecycleEvent = async ({
       kind: "workflow.event.succeeded",
       runId: run.runId,
       status,
+      traceId: run.traceId,
       workflowKey: run.workflowKey,
       workflowVersion: run.workflowVersion,
     });
@@ -369,6 +379,7 @@ const publishLifecycleEvent = async ({
       kind: "workflow.event.failed",
       runId: run.runId,
       status,
+      traceId: run.traceId,
       workflowKey: run.workflowKey,
       workflowVersion: run.workflowVersion,
     });
@@ -406,6 +417,7 @@ const persistState = async (
       kind: "workflow.state.succeeded",
       runId: run.runId,
       status: run.status,
+      traceId: run.traceId,
       workflowKey: run.workflowKey,
       workflowVersion: run.workflowVersion,
     });
@@ -416,6 +428,7 @@ const persistState = async (
       kind: "workflow.state.failed",
       runId: run.runId,
       status: run.status,
+      traceId: run.traceId,
       workflowKey: run.workflowKey,
       workflowVersion: run.workflowVersion,
     });
@@ -629,6 +642,7 @@ export const createCloudflareWorkflowRuntime = ({
           kind: "workflow.reconcile.failed",
           runId: current.runId,
           status: current.status,
+          traceId: current.traceId,
           workflowKey: current.workflowKey,
           workflowVersion: current.workflowVersion,
         });
@@ -656,6 +670,7 @@ export const createCloudflareWorkflowRuntime = ({
         kind: "workflow.reconcile.succeeded",
         runId: reconciled.runId,
         status: reconciled.status,
+        traceId: reconciled.traceId,
         workflowKey: reconciled.workflowKey,
         workflowVersion: reconciled.workflowVersion,
       });
@@ -717,6 +732,7 @@ export const createCloudflareWorkflowRuntime = ({
         causationId: request.causationId,
         idempotencyKey: request.idempotencyKey,
         subject: request.subject,
+        traceId: request.traceId,
       };
 
       if (stateStore) {
@@ -737,6 +753,7 @@ export const createCloudflareWorkflowRuntime = ({
             kind: "workflow.state.failed",
             runId: run.runId,
             status: run.status,
+            traceId: run.traceId,
             workflowKey: run.workflowKey,
             workflowVersion: run.workflowVersion,
           });
@@ -781,6 +798,7 @@ export const createCloudflareWorkflowRuntime = ({
         causationId: request.causationId,
         idempotencyKey: request.idempotencyKey,
         subject: request.subject,
+        traceId: request.traceId,
       };
 
       let instance: WorkflowInstance;
@@ -813,6 +831,7 @@ export const createCloudflareWorkflowRuntime = ({
           await bindings.dispatchQueue.send({
             correlationId: request.correlationId,
             runId,
+            traceId: request.traceId,
             workflowKey: request.workflow.key,
             workflowVersion: request.workflow.version,
           });
@@ -822,6 +841,7 @@ export const createCloudflareWorkflowRuntime = ({
             kind: "workflow.queue.succeeded",
             runId: run.runId,
             status: run.status,
+            traceId: run.traceId,
             workflowKey: run.workflowKey,
             workflowVersion: run.workflowVersion,
           });
@@ -832,6 +852,7 @@ export const createCloudflareWorkflowRuntime = ({
             kind: "workflow.queue.failed",
             runId: run.runId,
             status: run.status,
+            traceId: run.traceId,
             workflowKey: run.workflowKey,
             workflowVersion: run.workflowVersion,
           });
@@ -855,6 +876,7 @@ export const createCloudflareWorkflowRuntime = ({
             kind: "workflow.coordinator.succeeded",
             runId: run.runId,
             status: run.status,
+            traceId: run.traceId,
             workflowKey: run.workflowKey,
             workflowVersion: run.workflowVersion,
           });
@@ -865,6 +887,7 @@ export const createCloudflareWorkflowRuntime = ({
             kind: "workflow.coordinator.failed",
             runId: run.runId,
             status: run.status,
+            traceId: run.traceId,
             workflowKey: run.workflowKey,
             workflowVersion: run.workflowVersion,
           });
@@ -911,6 +934,7 @@ export const createCloudflareWorkflowRuntime = ({
         kind: "workflow.start.succeeded",
         runId: startedRun.runId,
         status: startedRun.status,
+        traceId: startedRun.traceId,
         workflowKey: startedRun.workflowKey,
         workflowVersion: startedRun.workflowVersion,
       });
