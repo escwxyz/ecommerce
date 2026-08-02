@@ -20,6 +20,8 @@ import {
   composeCommercePermissions,
   createCommercePermissionValidator,
 } from "../permissions/index";
+import type { CorrelationContext } from "../telemetry/index";
+import { withOperationTelemetry } from "../telemetry/index";
 import type { NativePluginExecutableContribution } from "./native-plugin-contributions";
 import { createNativePluginManifest } from "./native-plugin-manifest";
 import type {
@@ -389,7 +391,10 @@ export interface NativePluginComposition<
   readonly storage: readonly CommercePluginStorageDeclaration[];
 }
 
+/** Host-owned inputs used to validate trusted plugin composition. */
 export interface NativePluginCompositionOptions {
+  /** Portable host capabilities available to active plugin Layers. */
+  readonly availableCapabilities?: readonly string[];
   readonly permissionValidator?: (
     permission: AdminPermissionDescriptor
   ) => void;
@@ -793,6 +798,32 @@ function collectExecutableContributions(
   return contributions;
 }
 
+type NativePluginExecutableContributionKey =
+  | "apiGroups"
+  | "eventHandlers"
+  | "providers"
+  | "services"
+  | "workflows";
+
+const assertUniqueExecutableContributionKeys = (
+  plugins: readonly NativePluginRegistration[],
+  key: NativePluginExecutableContributionKey,
+  errorLabel: string
+): void => {
+  const seen = new Map<string, string>();
+
+  for (const plugin of plugins) {
+    for (const contribution of plugin.contributions[key] ?? []) {
+      assertUniqueValue({
+        errorLabel,
+        ownerLabel: plugin.manifest.id,
+        seen,
+        value: contribution.key,
+      });
+    }
+  }
+};
+
 export const composeNativePlugins = <
   const Plugins extends readonly NativePluginRegistration[],
 >(
@@ -810,9 +841,49 @@ export const composeNativePlugins = <
     });
   }
 
-  const activePlugins: Plugins[number][] = plugins.filter(
-    (plugin) => plugin.state === "active"
+  const activePlugins: Plugins[number][] = plugins
+    .filter((plugin) => plugin.state === "active")
+    .toSorted((left, right) =>
+      left.manifest.id.localeCompare(right.manifest.id)
+    );
+  const availableCapabilities = new Set(options.availableCapabilities);
+
+  for (const plugin of activePlugins) {
+    for (const capability of plugin.manifest.capabilities) {
+      if (capability.required && !availableCapabilities.has(capability.key)) {
+        throw new Error(
+          `Native plugin "${plugin.manifest.id}" requires unavailable capability "${capability.key}".`
+        );
+      }
+    }
+  }
+
+  assertUniqueExecutableContributionKeys(
+    activePlugins,
+    "services",
+    "service key"
   );
+  assertUniqueExecutableContributionKeys(
+    activePlugins,
+    "providers",
+    "provider key"
+  );
+  assertUniqueExecutableContributionKeys(
+    activePlugins,
+    "apiGroups",
+    "API group key"
+  );
+  assertUniqueExecutableContributionKeys(
+    activePlugins,
+    "workflows",
+    "workflow key"
+  );
+  assertUniqueExecutableContributionKeys(
+    activePlugins,
+    "eventHandlers",
+    "event handler key"
+  );
+
   const modules = collectActiveContributions(
     activePlugins,
     (plugin) => plugin.contributions.modules
@@ -833,6 +904,7 @@ export const composeNativePlugins = <
   const adminPermissionValidator =
     options.permissionValidator ?? composedPermissionValidator;
   const adminSurfaceKeys = new Map<string, string>();
+  const storageNamespaces = new Map<string, string>();
 
   for (const plugin of activePlugins) {
     for (const surface of plugin.contributions.adminSurfaces ?? []) {
@@ -846,6 +918,15 @@ export const composeNativePlugins = <
         ownerLabel: plugin.manifest.id,
         seen: adminSurfaceKeys,
         value: surface.key,
+      });
+    }
+
+    for (const storage of plugin.contributions.storage ?? []) {
+      assertUniqueValue({
+        errorLabel: "storage namespace",
+        ownerLabel: plugin.manifest.id,
+        seen: storageNamespaces,
+        value: storage.namespace,
       });
     }
   }
@@ -957,6 +1038,20 @@ export interface RunNativePluginLifecycleHookInput {
   readonly toVersion?: string;
 }
 
+/** Correlated host request for one validated lifecycle state transition. */
+export interface TransitionNativePluginInput {
+  readonly correlation?: CorrelationContext;
+  readonly event: NativePluginLifecycleEvent;
+  readonly fromVersion?: string;
+  readonly toVersion?: string;
+}
+
+/**
+ * Runs the hook for an already selected lifecycle transition.
+ *
+ * Hosts should normally call `transitionNativePlugin` so state changes and
+ * telemetry remain coupled to successful hook completion.
+ */
 export const runNativePluginLifecycleHook = <
   Error = never,
   Requirements = never,
@@ -985,3 +1080,73 @@ export const runNativePluginLifecycleHook = <
     toVersion: input.toVersion,
   });
 };
+
+/**
+ * Runs one validated lifecycle hook and returns a registration in its next
+ * state only after the hook succeeds.
+ */
+export const transitionNativePlugin = <
+  Contributions extends NativePluginContributions,
+  Error = never,
+  Requirements = never,
+>(
+  plugin: NativePluginRegistration<Contributions>,
+  input: TransitionNativePluginInput
+): EffectType<NativePluginRegistration<Contributions>, Error, Requirements> => {
+  const transition = getNativePluginLifecycleTransition({
+    event: input.event,
+    from: plugin.state,
+  });
+
+  return runNativePluginLifecycleHook<Error, Requirements>(plugin, {
+    event: input.event,
+    fromState: plugin.state,
+    fromVersion: input.fromVersion,
+    toVersion: input.toVersion,
+  }).pipe(
+    (effect) =>
+      withOperationTelemetry(effect, {
+        attributes: {
+          event: input.event,
+          fromState: plugin.state,
+          pluginId: plugin.manifest.id,
+          pluginVersion: plugin.manifest.version,
+          toState: transition.to,
+        },
+        correlation: input.correlation ?? {
+          requestId: `native-plugin:${plugin.manifest.id}:${input.event}`,
+        },
+        name: "plugin.lifecycle",
+      }),
+    Effect.as({
+      ...plugin,
+      state: transition.to,
+    })
+  );
+};
+
+/**
+ * Dispatches one lifecycle event sequentially in stable plugin-ID order.
+ *
+ * The returned registrations use the same order so callers can persist or
+ * compose the deterministic post-transition state directly.
+ */
+export const transitionNativePlugins = <
+  const Plugins extends readonly NativePluginRegistration[],
+  Error = never,
+  Requirements = never,
+>(
+  plugins: Plugins,
+  input: TransitionNativePluginInput
+): EffectType<readonly NativePluginRegistration[], Error, Requirements> =>
+  Effect.forEach(
+    plugins.toSorted((left, right) =>
+      left.manifest.id.localeCompare(right.manifest.id)
+    ),
+    (plugin) =>
+      transitionNativePlugin<NativePluginContributions, Error, Requirements>(
+        plugin,
+        input
+      ),
+    { concurrency: 1 }
+  );

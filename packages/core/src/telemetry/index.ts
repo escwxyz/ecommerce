@@ -10,7 +10,11 @@ const REDACTED_VALUE = "<redacted>";
 const UNSUPPORTED_VALUE = "<unsupported>";
 const MAX_ATTRIBUTE_STRING_LENGTH = 256;
 
-export const commerceOperationNames = ["store.read", "unknown"] as const;
+export const commerceOperationNames = [
+  "plugin.lifecycle",
+  "store.read",
+  "unknown",
+] as const;
 
 export type CommerceOperationName = (typeof commerceOperationNames)[number];
 

@@ -182,7 +182,10 @@ plugin services and providers pair portable service tags with implementation
 Layers; API contributions retain their `HttpApiGroup` schemas and handler
 Layers; workflow and event contributions retain typed Effect requirements plus
 the Layers that satisfy them. Runtime composition validates the manifest before
-using any of these executable values.
+using any of these executable values. It also validates every required
+capability against the host-supplied portable capability set and rejects
+duplicate executable contribution keys or storage namespaces before Layer
+construction.
 
 Workflow durable messages use `@ecommerce/core/workflows` schemas for
 descriptors, persisted run state, step outcomes, retry policy, retry

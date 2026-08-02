@@ -67,6 +67,14 @@ Concrete provider SDKs, Cloudflare bindings, SQL clients, and secrets stay
 inside adapter Layers. Plugin registration and composition must preserve
 concrete tag and Layer types; heterogeneous registries use the closed
 contribution `_tag` vocabulary rather than erasing executable values to `any`.
+Hosts call `composeNativePlugins` with their available portable capability keys;
+only active plugins are composed, in stable plugin-ID order, after required
+capabilities and contribution identities validate. Lifecycle hosts use
+`transitionNativePlugin` or `transitionNativePlugins`, which advance state only
+after successful hooks and wrap execution in correlated `plugin.lifecycle`
+Effect telemetry. The multi-plugin dispatcher is sequential by plugin ID so
+install, activation, upgrade, deactivation, and uninstall behavior does not
+depend on discovery order.
 
 ## Tests
 

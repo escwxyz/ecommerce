@@ -275,6 +275,16 @@ architecture:
   composition preserves each contribution's inferred tag and Layer types
   without weakening the registry to `any`, and plugin API groups compose
   directly through the canonical API assembler.
+- Section 10.3 makes trusted-plugin runtime composition deterministic and
+  observable. Composition sorts active plugins by decoded plugin ID, validates
+  required portable capabilities against the host capability set, and rejects
+  duplicate executable keys, admin surface keys, and storage namespaces before
+  any Layer is used. Lifecycle dispatch runs sequentially in plugin-ID order,
+  returns state transitions only after successful hooks, and records correlated
+  `plugin.lifecycle` spans, logs, and bounded success/Cause outcomes through the
+  shared Effect telemetry policy. Deterministic tests cover validation,
+  composition, lifecycle success/defect behavior, and telemetry capture without
+  Cloudflare bindings.
 
 ## Current Gaps
 
@@ -326,11 +336,12 @@ architecture:
 - Better Auth remains behind the Effect auth adapter with a temporary D1/Kysely
   persistence seam. Replacement or deeper Effect integration remains a follow-up
   research/change item.
-- Native plugin manifests and executable contribution contracts are now
-  Effect-native. Deterministic capability validation, duplicate contribution
-  checks, lifecycle execution, and plugin telemetry remain task 10.3.
-  Sandboxed manifests and bridge messages remain on their legacy validation
-  path until task 10.4.
+- Native plugin manifests, executable contributions, composition validation,
+  lifecycle dispatch, and lifecycle telemetry are Effect-native. Production
+  hosts must pass their portable capability set to composition and persist any
+  lifecycle state they need outside the runtime-neutral contract. Sandboxed
+  manifests and bridge messages remain on their legacy validation path until
+  task 10.4.
 - Repository-wide removal of Hono, oRPC, Zod, Kysely, and completed temporary
   bridges is deferred to section 12 after all dependent slices migrate.
 
