@@ -384,8 +384,17 @@ architecture:
   carries optional trace identity across HTTP ingress, storefront SDK HTTP and
   Service Binding transports, PostgreSQL outbox rows, queue messages, workflow
   state/events/dispatch, Durable Object actor commands, sandbox plugin bridge
-  context, and provider operation inputs. Metric shipping remains in the later
-  observability tasks.
+  context, and provider operation inputs.
+- Sections 11.3 and 11.4 add shared redaction/cardinality policy constants,
+  strict metric-label sanitization, the `typed_rejection` operation outcome, and
+  the bounded `commerce_runtime_event_total` taxonomy for typed rejections,
+  defects, interruptions, retries, compensation, and poison messages. External
+  metric shipping remains a future exporter concern.
+- Sections 11.5 and 11.6 verify the observability failure boundaries:
+  Cloudflare exporter defects do not replace ordinary commerce successes or
+  typed failures, while required sandbox bridge audit evidence still fails
+  through the explicit `DurableAudit` persistence contract before host
+  operations run.
 - Repository-wide removal of Hono, oRPC, Zod, Kysely, and completed temporary
   bridges is deferred to section 12 after all dependent slices migrate.
 

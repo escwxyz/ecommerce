@@ -9,6 +9,8 @@ export { AuditPersistenceUnavailable } from "./audit-persistence-unavailable";
 const REDACTED_VALUE = "<redacted>";
 const UNSUPPORTED_VALUE = "<unsupported>";
 const MAX_ATTRIBUTE_STRING_LENGTH = 256;
+const MAX_ATTRIBUTE_NAME_LENGTH = 96;
+const MAX_TELEMETRY_ATTRIBUTE_COUNT = 32;
 
 export const commerceOperationNames = [
   "plugin.lifecycle",
@@ -45,6 +47,27 @@ const compoundProtectedAttributeFragments = [
   "token",
 ] as const;
 
+export const telemetryRedactionPolicy = {
+  protectedNameFragments: compoundProtectedAttributeFragments,
+  redactedValue: REDACTED_VALUE,
+  unsupportedValue: UNSUPPORTED_VALUE,
+} as const;
+
+export const telemetryAttributeCardinalityPolicy = {
+  maxAttributeCount: MAX_TELEMETRY_ATTRIBUTE_COUNT,
+  maxAttributeNameLength: MAX_ATTRIBUTE_NAME_LENGTH,
+  maxStringLength: MAX_ATTRIBUTE_STRING_LENGTH,
+  metricLabelNames: [
+    "boundary",
+    "event",
+    "operation",
+    "outcome",
+    "phase",
+    "retryDisposition",
+    "status",
+  ],
+} as const;
+
 export type TelemetryAttributeValue = boolean | number | string;
 
 export type TelemetryAttributes = Readonly<
@@ -53,10 +76,33 @@ export type TelemetryAttributes = Readonly<
 
 export type OperationOutcome =
   | "defect"
-  | "expected_failure"
   | "interrupted"
   | "mixed"
-  | "success";
+  | "success"
+  | "typed_rejection";
+
+export type CommerceRuntimeMetricEvent =
+  | "compensation"
+  | "defect"
+  | "interruption"
+  | "poison_message"
+  | "retry"
+  | "typed_rejection";
+
+export type CommerceRuntimeMetricBoundary =
+  | "operation"
+  | "outbox"
+  | "plugin"
+  | "provider"
+  | "queue"
+  | "workflow"
+  | "unknown";
+
+export interface CommerceRuntimeMetricOptions {
+  readonly attributes?: Readonly<Record<string, unknown>>;
+  readonly boundary: CommerceRuntimeMetricBoundary;
+  readonly event: CommerceRuntimeMetricEvent;
+}
 
 export interface CorrelationContext {
   readonly causationId?: string;
@@ -201,9 +247,21 @@ export interface OperationTelemetryOptions {
   readonly name: string;
 }
 
-const operationCounter = Metric.counter("commerce_operation_total", {
-  description: "Completed commerce operations by stable operation and outcome",
-});
+export const commerceOperationCounter = Metric.counter(
+  "commerce_operation_total",
+  {
+    description:
+      "Completed commerce operations by stable operation and outcome",
+  }
+);
+
+export const commerceRuntimeEventCounter = Metric.counter(
+  "commerce_runtime_event_total",
+  {
+    description:
+      "Runtime telemetry events by bounded category and backend boundary",
+  }
+);
 
 const normalizeAttributeName = (name: string): string =>
   name.replaceAll(/[^a-zA-Z0-9]/gu, "").toLowerCase();
@@ -237,6 +295,13 @@ const sanitizeTelemetryValue = (value: unknown): TelemetryAttributeValue => {
   return UNSUPPORTED_VALUE;
 };
 
+const isMetricLabelName = (
+  name: string
+): name is (typeof telemetryAttributeCardinalityPolicy.metricLabelNames)[number] =>
+  telemetryAttributeCardinalityPolicy.metricLabelNames.some(
+    (labelName) => labelName === name
+  );
+
 /** Guards runtime values before they become metric labels or span names. */
 export const isCommerceOperationName = (
   value: string
@@ -255,12 +320,43 @@ export const sanitizeTelemetryAttributes = (
     if (value === undefined) {
       continue;
     }
+    if (
+      Object.keys(sanitized).length >=
+        telemetryAttributeCardinalityPolicy.maxAttributeCount ||
+      name.length > telemetryAttributeCardinalityPolicy.maxAttributeNameLength
+    ) {
+      continue;
+    }
     sanitized[name] = isProtectedAttributeName(name)
       ? REDACTED_VALUE
       : sanitizeTelemetryValue(value);
   }
   return sanitized;
 };
+
+/** Applies the stricter low-cardinality policy required for metric labels. */
+export const sanitizeMetricAttributes = (
+  attributes: Readonly<Record<string, unknown>>
+): TelemetryAttributes => {
+  const sanitized: Record<string, TelemetryAttributeValue> = {};
+  for (const [name, value] of Object.entries(attributes)) {
+    if (!isMetricLabelName(name) || value === undefined) {
+      continue;
+    }
+    sanitized[name] = isProtectedAttributeName(name)
+      ? REDACTED_VALUE
+      : sanitizeTelemetryValue(value);
+  }
+  return sanitized;
+};
+
+const toMetricAttributeTuples = (
+  attributes: Readonly<Record<string, unknown>>
+): [string, string][] =>
+  Object.entries(sanitizeMetricAttributes(attributes)).map(([name, value]) => [
+    name,
+    String(value),
+  ]);
 
 /** Maps a complete Cause to a bounded metric outcome vocabulary. */
 export const operationOutcomeFromCause = <E>(
@@ -282,7 +378,27 @@ export const operationOutcomeFromCause = <E>(
   if (classification.hasInterruption) {
     return "interrupted";
   }
-  return "expected_failure";
+  return "typed_rejection";
+};
+
+/** Returns every bounded runtime metric category present in a Cause. */
+export const runtimeMetricEventsFromCause = <E>(
+  cause: Cause.Cause<E>
+): readonly CommerceRuntimeMetricEvent[] => {
+  const classification = classifyCause(cause);
+  const events: CommerceRuntimeMetricEvent[] = [];
+
+  if (classification.hasExpectedFailure) {
+    events.push("typed_rejection");
+  }
+  if (classification.hasDefect) {
+    events.push("defect");
+  }
+  if (classification.hasInterruption) {
+    events.push("interruption");
+  }
+
+  return events;
 };
 
 const recordOperationOutcome = (
@@ -290,7 +406,28 @@ const recordOperationOutcome = (
   outcome: OperationOutcome
 ): Effect.Effect<void> =>
   Metric.update(
-    Metric.withAttributes(operationCounter, { operation: name, outcome }),
+    Metric.withAttributes(
+      commerceOperationCounter,
+      toMetricAttributeTuples({ operation: name, outcome })
+    ),
+    1
+  );
+
+/** Records a bounded runtime event metric without dynamic identifiers. */
+export const recordCommerceRuntimeMetric = ({
+  attributes,
+  boundary,
+  event,
+}: CommerceRuntimeMetricOptions): Effect.Effect<void> =>
+  Metric.update(
+    Metric.withAttributes(
+      commerceRuntimeEventCounter,
+      toMetricAttributeTuples({
+        ...attributes,
+        boundary,
+        event,
+      })
+    ),
     1
   );
 
@@ -352,6 +489,18 @@ export const withOperationTelemetry = <A, E, R>(
       const outcome = operationOutcomeFromCause(exit.cause);
       telemetry = Effect.all([
         recordOperationOutcome(operationName, outcome),
+        Effect.all(
+          runtimeMetricEventsFromCause(exit.cause).map((event) =>
+            recordCommerceRuntimeMetric({
+              attributes: {
+                operation: operationName,
+                outcome,
+              },
+              boundary: "operation",
+              event,
+            })
+          )
+        ),
         Effect.logError("commerce.operation.failed", { outcome }),
       ]);
     }

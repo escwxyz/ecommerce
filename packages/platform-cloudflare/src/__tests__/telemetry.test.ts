@@ -148,4 +148,39 @@ describe("Cloudflare telemetry exporter Layer", () => {
       )
     ).resolves.toBe("ok");
   });
+
+  it("keeps exporter defects from replacing typed commerce failures", async () => {
+    const defectiveConsole = {
+      error: () => {
+        throw new Error("console unavailable");
+      },
+      info: () => {
+        throw new Error("console unavailable");
+      },
+      log: () => {
+        throw new Error("console unavailable");
+      },
+    };
+    const exit = await Effect.runPromiseExit(
+      withCloudflareTelemetry(
+        withOperationTelemetry(Effect.fail("store-not-found"), {
+          correlation: {
+            requestId: "request_1",
+          },
+          name: "store.read",
+        }),
+        { console: defectiveConsole }
+      )
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      expect(exit.cause.reasons).toContainEqual(
+        expect.objectContaining({
+          _tag: "Fail",
+          error: "store-not-found",
+        })
+      );
+    }
+  });
 });

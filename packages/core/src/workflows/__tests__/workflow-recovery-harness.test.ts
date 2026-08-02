@@ -39,7 +39,6 @@ describe("in-memory workflow recovery harness", () => {
         }),
       ],
     });
-
     await expect(
       harness.createRuntime().start({
         workflow,
@@ -96,7 +95,6 @@ describe("in-memory workflow recovery harness", () => {
         }),
       ],
     });
-
     const result = await harness.createRuntime().start({
       workflow,
       input: { cartId: "cart_1" },
@@ -317,7 +315,6 @@ describe("in-memory workflow recovery harness", () => {
         }),
       ],
     });
-
     const result = await harness.createRuntime().start({
       workflow,
       input: { cartId: "cart_1" },

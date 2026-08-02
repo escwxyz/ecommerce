@@ -73,8 +73,8 @@ Queues carry asynchronous work with stable metadata:
 
 Consumers must decode messages with Effect Schema, assume at-least-once
 delivery, and deduplicate by idempotency key or a stronger domain-specific key.
-Typed failures, defects, interruptions, retries, and poison messages retain
-distinct Effect telemetry classifications.
+Typed rejections, defects, interruptions, retries, compensation, and poison
+messages retain distinct `commerce_runtime_event_total` classifications.
 
 ## Workflow Relationship
 

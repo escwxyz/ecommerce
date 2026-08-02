@@ -1,9 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
-import { Effect } from "effect";
+import { Effect, Exit, Layer } from "effect";
 import type { Effect as EffectType } from "effect/Effect";
 
-import type { DurableAudit } from "../../telemetry/index";
+import {
+  AuditPersistenceUnavailable,
+  DurableAudit,
+} from "../../telemetry/index";
 import { createTestTelemetry } from "../../testing/index";
 import {
   SandboxBridgeFailure,
@@ -102,6 +105,46 @@ describe("sandbox capability bridge service", () => {
       eventType: "sandbox.bridge.allow",
       subjectId: "tax-sandbox",
     });
+  });
+
+  it("fails audited operations when durable audit persistence is unavailable", async () => {
+    let handlerCalls = 0;
+    const bridgeLayer = createSandboxCapabilityBridgeLayer({
+      handler: () =>
+        Effect.sync(() => {
+          handlerCalls += 1;
+        }),
+    });
+    const failingAuditLayer = Layer.succeed(
+      DurableAudit,
+      DurableAudit.of({
+        record: (event) =>
+          Effect.fail(
+            new AuditPersistenceUnavailable({
+              eventType: event.eventType,
+            })
+          ),
+      })
+    );
+    const exit = await Effect.runPromiseExit(
+      invokeSandboxBridgeOperation({
+        context,
+        operation: storageReadOperation,
+      }).pipe(Effect.provide(bridgeLayer), Effect.provide(failingAuditLayer))
+    );
+
+    expect(handlerCalls).toBe(0);
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      expect(exit.cause.reasons).toContainEqual(
+        expect.objectContaining({
+          _tag: "Fail",
+          error: new AuditPersistenceUnavailable({
+            eventType: "sandbox.bridge.allow",
+          }),
+        })
+      );
+    }
   });
 
   it("rejects unauthorized capabilities with a typed audited failure", async () => {

@@ -87,7 +87,6 @@ describe("transactional outbox queue delivery", () => {
         },
       })
     );
-
     const report = await Effect.runPromise(
       deliverOutboxBatch({
         limit: 10,
@@ -135,7 +134,6 @@ describe("transactional outbox queue delivery", () => {
         },
       })
     );
-
     const report = await Effect.runPromise(
       deliverOutboxBatch({
         limit: 10,

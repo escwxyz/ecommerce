@@ -22,7 +22,7 @@ import type {
   LoggerService,
 } from "../services/index";
 import { clockLayer, idGeneratorLayer } from "../services/index";
-import { DurableAudit } from "../telemetry/index";
+import { DurableAudit, recordCommerceRuntimeMetric } from "../telemetry/index";
 import type { DurableAuditEvent } from "../telemetry/index";
 import type {
   CommerceWorkflowDuplicateQuery,
@@ -419,6 +419,14 @@ const makeDuplicateKey = ({
   idempotencyKey,
 }: CommerceWorkflowDuplicateQuery) => `${workflowKey}:${idempotencyKey}`;
 
+const observeWorkflowMetric = async (
+  options: Parameters<typeof recordCommerceRuntimeMetric>[0]
+): Promise<void> => {
+  await Effect.runPromise(
+    recordCommerceRuntimeMetric(options).pipe(Effect.exit)
+  );
+};
+
 const createLifecycleEvent = (
   ids: IdGeneratorService,
   payload: WorkflowLifecycleEventPayload,
@@ -737,6 +745,14 @@ export const createInMemoryWorkflowRuntime = ({
 
         if (exit._tag === "Failure") {
           if (Cause.hasInterruptsOnly(exit.cause)) {
+            await observeWorkflowMetric({
+              attributes: {
+                phase: "run",
+                status: "interrupted",
+              },
+              boundary: "workflow",
+              event: "interruption",
+            });
             throw new InMemoryWorkflowRuntimeInterruptedError();
           }
 
@@ -792,6 +808,15 @@ export const createInMemoryWorkflowRuntime = ({
             stepName: step.name,
             attempt: attemptNumber,
             error: workflowError,
+          });
+          await observeWorkflowMetric({
+            attributes: {
+              phase: "run",
+              retryDisposition: shouldRetry ? "retry" : "compensate",
+              status: "failed",
+            },
+            boundary: "workflow",
+            event: shouldRetry ? "retry" : "typed_rejection",
           });
 
           if (shouldRetry) {
@@ -930,6 +955,14 @@ export const createInMemoryWorkflowRuntime = ({
         status: "compensated",
         stepId: completedAttempt.stepId,
         stepName: completedAttempt.stepName,
+      });
+      await observeWorkflowMetric({
+        attributes: {
+          phase: "compensation",
+          status: "compensated",
+        },
+        boundary: "workflow",
+        event: "compensation",
       });
 
       status = "compensated";

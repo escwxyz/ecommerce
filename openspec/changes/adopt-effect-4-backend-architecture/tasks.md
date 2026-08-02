@@ -119,10 +119,10 @@
 
 - [x] 11.1 Select and implement the first Cloudflare telemetry exporter Layer
 - [x] 11.2 Propagate correlation and trace context across HTTP, Service Bindings, SQL, workflows, queues, actors, plugins, and providers
-- [ ] 11.3 Add shared redaction and attribute-cardinality policies
-- [ ] 11.4 Add metrics that distinguish typed rejections, defects, interruptions, retries, compensation, and poison messages
-- [ ] 11.5 Verify telemetry exporter failure does not fail ordinary commerce operations
-- [ ] 11.6 Verify required security and commerce audit records use their explicit durable persistence contract
+- [x] 11.3 Add shared redaction and attribute-cardinality policies
+- [x] 11.4 Add metrics that distinguish typed rejections, defects, interruptions, retries, compensation, and poison messages
+- [x] 11.5 Verify telemetry exporter failure does not fail ordinary commerce operations
+- [x] 11.6 Verify required security and commerce audit records use their explicit durable persistence contract
 
 ## 12. Legacy removal and completion audit
 

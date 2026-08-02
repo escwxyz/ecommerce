@@ -919,7 +919,6 @@ describe("cloudflare workflow runtime adapter", () => {
         status: "failed" as const,
       }),
     };
-
     await processNotificationEventQueueBatch(
       { messages: [queueMessage] },
       {

@@ -20,8 +20,13 @@ import {
   correlationContextToTelemetryAttributes,
   isCommerceOperationName,
   operationOutcomeFromCause,
+  recordCommerceRuntimeMetric,
   recordDurableAudit,
+  runtimeMetricEventsFromCause,
+  sanitizeMetricAttributes,
   sanitizeTelemetryAttributes,
+  telemetryAttributeCardinalityPolicy,
+  telemetryRedactionPolicy,
   withOperationTelemetry,
 } from "../index";
 
@@ -92,6 +97,41 @@ describe("Effect telemetry conventions", () => {
     expect(JSON.stringify(attributes)).not.toContain("stripe-secret");
   });
 
+  it("enforces shared attribute cardinality and metric label policies", async () => {
+    const tooLongName = "x".repeat(
+      telemetryAttributeCardinalityPolicy.maxAttributeNameLength + 1
+    );
+    const rawAttributes = Object.fromEntries(
+      Array.from({ length: 40 }, (_, index) => [`attr_${index}`, index])
+    );
+    const attributes = sanitizeTelemetryAttributes({
+      ...rawAttributes,
+      [tooLongName]: "ignored",
+    });
+    const metricExit = await Effect.runPromiseExit(
+      recordCommerceRuntimeMetric({
+        attributes: {
+          requestId: "req_high_cardinality",
+          status: "failed",
+        },
+        boundary: "workflow",
+        event: "retry",
+      })
+    );
+
+    expect(Object.keys(attributes)).toHaveLength(
+      telemetryAttributeCardinalityPolicy.maxAttributeCount
+    );
+    expect(attributes).not.toHaveProperty(tooLongName);
+    expect(
+      sanitizeMetricAttributes({ requestId: "req_1", status: "failed" })
+    ).toEqual({
+      status: "failed",
+    });
+    expect(telemetryRedactionPolicy.redactedValue).toBe("<redacted>");
+    expect(metricExit).toEqual(Exit.succeed(undefined));
+  });
+
   it("accepts only centrally registered operation names", () => {
     expect(isCommerceOperationName("store.read")).toBe(true);
     expect(isCommerceOperationName("store.read.request_123")).toBe(false);
@@ -158,7 +198,7 @@ describe("Effect telemetry conventions", () => {
 
   it("classifies Causes with a bounded outcome vocabulary", () => {
     expect(operationOutcomeFromCause(Cause.fail("not-found"))).toBe(
-      "expected_failure"
+      "typed_rejection"
     );
     expect(operationOutcomeFromCause(Cause.die("invariant"))).toBe("defect");
     expect(operationOutcomeFromCause(Cause.interrupt())).toBe("interrupted");
@@ -167,6 +207,11 @@ describe("Effect telemetry conventions", () => {
         Cause.combine(Cause.fail("not-found"), Cause.die("invariant"))
       )
     ).toBe("mixed");
+    expect(
+      runtimeMetricEventsFromCause(
+        Cause.combine(Cause.fail("not-found"), Cause.die("invariant"))
+      )
+    ).toEqual(["typed_rejection", "defect"]);
   });
 
   it("preserves the original failure Cause after telemetry observation", async () => {

@@ -6,6 +6,7 @@ import type {
   OutboxRecord,
 } from "../persistence/index";
 import { QueuePublisherService } from "../services/index";
+import { recordCommerceRuntimeMetric } from "../telemetry/index";
 import type { CommerceQueueMessage } from "./index";
 
 /** Options for one bounded post-commit outbox delivery cycle. */
@@ -98,18 +99,25 @@ const deliverOutboxRecord = (
 
     return yield* Result.match(publishResult, {
       onFailure: (failure) =>
-        claimer
-          .markFailed({
-            reason: failure.message,
-            recordId: record.recordId,
-          })
-          .pipe(
-            Effect.as({
-              failure,
+        recordCommerceRuntimeMetric({
+          attributes: {
+            status: "failed",
+          },
+          boundary: "outbox",
+          event: "poison_message",
+        }).pipe(
+          Effect.flatMap(() =>
+            claimer.markFailed({
+              reason: failure.message,
               recordId: record.recordId,
-              status: "failed" as const,
             })
           ),
+          Effect.as({
+            failure,
+            recordId: record.recordId,
+            status: "failed" as const,
+          })
+        ),
       onSuccess: (published) =>
         claimer.markDelivered(record.recordId).pipe(
           Effect.as({
