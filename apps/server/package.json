@@ -30,15 +30,10 @@
     "@ecommerce/region-sales-channel": "workspace:*",
     "@ecommerce/store": "workspace:*",
     "@ecommerce/tax": "workspace:*",
-    "@orpc/openapi": "catalog:",
-    "@orpc/server": "catalog:",
-    "@orpc/zod": "catalog:",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
     "effect": "catalog:",
-    "hono": "catalog:",
-    "pg": "catalog:",
-    "zod": "catalog:"
+    "pg": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",

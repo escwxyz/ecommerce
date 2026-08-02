@@ -1,9 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import type { AuthService } from "@ecommerce/auth";
-import type { Context as HonoContext } from "hono";
 
-import { createContext } from "./context";
+import { createContext } from "../context";
 
 const auth = {
   api: {
@@ -19,18 +18,15 @@ const auth = {
   handler: () => new Response("unused"),
 } as unknown as AuthService;
 
-const createRequestContext = () =>
-  ({
-    req: {
-      raw: new Request("http://localhost/rpc"),
-    },
-  }) as HonoContext;
-
 describe("createContext", () => {
-  it("uses the injected auth instance to resolve session state", async () => {
+  it("uses the injected auth instance and Request headers to resolve session state", async () => {
     const context = await createContext({
       auth,
-      context: createRequestContext(),
+      request: new Request("http://localhost/rpc", {
+        headers: {
+          cookie: "better-auth.session=token",
+        },
+      }),
       visitorId: "visitor_test_1",
     });
 

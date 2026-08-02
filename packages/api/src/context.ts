@@ -1,14 +1,13 @@
 import type { AuthService } from "@ecommerce/auth";
-import type { Context as HonoContext } from "hono";
 
 import { authorizationEvaluator } from "./permissions";
 
 export { authorizationEvaluator };
 
 export interface CreateContextOptions {
-  auth: AuthService;
-  context: HonoContext;
-  visitorId?: string;
+  readonly auth: AuthService;
+  readonly request: Request;
+  readonly visitorId?: string;
 }
 
 export interface Context {
@@ -20,13 +19,18 @@ export interface Context {
   readonly visitorId?: string;
 }
 
+/**
+ * Temporary oRPC context bridge retained only until task 12.2 deletes the
+ * legacy router stack. It accepts a platform `Request` directly so Hono types
+ * and middleware stay out of the backend after task 12.1.
+ */
 export async function createContext({
   auth,
-  context,
+  request,
   visitorId,
 }: CreateContextOptions): Promise<Context> {
   const session = await auth.api.getSession({
-    headers: context.req.raw.headers,
+    headers: request.headers,
   });
 
   return {

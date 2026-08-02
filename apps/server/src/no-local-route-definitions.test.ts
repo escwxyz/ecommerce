@@ -3,7 +3,12 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const sourceRoot = join(import.meta.dir);
-const blockedPatterns = [/publicProcedure/, /protectedProcedure/];
+const blockedPatterns = [
+  /from\s+["']hono(?:\/[^"']*)?["']/,
+  /new\s+Hono\b/,
+  /publicProcedure/,
+  /protectedProcedure/,
+];
 
 const listSourceFiles = (directory: string): string[] => {
   const files: string[] = [];
@@ -26,7 +31,7 @@ const listSourceFiles = (directory: string): string[] => {
 };
 
 describe("server API boundary", () => {
-  it("does not define business procedures locally", () => {
+  it("does not define Hono routes or business procedures locally", () => {
     const violations = listSourceFiles(sourceRoot).flatMap((filePath) => {
       const source = readFileSync(filePath, "utf8");
       const hasBlockedPattern = blockedPatterns.some((pattern) =>

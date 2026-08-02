@@ -126,7 +126,7 @@
 
 ## 12. Legacy removal and completion audit
 
-- [ ] 12.1 Remove backend Hono routes, middleware, dependencies, and server composition
+- [x] 12.1 Remove backend Hono routes, middleware, dependencies, and server composition
 - [ ] 12.2 Remove backend oRPC routers, procedures, clients, dependencies, and generated type coupling
 - [ ] 12.3 Remove backend Zod schemas, converters, dependencies, and unchecked compatibility casts
 - [ ] 12.4 Remove Kysely database types, repositories, dialect helpers, migrations, dependencies, and adapter packages

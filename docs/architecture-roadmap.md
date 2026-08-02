@@ -395,8 +395,10 @@ architecture:
   typed failures, while required sandbox bridge audit evidence still fails
   through the explicit `DurableAudit` persistence contract before host
   operations run.
-- Repository-wide removal of Hono, oRPC, Zod, Kysely, and completed temporary
-  bridges is deferred to section 12 after all dependent slices migrate.
+- Section 12.1 removes the legacy Hono Worker composition. The default server
+  Worker now routes commerce traffic through the Effect HTTP runtime and mounts
+  Better Auth directly at its temporary adapter path; oRPC, Zod, Kysely, and
+  completed temporary bridges are removed by the remaining section 12 tasks.
 
 ## Slice Completion Rule
 

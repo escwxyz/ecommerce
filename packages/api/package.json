@@ -43,7 +43,6 @@
   "devDependencies": {
     "@ecommerce/config": "workspace:*",
     "bun-types": "catalog:",
-    "hono": "catalog:",
     "typescript": "catalog:"
   }
 }

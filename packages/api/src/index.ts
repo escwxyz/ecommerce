@@ -88,11 +88,6 @@ export {
   SerializedApiError,
 } from "./http-api-schemas";
 export {
-  createContext,
-  type Context,
-  type CreateContextOptions,
-} from "./context";
-export {
   authPermissionEvaluator,
   authorizationEvaluator,
   authorizationEvaluator as builtinAuthorizationEvaluator,

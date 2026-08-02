@@ -1,8 +1,46 @@
-import { createContext } from "@ecommerce/api/context";
+import {
+  cartEffectHttpApiContribution,
+  checkoutEffectHttpApiContribution,
+  customerEffectHttpApiContribution,
+  fulfillmentEffectHttpApiContribution,
+  inventoryEffectHttpApiContribution,
+  notificationEventEffectHttpApiContribution,
+  orderEffectHttpApiContribution,
+  paymentEffectHttpApiContribution,
+  pricingEffectHttpApiContribution,
+  productEffectHttpApiContribution,
+  promotionEffectHttpApiContribution,
+  regionSalesChannelEffectHttpApiContribution,
+  storeEffectHttpApiContribution,
+  taxEffectHttpApiContribution,
+  builtinPermissionStatement,
+} from "@ecommerce/api";
 import { createAuth } from "@ecommerce/auth";
-import { createInMemoryCartRepository } from "@ecommerce/cart";
+import {
+  createCartServiceLayer,
+  createInMemoryCartRepository,
+} from "@ecommerce/cart";
+import { createCheckoutServiceLayer } from "@ecommerce/checkout";
+import {
+  createCustomerServiceLayer,
+  defaultCustomerService,
+} from "@ecommerce/customer";
 import { createD1Database } from "@ecommerce/db-d1";
 import { env } from "@ecommerce/env/server";
+import {
+  createFulfillmentServiceLayer,
+  defaultFulfillmentService,
+} from "@ecommerce/fulfillment";
+import {
+  createInventoryServiceLayer,
+  defaultInventoryService,
+} from "@ecommerce/inventory";
+import {
+  createNotificationEventServiceLayer,
+  defaultNotificationEventService,
+} from "@ecommerce/notification-event";
+import { createOrderServiceLayer, defaultOrderService } from "@ecommerce/order";
+import { createPaymentServiceLayer } from "@ecommerce/payment";
 import {
   createCloudflareCartCacheRepository,
   createCloudflareQueuedNotificationProvider,
@@ -14,12 +52,32 @@ import type { NotificationEventQueueMessage } from "@ecommerce/platform-cloudfla
 import { CartCacheDurableObject } from "@ecommerce/platform-cloudflare/cart-cache-do";
 import { NotificationEventRealtimeDurableObject } from "@ecommerce/platform-cloudflare/notification-event-realtime-do";
 import { KeyedActorDurableObject } from "@ecommerce/platform-cloudflare/stateful-do";
+import {
+  createPricingServiceLayer,
+  defaultPricingService,
+} from "@ecommerce/pricing";
+import {
+  createProductServiceLayer,
+  defaultProductService,
+} from "@ecommerce/product";
+import {
+  createPromotionServiceLayer,
+  defaultPromotionService,
+} from "@ecommerce/promotion";
+import {
+  createRegionServiceLayer,
+  createSalesChannelServiceLayer,
+  defaultRegionService,
+  defaultSalesChannelService,
+} from "@ecommerce/region-sales-channel";
+import { createStoreServiceLayer, defaultStoreService } from "@ecommerce/store";
+import { createTaxServiceLayer, defaultTaxService } from "@ecommerce/tax";
 
-import { createServerApp } from "./app";
 import {
   createDevelopmentCommerceProviderRegistries,
   createServerCommerceRuntime,
 } from "./commerce-runtime";
+import { createEffectHttpWorkerRuntime } from "./effect-http-worker-runtime";
 import {
   isPostgresHyperdriveHealthRequest,
   verifyPostgresHyperdriveConnection,
@@ -90,31 +148,63 @@ const runtime = createServerCommerceRuntime({
   notificationProviders: queuedNotificationProviders,
   notificationRuntime: notificationEventQueuePublisher,
 });
-const { apiAssembly } = runtime;
+const checkoutContribution =
+  "checkout" in runtime.services && runtime.services.checkout
+    ? checkoutEffectHttpApiContribution.groups
+    : [];
 
 const auth = createAuth({
   baseURL: serverEnv.BETTER_AUTH_URL,
   database: database.authDatabase,
-  permissionStatement: apiAssembly.permissions.statement,
+  permissionStatement: builtinPermissionStatement,
   secret: serverEnv.BETTER_AUTH_SECRET,
   trustedOrigins: [serverEnv.CORS_ORIGIN],
 });
 
-const app = createServerApp({
-  apiAssembly,
+const effectHttpRuntime = createEffectHttpWorkerRuntime({
   auth,
-  corsOrigin: serverEnv.CORS_ORIGIN,
-  createContext,
-  notificationEventRealtime: {
-    namespace: serverEnv.NOTIFICATION_EVENT_REALTIME,
-  },
+  contributions: [
+    ...storeEffectHttpApiContribution.groups,
+    ...customerEffectHttpApiContribution.groups,
+    ...productEffectHttpApiContribution.groups,
+    ...pricingEffectHttpApiContribution.groups,
+    ...inventoryEffectHttpApiContribution.groups,
+    ...cartEffectHttpApiContribution.groups,
+    ...regionSalesChannelEffectHttpApiContribution.groups,
+    ...promotionEffectHttpApiContribution.groups,
+    ...taxEffectHttpApiContribution.groups,
+    ...fulfillmentEffectHttpApiContribution.groups,
+    ...paymentEffectHttpApiContribution.groups,
+    ...checkoutContribution,
+    ...orderEffectHttpApiContribution.groups,
+    ...notificationEventEffectHttpApiContribution.groups,
+  ],
+  runtimeLayers: [
+    createStoreServiceLayer(defaultStoreService),
+    createCustomerServiceLayer(defaultCustomerService),
+    createProductServiceLayer(defaultProductService),
+    createPricingServiceLayer(defaultPricingService),
+    createInventoryServiceLayer(defaultInventoryService),
+    createCartServiceLayer(runtime.services.cart),
+    createRegionServiceLayer(defaultRegionService),
+    createSalesChannelServiceLayer(defaultSalesChannelService),
+    createPromotionServiceLayer(defaultPromotionService),
+    createTaxServiceLayer(defaultTaxService),
+    createFulfillmentServiceLayer(defaultFulfillmentService),
+    createPaymentServiceLayer({}),
+    ...(runtime.services.checkout
+      ? [createCheckoutServiceLayer(runtime.services.checkout)]
+      : []),
+    createOrderServiceLayer(defaultOrderService),
+    createNotificationEventServiceLayer(defaultNotificationEventService),
+  ],
 });
 
 export default {
   fetch: (
     request: Request,
     requestEnv: CommerceServerEnv,
-    executionContext: ExecutionContext
+    _executionContext: ExecutionContext
   ) => {
     if (isPostgresHyperdriveHealthRequest(request)) {
       return verifyPostgresHyperdriveConnection(
@@ -122,7 +212,11 @@ export default {
       );
     }
 
-    return app.fetch(request, requestEnv, executionContext);
+    if (new URL(request.url).pathname.startsWith("/api/auth/")) {
+      return auth.handler(request);
+    }
+
+    return effectHttpRuntime.fetch(request);
   },
   queue: (batch: MessageBatch<NotificationEventQueueMessage>) =>
     processNotificationEventQueueBatch(batch, {
