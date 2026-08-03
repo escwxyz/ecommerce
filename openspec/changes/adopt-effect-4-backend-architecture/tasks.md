@@ -131,7 +131,7 @@
 - [x] 12.3 Remove backend Zod schemas, converters, dependencies, and unchecked compatibility casts
 - [x] 12.4 Remove Kysely database types, repositories, dialect helpers, migrations, dependencies, and adapter packages
 - [x] 12.5 Remove every completed temporary bridge and verify no new code depends on one
-- [ ] 12.6 Enable repository-wide backend forbidden-import and server-only SDK boundary checks
+- [x] 12.6 Enable repository-wide backend forbidden-import and server-only SDK boundary checks
 - [ ] 12.7 Reset and seed a clean local PostgreSQL database solely through Drizzle and Effect tooling
 - [ ] 12.8 Run formatting, lint, typecheck, unit, contract, API, SDK, workflow, plugin, build, and credential-free Cloudflare smoke suites
 - [ ] 12.9 Update the roadmap, stateful runtime guide, package documentation, active OpenSpec task state, and project memory to match the implemented architecture
