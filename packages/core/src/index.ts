@@ -272,7 +272,6 @@ export {
   LoggerService,
   ModuleRegistryService,
   QueuePublisherService,
-  StatefulCoordinatorService,
   WorkflowMetadataStoreService,
   WorkflowRuntimeService,
   authContextLayer,
@@ -283,7 +282,6 @@ export {
   loggerLayer,
   moduleRegistryLayer,
   queuePublisherLayer,
-  statefulCoordinatorLayer,
   workflowMetadataStoreLayer,
   workflowRuntimeLayer,
   type AuthContextService as AuthContextServiceShape,
@@ -298,7 +296,6 @@ export {
   type LoggerService as LoggerServiceShape,
   type ModuleRegistryService as ModuleRegistryServiceShape,
   type QueuePublisherService as QueuePublisherServiceShape,
-  type StatefulCoordinatorService as StatefulCoordinatorServiceShape,
   type WorkflowMetadataStoreService as WorkflowMetadataStoreServiceShape,
   type WorkflowRuntimeService as WorkflowRuntimeServiceShape,
 } from "./services/index";
@@ -357,7 +354,6 @@ export {
   KeyedActorTimerService,
   KeyedActorTrimmedStringSchema,
   KeyedActorTypeSchema,
-  defineStatefulCoordinationRequest,
   keyedActorLayer,
   keyedActorStateStoreLayer,
   keyedActorTimerLayer,
@@ -368,11 +364,6 @@ export {
   type KeyedActorStateSnapshot,
   type KeyedActorTimer,
   type KeyedActorTimerReference,
-  type StatefulCoordinationMetadata,
-  type StatefulCoordinationRequest,
-  type StatefulCoordinationResult,
-  type StatefulCoordinationSubject,
-  type StatefulCoordinator,
 } from "./stateful/index";
 export {
   createInMemoryKeyedActorTestLayer,

@@ -195,7 +195,8 @@ following module summary remains useful:
 - Checkout now has an Effect-facing service and admin Effect HTTP contract, but
   the server golden-path composition still uses temporary checkout-only Promise
   facades over cart, promotion, tax, fulfillment, payment, order, and
-  notification-event until section 9 resolves durable workflow orchestration.
+  notification-event until checkout accepts migrated Effect service
+  dependencies directly.
   The legacy checkout Zod/oRPC package surface and server oRPC route have been
   removed; the credential-free golden path exercises the composed Effect
   checkout service directly.

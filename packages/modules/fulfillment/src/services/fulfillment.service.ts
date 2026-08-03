@@ -680,10 +680,7 @@ export const FulfillmentServiceLayer = Layer.effect(
   })
 );
 
-/**
- * Temporary Promise facade for legacy checkout orchestration until task 8.6 can
- * consume the Effect service directly.
- */
+/** Temporary Promise facade until checkout consumes FulfillmentService directly. */
 export const createFulfillmentPromiseServiceFromEffectService = (
   service: FulfillmentServiceShape
 ) => ({

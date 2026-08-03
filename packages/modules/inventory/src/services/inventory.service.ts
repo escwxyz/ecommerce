@@ -9,13 +9,13 @@ import {
   IdGeneratorService,
 } from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import type { StatefulCoordinator } from "@ecommerce/core/stateful";
-import { defineStatefulCoordinationRequest } from "@ecommerce/core/stateful";
-import { Context, Effect, Layer } from "effect";
+import type { KeyedActorService } from "@ecommerce/core/stateful";
+import { KeyedActorCommandSchema } from "@ecommerce/core/stateful";
+import { Context, Effect, Layer, Schema } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
-import { createInMemoryInventoryCoordinator } from "../coordination";
+import { createInMemoryInventoryActorService } from "../coordination";
 import type {
   AdjustInventoryInput,
   CreateInventoryItemInput,
@@ -99,8 +99,8 @@ export const InventoryService = Context.Service<InventoryServiceShape>(
 );
 
 export interface CreateInventoryServiceOptions {
+  readonly actorService?: KeyedActorService;
   readonly clock?: ClockServiceShape;
-  readonly coordinator?: StatefulCoordinator;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
   readonly repository?: InventoryRepository;
@@ -140,32 +140,47 @@ const publishEvent = (
   }).pipe(Effect.asVoid);
 
 const coordinateInventory = (
-  coordinator: StatefulCoordinator,
+  actorService: KeyedActorService,
   input: AdjustInventoryInput | ReserveInventoryInput,
   operationName: "adjustInventory" | "reserveInventory",
-  coordinatorKey: "inventory.adjustment" | "inventory.reservation"
-) =>
-  Effect.tryPromise({
-    catch: () =>
-      new InventoryValidationFailure({
-        message: "Inventory coordination failed.",
-      }),
-    try: () =>
-      coordinator.coordinate(
-        defineStatefulCoordinationRequest({
-          causationId: input.causationId,
-          coordinatorKey,
-          correlationId: input.correlationId,
-          idempotencyKey: input.idempotencyKey,
-          operationName,
-          payload: input,
-          subject: {
-            id: input.inventoryItemId,
-            type: "inventory-item",
-          },
-          workflowRunId: input.workflowRunId,
-        })
-      ),
+  actorType: "inventory-adjustment" | "inventory-reservation"
+): EffectValue<{ readonly duplicate: boolean }, InventoryValidationFailure> =>
+  Effect.gen(function* coordinateInventoryThroughActor() {
+    const command = yield* Schema.decodeUnknownEffect(KeyedActorCommandSchema)({
+      actor: {
+        key: input.inventoryItemId,
+        type: actorType,
+      },
+      causationId: input.causationId,
+      commandId: input.idempotencyKey,
+      commandName: operationName,
+      correlationId: input.correlationId,
+      idempotencyKey: input.idempotencyKey,
+      issuedAt: new Date().toISOString(),
+      payload: input,
+      schemaVersion: 1,
+      subject: {
+        id: input.inventoryItemId,
+        type: "inventory-item",
+      },
+      workflowRunId: input.workflowRunId,
+    }).pipe(
+      Effect.mapError(
+        () =>
+          new InventoryValidationFailure({
+            message: "Inventory coordination failed.",
+          })
+      )
+    );
+
+    return yield* actorService.dispatch(command).pipe(
+      Effect.mapError(
+        () =>
+          new InventoryValidationFailure({
+            message: "Inventory coordination failed.",
+          })
+      )
+    );
   });
 
 const getReservedQuantity = (level: InventoryLevelRecord): number =>
@@ -220,8 +235,8 @@ const waitForDuplicateAdjustmentReplay = (
 > => repository.findAdjustmentEventByIdempotencyKey(idempotencyKey);
 
 export const createInventoryService = ({
+  actorService = createInMemoryInventoryActorService(),
   clock = createDefaultClock(),
-  coordinator = createInMemoryInventoryCoordinator(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
   repository = defaultInventoryRepository,
@@ -245,10 +260,10 @@ export const createInventoryService = ({
         }
 
         const coordination = yield* coordinateInventory(
-          coordinator,
+          actorService,
           input,
           "adjustInventory",
-          "inventory.adjustment"
+          "inventory-adjustment"
         );
 
         if (coordination.duplicate) {
@@ -278,8 +293,7 @@ export const createInventoryService = ({
           });
         }
 
-        const updatedStockedQuantity =
-          level.stockedQuantity + input.adjustment;
+        const updatedStockedQuantity = level.stockedQuantity + input.adjustment;
 
         if (updatedStockedQuantity < 0) {
           return yield* new InventoryValidationFailure({
@@ -490,10 +504,10 @@ export const createInventoryService = ({
         }
 
         const coordination = yield* coordinateInventory(
-          coordinator,
+          actorService,
           input,
           "reserveInventory",
-          "inventory.reservation"
+          "inventory-reservation"
         );
 
         if (coordination.duplicate) {

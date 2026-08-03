@@ -1,97 +1,15 @@
-import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { checkoutEffectHttpApiContribution } from "@ecommerce/api";
 import { CheckoutService } from "@ecommerce/checkout";
-import { createD1Database } from "@ecommerce/db-d1";
-import {
-  developmentSeedIds,
-  generateDevelopmentSeedSql,
-} from "@ecommerce/db-d1/seed";
 import { Effect, Layer } from "effect";
 
 import {
   createDevelopmentCommerceProviderRegistries,
   createServerCommerceRuntime,
 } from "./commerce-runtime";
+import { developmentSeedIds } from "./development-seed";
 import { createEffectHttpWorkerRuntime } from "./effect-http-worker-runtime";
-
-class FakeD1PreparedStatement {
-  readonly #query: string;
-  readonly #sqlite: Database;
-  readonly #values: readonly SQLQueryBindings[];
-
-  constructor(
-    sqlite: Database,
-    query: string,
-    values: readonly SQLQueryBindings[] = []
-  ) {
-    this.#query = query;
-    this.#sqlite = sqlite;
-    this.#values = values;
-  }
-
-  bind(...values: readonly SQLQueryBindings[]): FakeD1PreparedStatement {
-    return new FakeD1PreparedStatement(this.#sqlite, this.#query, values);
-  }
-
-  all() {
-    const normalizedQuery = this.#query.trim().toLowerCase();
-    const statement = this.#sqlite.query(this.#query);
-
-    if (
-      normalizedQuery.startsWith("select") ||
-      normalizedQuery.startsWith("pragma")
-    ) {
-      return Promise.resolve({
-        meta: { changes: 0, last_row_id: 0 },
-        results: statement.all(...this.#values),
-        success: true,
-      });
-    }
-
-    const result = statement.run(...this.#values);
-    return Promise.resolve({
-      meta: {
-        changes: result.changes,
-        last_row_id: Number(result.lastInsertRowid),
-      },
-      results: [],
-      success: true,
-    });
-  }
-}
-
-const createFakeD1Binding = (sqlite: Database) => ({
-  batch: async (statements: readonly FakeD1PreparedStatement[]) =>
-    Promise.all(statements.map((statement) => statement.all())),
-  exec: async (query: string) => {
-    sqlite.exec(query);
-    return { count: 0, duration: 0 };
-  },
-  prepare: (query: string) => new FakeD1PreparedStatement(sqlite, query),
-});
-
-const createMigratedSeededDatabase = (): Database => {
-  const sqlite = new Database(":memory:");
-  const migrationsDirectory = join(
-    import.meta.dir,
-    "../../../packages/db-d1/src/migrations/sql"
-  );
-
-  sqlite.exec("PRAGMA foreign_keys = ON;");
-  for (const migrationFile of readdirSync(migrationsDirectory).sort()) {
-    if (migrationFile.endsWith(".sql")) {
-      sqlite.exec(
-        readFileSync(join(migrationsDirectory, migrationFile), "utf8")
-      );
-    }
-  }
-  sqlite.exec(generateDevelopmentSeedSql());
-  return sqlite;
-};
 
 const createDeterministicIdGenerator = () => {
   let sequence = 0;
@@ -130,15 +48,10 @@ const checkoutAdminAuth = {
 
 describe("server golden checkout path", () => {
   it("persists checkout outcomes through the Effect HTTP checkout transport", async () => {
-    const sqlite = createMigratedSeededDatabase();
-    const database = createD1Database(
-      createFakeD1Binding(sqlite) as unknown as D1Database
-    );
     const publishedEventNames: string[] = [];
     const runtime = createServerCommerceRuntime({
       ...createDevelopmentCommerceProviderRegistries(),
       clock: { now: () => new Date("2026-01-02T00:00:00.000Z") },
-      db: database.db,
       idGenerator: createDeterministicIdGenerator(),
       notificationRuntime: {
         eventPublished: (result) => {
@@ -152,7 +65,9 @@ describe("server golden checkout path", () => {
     const effectHttpRuntime = createEffectHttpWorkerRuntime({
       auth: checkoutAdminAuth,
       contributions: [...checkoutEffectHttpApiContribution.groups],
-      runtimeLayers: [Layer.succeed(CheckoutService, runtime.services.checkout)],
+      runtimeLayers: [
+        Layer.succeed(CheckoutService, runtime.services.checkout),
+      ],
     });
 
     try {
@@ -207,9 +122,9 @@ describe("server golden checkout path", () => {
             cartId: cart.id,
             correlationId: "golden-checkout",
             idempotencyKey: "golden-checkout",
-          payment: {
-            capture: true,
-            providerKey: "manual",
+            payment: {
+              capture: true,
+              providerKey: "manual",
             },
             shippingOptionId: developmentSeedIds.fulfillmentOption,
           }),
@@ -243,9 +158,9 @@ describe("server golden checkout path", () => {
             cartId: cart.id,
             correlationId: "golden-checkout-retry",
             idempotencyKey: "golden-checkout",
-          payment: {
-            capture: true,
-            providerKey: "manual",
+            payment: {
+              capture: true,
+              providerKey: "manual",
             },
             shippingOptionId: developmentSeedIds.fulfillmentOption,
           }),
@@ -324,8 +239,6 @@ describe("server golden checkout path", () => {
       expect(publishedEventNames).toContain("checkout.completed");
     } finally {
       await effectHttpRuntime.dispose();
-      await database.db.destroy();
-      sqlite.close();
     }
   });
 });

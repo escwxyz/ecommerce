@@ -3,7 +3,7 @@ import {
   createStaticClock,
 } from "@ecommerce/core/testing";
 
-import { createInMemoryInventoryCoordinator } from "../coordination";
+import { createInMemoryInventoryActorService } from "../coordination";
 import { createResettableInMemoryInventoryRepository } from "../repositories";
 import { createInventoryService } from "../services";
 
@@ -13,8 +13,8 @@ export const createTestInventoryService = () => {
   return {
     repository,
     service: createInventoryService({
+      actorService: createInMemoryInventoryActorService(),
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-      coordinator: createInMemoryInventoryCoordinator(),
       idGenerator: createSequenceIdGenerator([
         "iitem_test",
         "sloc_test",

@@ -117,22 +117,22 @@ auth context → permission guard → protected handler.
 
 ## Task 5.6 temporary auth persistence seam
 
-Better Auth persistence remains a temporary provider-owned seam while commerce
-modules migrate away from Kysely:
+Better Auth persistence remains a temporary provider-owned seam after commerce
+modules have migrated away from Kysely:
 
 - `packages/auth/src/factory.ts` continues to own the Better Auth server
   factory and persistence configuration.
-- `packages/db-d1/src/migrations/sql/0000_auth.sql` remains the generated
-  Better Auth D1 table baseline. Regenerate it only through
+- `packages/auth/src/migrations/sql/0000_auth.sql` remains the generated Better
+  Auth D1 table baseline. Regenerate it only through
   `bun run --cwd packages/auth auth:gen` after Better Auth configuration
   changes.
-- `apps/server/src/effect-http-worker-runtime.ts` may keep passing
-  `database.authDatabase` to the Better Auth factory for Cloudflare-first
-  runtime composition.
+- `apps/server/src/index.ts` may keep passing the raw Worker `DB` binding to the
+  Better Auth factory for Cloudflare-first runtime composition.
 - Business modules must not import Better Auth database tables, Better Auth
-  inferred types, D1 auth bindings, or Kysely auth types. They should use
-  `EffectAuthServiceTag`, `AuthUserId`, `AuthSession`, and
-  `AuthPermissionKey` from the Effect auth boundary instead.
+  inferred types, D1 auth bindings, Kysely auth types, or the removed
+  `@ecommerce/db-d1` adapter package. They should use `EffectAuthServiceTag`,
+  `AuthUserId`, `AuthSession`, and `AuthPermissionKey` from the Effect auth
+  boundary instead.
 - Module persistence may store auth references such as `AuthUserId`, but auth
   session, account, verification, and provider tables stay outside module
   repositories.
@@ -152,8 +152,8 @@ Deletion criteria:
    path;
 3. the selected path provides an Effect boundary equivalent to
    `EffectAuthServiceTag`;
-4. the legacy Better Auth D1/Kysely migration seam and `auth:gen` workflow are
-   removed or explicitly retained as provider-private infrastructure.
+4. the Better Auth D1 migration seam and `auth:gen` workflow are removed or
+   explicitly retained as provider-private infrastructure.
 
 ## Better Auth organization plugin and commerce tenancy
 

@@ -799,8 +799,8 @@ export const createPaymentServiceWithProviders = (
   });
 
 /**
- * Temporary Promise facade for checkout's legacy orchestration contract.
- * Task 8.6 deletes this when checkout invokes PaymentService effects directly.
+ * Temporary Promise facade until checkout consumes PaymentService effects
+ * directly.
  */
 export const createPaymentPromiseServiceFromEffectService = (
   service: PaymentServiceShape

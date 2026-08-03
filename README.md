@@ -38,17 +38,17 @@ bun install
 
 ## Database Setup
 
-This project targets PostgreSQL through Drizzle and Effect SQL, with Cloudflare Hyperdrive as the first deployment connectivity path. Legacy D1/Kysely pieces are being removed through the active section 12 cleanup tasks.
+This project targets PostgreSQL through Drizzle and Effect SQL, with Cloudflare Hyperdrive as the first deployment connectivity path. Legacy Kysely adapter packages have been removed; D1 remains only as Better Auth's temporary provider-private Cloudflare storage seam.
 
 1. Start the local database/runtime adapter needed for the slice you are testing.
-   PostgreSQL is the target adapter; D1 remains only where temporary compatibility seams still exist.
+   PostgreSQL is the commerce adapter; D1 is only for Better Auth's provider-owned tables.
 
 2. Update your `.env` file in the `apps/server` directory with the appropriate connection details if needed.
 
 3. Apply the schema to your database:
 
 ```bash
-bun run db:push
+bun run db:migrate
 ```
 
 Then, run the development server:
@@ -152,8 +152,8 @@ ecommerce/
 - `bun run dev:web`: Start only the web application
 - `bun run dev:server`: Start only the server
 - `bun run check-types`: Check TypeScript types across all apps
-- `bun run db:push`: Apply local database migrations for the active adapter package
-- `bun run db:generate`: Validate migration definitions for the active adapter package
+- `bun run db:status`: Inspect PostgreSQL migration status through the Effect/Drizzle adapter package
+- `bun run db:migrate`: Apply PostgreSQL migrations through the Effect/Drizzle adapter package
 - `bun run check`: Run Oxlint and Oxfmt
 
 ## Todos
@@ -161,3 +161,5 @@ ecommerce/
 - Legacy backend oRPC has been removed in favor of Effect HTTP contracts; any
   remaining frontend oRPC usage is temporary until the admin client migrates to
   Effect-derived API typing.
+- Legacy backend Zod dependencies have been removed in favor of Effect Schema;
+  `packages/env/web` keeps Zod temporarily for frontend environment validation.

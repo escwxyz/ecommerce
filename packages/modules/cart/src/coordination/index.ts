@@ -1,4 +1,4 @@
 export {
-  createInMemoryCartCoordinator,
-  InMemoryCartCoordinator,
-} from "./in-memory-cart.coordinator";
+  createInMemoryCartActorService,
+  InMemoryCartActorService,
+} from "./in-memory-cart.actor";

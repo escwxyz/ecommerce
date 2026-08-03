@@ -141,7 +141,7 @@ export const getPostgresHyperdriveConfig = (
 };
 
 export const database = Cloudflare.D1.Database("Database", {
-  migrationsDir: fromPackageRoot("../../packages/db-d1/src/migrations/sql"),
+  migrationsDir: fromPackageRoot("../../packages/auth/src/migrations/sql"),
   migrationsTable: "d1_migrations",
 });
 

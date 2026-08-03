@@ -34,15 +34,14 @@
     }
   },
   "scripts": {
-    "auth:gen": "bunx @better-auth/cli@latest generate --config ./src/cli-auth.ts --output ../db-d1/src/migrations/sql/0000_auth.sql --yes",
+    "auth:gen": "bunx @better-auth/cli@latest generate --config ./src/cli-auth.ts --output ./src/migrations/sql/0000_auth.sql --yes",
     "check-types": "tsc -b",
     "test": "bun test ./src/*.test.ts ./src/__tests__/*.test.ts"
   },
   "dependencies": {
     "better-auth": "catalog:",
     "dotenv": "catalog:",
-    "effect": "catalog:",
-    "zod": "catalog:"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@ecommerce/config": "workspace:*",

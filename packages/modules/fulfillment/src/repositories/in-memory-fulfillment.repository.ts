@@ -271,10 +271,7 @@ export const createInMemoryFulfillmentRepositoryLayer = (
   repository: FulfillmentRepository = createInMemoryFulfillmentRepository()
 ) => Layer.succeed(FulfillmentRepositoryService, repository);
 
-/**
- * Temporary Promise facade for legacy checkout call sites until task 8.6 moves
- * checkout orchestration onto Effect services.
- */
+/** Temporary Promise facade until checkout consumes FulfillmentRepository effects directly. */
 export const createFulfillmentPromiseRepositoryFromEffectRepository = (
   repository: FulfillmentRepository
 ) => ({

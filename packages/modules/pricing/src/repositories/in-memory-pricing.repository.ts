@@ -161,10 +161,7 @@ export const createInMemoryPricingRepositoryLayer = () =>
     Effect.sync(() => new InMemoryPricingRepository() as PricingRepository)
   );
 
-/**
- * Temporary Promise facade for legacy checkout call sites until task 8.6 moves
- * checkout orchestration onto Effect services.
- */
+/** Temporary Promise facade until checkout consumes PricingRepository effects directly. */
 export const createPricingPromiseRepositoryFromEffectRepository = (
   repository: PricingRepository
 ) => ({

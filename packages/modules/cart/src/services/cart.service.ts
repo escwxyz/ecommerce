@@ -9,13 +9,13 @@ import {
   IdGeneratorService,
 } from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import type { StatefulCoordinator } from "@ecommerce/core/stateful";
-import { defineStatefulCoordinationRequest } from "@ecommerce/core/stateful";
-import { Context, Effect, Layer } from "effect";
+import type { KeyedActorService } from "@ecommerce/core/stateful";
+import { KeyedActorCommandSchema } from "@ecommerce/core/stateful";
+import { Context, Effect, Layer, Schema } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
-import { createInMemoryCartCoordinator } from "../coordination";
+import { createInMemoryCartActorService } from "../coordination";
 import type {
   AddCartLineItemInput,
   ApplyCartAdjustmentInput,
@@ -100,8 +100,8 @@ export const CartService = Context.Service<CartServiceShape>(
 );
 
 export interface CreateCartServiceOptions {
+  readonly actorService?: KeyedActorService;
   readonly clock?: ClockServiceShape;
-  readonly coordinator?: StatefulCoordinator;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
   readonly repository?: CartRepository;
@@ -219,7 +219,7 @@ const publishCartEvent = ({
   }).pipe(Effect.asVoid);
 
 const coordinateCart = (
-  coordinator: StatefulCoordinator,
+  actorService: KeyedActorService,
   input:
     | AddCartLineItemInput
     | ApplyCartAdjustmentInput
@@ -230,31 +230,46 @@ const coordinateCart = (
     | UpdateCartLineItemInput
     | UpdateCartTotalsInput,
   operationName: string
-) =>
-  Effect.tryPromise({
-    catch: () =>
-      new CartValidationFailure({ message: "Cart coordination failed." }),
-    try: () =>
-      coordinator.coordinate(
-        defineStatefulCoordinationRequest({
-          causationId: input.causationId,
-          coordinatorKey: "cart.aggregate",
-          correlationId: input.correlationId,
-          idempotencyKey: input.idempotencyKey,
-          operationName,
-          payload: input,
-          subject: {
-            id: input.cartId,
-            type: "cart",
-          },
-          workflowRunId: input.workflowRunId,
-        })
-      ),
+): EffectValue<{ readonly duplicate: boolean }, CartValidationFailure> =>
+  Effect.gen(function* coordinateCartThroughActor() {
+    const command = yield* Schema.decodeUnknownEffect(KeyedActorCommandSchema)({
+      actor: {
+        key: input.cartId,
+        type: "cart",
+      },
+      causationId: input.causationId,
+      commandId: input.idempotencyKey,
+      commandName: operationName,
+      correlationId: input.correlationId,
+      idempotencyKey: input.idempotencyKey,
+      issuedAt: new Date().toISOString(),
+      payload: input,
+      schemaVersion: 1,
+      subject: {
+        id: input.cartId,
+        type: "cart",
+      },
+      workflowRunId: input.workflowRunId,
+    }).pipe(
+      Effect.mapError(
+        () =>
+          new CartValidationFailure({ message: "Cart coordination failed." })
+      )
+    );
+
+    return yield* actorService
+      .dispatch(command)
+      .pipe(
+        Effect.mapError(
+          () =>
+            new CartValidationFailure({ message: "Cart coordination failed." })
+        )
+      );
   });
 
 export const createCartService = ({
+  actorService = createInMemoryCartActorService(),
   clock = createDefaultClock(),
-  coordinator = createInMemoryCartCoordinator(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
   repository = defaultCartRepository,
@@ -272,7 +287,7 @@ export const createCartService = ({
         }
 
         const coordination = yield* coordinateCart(
-          coordinator,
+          actorService,
           input,
           "cart.addLineItem"
         );
@@ -330,7 +345,7 @@ export const createCartService = ({
         }
 
         const coordination = yield* coordinateCart(
-          coordinator,
+          actorService,
           input,
           "cart.applyAdjustment"
         );
@@ -610,9 +625,9 @@ export const createCartRepositoryLayer = (repository: CartRepository) =>
   Layer.succeed(CartRepositoryService, repository);
 
 export const createCartServiceFromDependenciesLayer = ({
-  coordinator,
+  actorService,
 }: {
-  readonly coordinator?: StatefulCoordinator;
+  readonly actorService?: KeyedActorService;
 } = {}) =>
   Layer.effect(
     CartService,
@@ -623,8 +638,8 @@ export const createCartServiceFromDependenciesLayer = ({
       const repository = yield* CartRepositoryService;
 
       return createCartService({
+        actorService,
         clock,
-        coordinator,
         eventPublisher,
         idGenerator,
         repository,

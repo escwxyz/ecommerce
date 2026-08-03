@@ -54,11 +54,3 @@ export class KeyedActorDurableObject extends DurableObject<KeyedActorDurableObje
     return this.#host.alarm();
   }
 }
-
-/**
- * Temporary export alias retained for Cloudflare migration compatibility.
- *
- * @deprecated Bind and export `KeyedActorDurableObject`; task 12.5 removes
- * this alias after every deployed stage has adopted the new class name.
- */
-export { KeyedActorDurableObject as StatefulCoordinatorDurableObject };

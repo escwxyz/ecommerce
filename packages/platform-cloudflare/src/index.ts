@@ -72,7 +72,6 @@ export {
 } from "./sandbox";
 export {
   createCloudflareKeyedActorLayer,
-  createCloudflareStatefulCoordinator,
   createKeyedActorDurableObjectHandler,
   CloudflareKeyedActorDispatchResponseSchema,
   CloudflareKeyedActorFailureResponseSchema,
@@ -90,7 +89,6 @@ export {
   type CloudflareKeyedActorRequest,
   type CloudflareKeyedActorStorage,
   type CloudflareKeyedActorStub,
-  type CloudflareStatefulCoordinatorOptions,
 } from "./stateful";
 export {
   createCloudflareTelemetryLayer,

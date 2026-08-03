@@ -21,11 +21,15 @@ import {
   WorkflowRuntimeService,
 } from "@ecommerce/core";
 import {
+  KeyedActorCommandSchema,
+  KeyedActorService,
+} from "@ecommerce/core/stateful";
+import {
   createFakeNotificationProvider,
   createNotificationEventService,
 } from "@ecommerce/notification-event";
 import { createInMemoryNotificationEventRepository } from "@ecommerce/notification-event/repository";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import {
   activateSandboxPlugin,
@@ -37,7 +41,7 @@ import {
   createCloudflareCartCacheRepository,
   composeSandboxPluginDispatch,
   createCloudflareSandboxPluginRunner,
-  createCloudflareStatefulCoordinator,
+  createCloudflareKeyedActorLayer,
   createCloudflareWorkflowRuntime,
   createCloudflareWorkflowRuntimeLayer,
   CloudflareWorkflowRuntimeFailure,
@@ -1052,7 +1056,7 @@ describe("cloudflare workflow runtime adapter", () => {
     ]);
   });
 
-  it("preserves queue and stateful coordination metadata through platform adapters", async () => {
+  it("preserves queue and keyed actor metadata through platform adapters", async () => {
     const fakeQueue = createFakeQueue();
     const fakeNamespace = createFakeDurableObjectNamespace();
     const clock = createStaticClock(new Date("2026-06-06T12:00:00.000Z"));
@@ -1060,8 +1064,7 @@ describe("cloudflare workflow runtime adapter", () => {
       clock,
       queue: fakeQueue.queue as Queue<never>,
     });
-    const coordinator = createCloudflareStatefulCoordinator({
-      clock,
+    const actorLayer = createCloudflareKeyedActorLayer({
       namespace: fakeNamespace.namespace,
     });
 
@@ -1083,16 +1086,28 @@ describe("cloudflare workflow runtime adapter", () => {
     });
 
     const queued = await queuePublisher.publish(message);
-    const coordinated = await coordinator.coordinate({
+    const command = Schema.decodeUnknownSync(KeyedActorCommandSchema)({
+      actor: {
+        key: "cart_1",
+        type: "cart",
+      },
       causationId: message.id,
-      coordinatorKey: "cart:cart_1",
+      commandId: message.idempotencyKey,
+      commandName: "cart.reserve",
       correlationId: message.correlationId,
       idempotencyKey: message.idempotencyKey,
-      operationName: "cart.reserve",
       payload: message.payload,
+      issuedAt: clock.now().toISOString(),
+      schemaVersion: 1,
       subject: message.subject,
       workflowRunId: message.workflowRunId,
     });
+    const coordinated = await Effect.runPromise(
+      Effect.gen(function* dispatchKeyedActorCommand() {
+        const actor = yield* KeyedActorService;
+        return yield* actor.dispatch(command);
+      }).pipe(Effect.provide(actorLayer))
+    );
 
     expect(queued).toEqual({
       messageId: "msg_runtime_1",
@@ -1100,12 +1115,15 @@ describe("cloudflare workflow runtime adapter", () => {
     });
     expect(fakeQueue.messages).toEqual([message]);
     expect(coordinated).toMatchObject({
+      actor: {
+        key: "cart_1",
+        type: "cart",
+      },
       causationId: "msg_runtime_1",
-      coordinatorKey: "cart:cart_1",
+      commandName: "cart.reserve",
       correlationId: "corr_runtime_1",
       duplicate: false,
       idempotencyKey: "checkout:cart_1",
-      operationName: "cart.reserve",
       subject: {
         id: "cart_1",
         type: "cart",

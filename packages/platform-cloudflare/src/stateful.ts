@@ -1,8 +1,6 @@
 import { correlationContextToHeaders } from "@ecommerce/core";
 import {
   KeyedActorCommandFailure,
-  KeyedActorCommandSchema,
-  KeyedActorService,
   KeyedActorStatePersistenceFailure,
   KeyedActorTimerFailure,
   keyedActorLayer,
@@ -14,9 +12,6 @@ import type {
   KeyedActorReference,
   KeyedActorStateSnapshot,
   KeyedActorTimerReference,
-  StatefulCoordinationRequest,
-  StatefulCoordinationResult,
-  StatefulCoordinator,
 } from "@ecommerce/core/stateful";
 import { Effect, Layer, Option, Schema } from "effect";
 
@@ -335,68 +330,3 @@ export const createCloudflareKeyedActorLayer = ({
         }),
     })
   );
-
-export interface CloudflareStatefulCoordinatorOptions {
-  readonly namespace: CloudflareKeyedActorNamespace;
-  readonly clock: {
-    now(): Date;
-  };
-}
-
-/**
- * Temporary Promise facade for cart and inventory callers not yet migrated to
- * `KeyedActorService`. New code must use `createCloudflareKeyedActorLayer`.
- *
- * @deprecated Removed by task 12.5 after legacy module callers are migrated.
- */
-export const createCloudflareStatefulCoordinator = ({
-  namespace,
-  clock,
-}: CloudflareStatefulCoordinatorOptions): StatefulCoordinator => {
-  const layer = createCloudflareKeyedActorLayer({ namespace });
-
-  return {
-    coordinate: <Input = unknown, Output = unknown>(
-      request: StatefulCoordinationRequest<Input>
-    ): Promise<StatefulCoordinationResult<Output>> =>
-      Effect.runPromise(
-        Effect.gen(function* coordinateThroughKeyedActor() {
-          const command = yield* Schema.decodeUnknownEffect(
-            KeyedActorCommandSchema
-          )({
-            actor: {
-              key: request.subject?.id ?? request.coordinatorKey,
-              type: request.subject?.type ?? "legacy-coordinator",
-            },
-            causationId: request.causationId,
-            commandId: request.idempotencyKey,
-            commandName: request.operationName,
-            correlationId: request.correlationId,
-            idempotencyKey: request.idempotencyKey,
-            issuedAt: clock.now().toISOString(),
-            payload: request.payload,
-            schemaVersion: 1,
-            subject: request.subject,
-            traceId: request.traceId,
-            workflowRunId: request.workflowRunId,
-          });
-          const actors = yield* KeyedActorService;
-          const result = yield* actors.dispatch(command);
-
-          return {
-            causationId: result.causationId,
-            coordinatedAt: new Date(result.completedAt),
-            coordinatorKey: request.coordinatorKey,
-            correlationId: result.correlationId,
-            duplicate: result.duplicate,
-            idempotencyKey: result.idempotencyKey,
-            operationName: result.commandName,
-            output: result.output as Output,
-            subject: result.subject,
-            traceId: result.traceId,
-            workflowRunId: result.workflowRunId,
-          };
-        }).pipe(Effect.provide(layer))
-      ),
-  };
-};

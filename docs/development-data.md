@@ -1,31 +1,27 @@
 # Development Data
 
-The local D1 database has an explicit deterministic seed workflow. Migrations
-must run before the seed:
+Commerce development data is now PostgreSQL-first through the
+`@ecommerce/db-postgres` Effect/Drizzle adapter. The old D1/Kysely seed workflow
+has been removed.
 
 ```sh
-bun run db:push
-bun run db:seed
+bun run db:migrate
 ```
 
-`db:seed` targets only Wrangler's local `Database` binding. It creates stable
-checkout prerequisites only for legacy modules that still depend on D1 seed
-data. It does not
-create store records, customer records, product records, product variants,
-region records, sales-channel records, pricing records, inventory records,
-auth users, carts, orders, payments, fulfillments, or notification history.
+Better Auth still owns a provider-private D1 table baseline generated under
+`packages/auth/src/migrations/sql/0000_auth.sql`. That D1 seam is for auth
+session/account/verification storage only and is not a commerce seed path.
 
 The store tracer slice, customer/product/region-sales-channel/pricing/inventory
 foundational slices, and cart/promotion/tax/fulfillment/payment transactional
-slices have migrated off the legacy D1/Kysely path. Local checkout smoke tests still
-need store defaults, customer payment-identity lookup, product variant
+slices have migrated off the legacy D1/Kysely path. Local checkout smoke tests
+still need store defaults, customer payment-identity lookup, product variant
 validation, region constraints, sales-channel publishability, pricing
 calculation, inventory availability/reservation, tax, payment, and fulfillment
 behavior while checkout remains on the legacy runtime. The server composition
 therefore provides temporary deterministic compatibility facades for that path.
-Those facades are owned by the checkout migration gap and must be deleted in
-task 8.6, when checkout orchestration moves to Effect and consumes migrated
-module service Layers directly.
+Those facades are owned by the remaining checkout dependency-contract gap and
+must be deleted when checkout consumes migrated Effect services directly.
 
 Do not reintroduce D1 `store`, `customer`, `product`, `product_variant`,
 `region`, `region_country`, `sales_channel`, `sales_channel_product`,
@@ -39,18 +35,16 @@ Do not reintroduce D1 `store`, `customer`, `product`, `product_variant`,
 `payment_session`, `payment`, `payment_capture`, or `payment_refund` tables or
 seed rows for migrated behavior.
 
-The command is idempotent. Rerunning it converges records under reserved
-development IDs without duplicating entities or relationship rows.
+The server-owned development IDs are constants, not database seed rows.
 
 ## Golden Checkout Smoke Test
 
-The server package includes a credential-free integration test that applies the
-same D1 migrations and seed artifact to isolated SQLite storage, drives cart and
-checkout operations through the Hono/oRPC transport, and verifies persisted
-order, payment, fulfillment, and event outcomes. Inventory
+The server package includes a credential-free integration test that drives cart
+and checkout operations through the Effect HTTP transport and verifies
+persisted order, payment, fulfillment, and event outcomes. Inventory
 availability/reservation, tax behavior, payment behavior, and fulfillment
-behavior are supplied by temporary server-owned checkout facades until task 8.6
-removes the legacy checkout path:
+behavior are supplied by temporary server-owned checkout facades until task
+12.5 removes the completed bridge path:
 
 ```sh
 cd apps/server

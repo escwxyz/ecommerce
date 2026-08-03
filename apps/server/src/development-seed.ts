@@ -1,11 +1,9 @@
-export type DevelopmentSeedValue = number | string | null;
-
-export interface DevelopmentSeedWrite {
-  readonly conflictColumns: readonly string[];
-  readonly row: Readonly<Record<string, DevelopmentSeedValue>>;
-  readonly table: string;
-}
-
+/**
+ * Stable development fixture identifiers used by the server-owned checkout
+ * compatibility facades. These are not database seed rows; task 12.4 removed
+ * the legacy D1/Kysely seed package. The remaining checkout facades are active
+ * until checkout accepts migrated Effect service dependencies directly.
+ */
 export const developmentSeedIds = {
   currency: "cur_dev_usd",
   customer: "cust_dev_ada",
@@ -28,5 +26,3 @@ export const developmentSeedIds = {
   taxRate: "txrate_dev_us_standard",
   taxRegion: "txreg_dev_us",
 } as const;
-
-export const developmentSeedWrites: readonly DevelopmentSeedWrite[] = [];

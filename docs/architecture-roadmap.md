@@ -334,12 +334,10 @@ architecture:
   the PostgreSQL outbox Layer or a scheduled production drain. That wiring
   remains part of the broader Cloudflare PostgreSQL-backed runtime-composition
   gap; credential-free tests use deterministic claimer and queue Layers.
-- Cart and inventory still expose optional Promise-shaped coordinator inputs.
-  Their deprecated Cloudflare facade now dispatches through the task-9.6
-  `KeyedActorService` Layer, so it no longer bypasses the Effect Schema Durable
-  Object protocol. Task 12.5 removes the facade, its legacy core types, and the
-  temporary `StatefulCoordinatorDurableObject` export alias after those module
-  callers adopt the permanent actor service directly.
+- Section 12.5 removes the completed Promise-shaped cart/inventory coordinator
+  bridge. Cart and inventory now accept `KeyedActorService` directly, the
+  deprecated Cloudflare coordinator facade is gone, and only
+  `KeyedActorDurableObject` remains as the exported generic actor class.
 - The generic `KeyedActorDurableObject` currently provides coordination,
   deduplication, state, and timer hosting with a no-op command interpreter.
   Commerce-specific actor behavior must compose
@@ -363,8 +361,9 @@ architecture:
 - The cart Durable Object cache is a hot aggregate and ownership/idempotency
   coordination primitive, not the durable source of truth. PostgreSQL remains
   authoritative for cart, line-item, and adjustment persistence.
-- Better Auth remains behind the Effect auth adapter with a temporary D1/Kysely
-  persistence seam. Replacement or deeper Effect integration remains a follow-up
+- Better Auth remains behind the Effect auth adapter with a temporary
+  provider-private D1 persistence seam. The old D1/Kysely adapter package has
+  been removed; replacement or deeper Effect integration remains a follow-up
   research/change item.
 - Native plugin manifests, executable contributions, composition validation,
   lifecycle dispatch, and lifecycle telemetry are Effect-native. Production
@@ -404,6 +403,14 @@ architecture:
   temporarily because the currently untracked admin frontend workspace still
   declares oRPC catalog dependencies; remove those entries when the frontend
   admin client is migrated or the untracked workspace is reconciled.
+- Section 12.3 removes stale backend Zod dependency declarations and blocks Zod
+  from the backend API package. `packages/env` keeps Zod only for the frontend
+  `./web` environment helper until that frontend-only surface is migrated.
+- Section 12.4 removes the tracked Kysely database contracts, D1 dialect helper
+  package, DB utility package, Kysely dependencies, and D1 seed/migration
+  workflow. Better Auth's generated D1 SQL now lives under `packages/auth`, and
+  the server passes the raw Worker D1 binding directly to the Better Auth
+  factory until the auth-provider follow-up resolves that seam.
 
 ## Slice Completion Rule
 

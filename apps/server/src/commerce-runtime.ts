@@ -11,12 +11,11 @@ import type {
   EventPublisherServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
-import type { StatefulCoordinator } from "@ecommerce/core/stateful";
+import type { KeyedActorService } from "@ecommerce/core/stateful";
 import {
   createCustomerIdEffect,
   createCustomerService,
 } from "@ecommerce/customer";
-import { developmentSeedIds } from "@ecommerce/db-d1/seed";
 import {
   createFakeFulfillmentProvider,
   createFulfillmentPromiseServiceFromEffectService,
@@ -71,19 +70,16 @@ import {
 import type { TaxServiceShape } from "@ecommerce/tax";
 import { Effect, Schema } from "effect";
 
+import { developmentSeedIds } from "./development-seed";
+
 type NotificationEventRuntimeHooks = NonNullable<
   CreateNotificationEventServiceOptions["runtime"]
 >;
 
-interface ServerCommerceDatabase {
-  readonly destroy?: () => Promise<void>;
-}
-
 export interface ServerCommerceRuntimeOptions {
-  readonly cartCoordinator?: StatefulCoordinator;
+  readonly cartActorService?: KeyedActorService;
   readonly cartRepository?: CartRepository;
   readonly clock?: ClockServiceShape;
-  readonly db: ServerCommerceDatabase;
   readonly fulfillmentProviderRegistry?: FulfillmentProviderRegistry;
   readonly idGenerator?: IdGeneratorServiceShape;
   readonly notificationProviders?: readonly NotificationProvider[];
@@ -324,10 +320,9 @@ export const createDevelopmentCommerceProviderRegistries = () => ({
  * Domain behavior remains in module packages; this factory only owns wiring.
  */
 export const createServerCommerceRuntime = ({
-  cartCoordinator,
+  cartActorService,
   cartRepository: providedCartRepository,
   clock,
-  db,
   fulfillmentProviderRegistry,
   idGenerator,
   notificationProviders,
@@ -343,25 +338,21 @@ export const createServerCommerceRuntime = ({
     );
   }
 
-  // Retained only while the temporary auth/D1 compatibility seam exists.
-  // Notification-event no longer consumes D1 after task 8.8.
-  void db;
-
   const repositories = {
     cart: providedCartRepository ?? createInMemoryCartRepository(),
-    // Temporary checkout-only bridge until task 8.6 moves checkout onto
-    // Effect module Layers directly. New fulfillment traffic uses Effect HTTP.
+    // Checkout-only repository backing for the remaining Promise-shaped
+    // checkout dependency contract. New fulfillment traffic uses Effect HTTP.
     fulfillment: createInMemoryFulfillmentRepository(),
     notificationEvent: createInMemoryNotificationEventRepository(),
     order: createInMemoryOrderRepository(),
-    // Temporary checkout-only bridge until task 8.6 moves checkout onto
-    // Effect module Layers directly. New payment traffic uses Effect HTTP.
+    // Checkout-only repository backing for the remaining Promise-shaped
+    // checkout dependency contract. New payment traffic uses Effect HTTP.
     payment: createInMemoryPaymentRepository(),
-    // Temporary checkout-only bridge until task 8.6 moves checkout onto
-    // Effect module Layers directly. New promotion traffic uses Effect HTTP.
+    // Checkout-only repository backing for the remaining Promise-shaped
+    // checkout dependency contract. New promotion traffic uses Effect HTTP.
     promotion: createInMemoryPromotionRepository(),
-    // Temporary checkout-only bridge until task 8.6 moves checkout onto
-    // Effect module Layers directly. New tax traffic uses Effect HTTP.
+    // Checkout-only repository backing for the remaining Promise-shaped
+    // checkout dependency contract. New tax traffic uses Effect HTTP.
     tax: createInMemoryTaxRepository(),
   };
   seedDevelopmentFulfillmentRepository(repositories.fulfillment);
@@ -434,11 +425,10 @@ export const createServerCommerceRuntime = ({
   /*
    * Temporary checkout compatibility bridge.
    *
-   * Task 7.4 removed the pricing D1 repository and legacy route path after
-   * moving pricing to Effect HTTP + PostgreSQL. Checkout remains a section-8
-   * legacy Promise orchestrator, so it receives only this development golden
-   * path facade. Do not extend this into a general pricing adapter. Delete it
-   * in task 12.5 with the remaining completed temporary checkout bridges.
+   * Checkout still consumes a Promise-shaped pricing dependency, so server
+   * composition owns this development golden-path facade. Do not extend this
+   * into a general pricing adapter; remove it when checkout accepts the
+   * migrated pricing Effect service directly.
    */
   const checkoutPricingService = {
     calculatePrice: (input: Record<string, unknown>) => {
@@ -478,11 +468,11 @@ export const createServerCommerceRuntime = ({
    *
    * Task 7.5 removed the inventory D1 repository, Kysely schema, seed rows, and
    * legacy route path after migrating inventory to Effect HTTP + PostgreSQL.
-   * Checkout remains a section-8 legacy Promise orchestrator, so this facade
-   * preserves only the development golden-path availability and reservation
-   * semantics that were previously supplied by D1 seed rows. It is not a module
-   * adapter and must be deleted in task 12.5 with the remaining completed
-   * temporary checkout bridges.
+   * Checkout still consumes a Promise-shaped inventory dependency, so this
+   * facade preserves only the development golden-path availability and
+   * reservation semantics that were previously supplied by D1 seed rows. It is
+   * not a module adapter; remove it when checkout accepts the migrated
+   * inventory Effect service directly.
    */
   const checkoutInventoryService = {
     adjustInventory: () => Promise.resolve({}),
@@ -539,12 +529,10 @@ export const createServerCommerceRuntime = ({
    * Temporary checkout compatibility bridge.
    *
    * Task 7.3 removed the region/sales-channel D1 repository and legacy
-   * routes after moving that module to Effect HTTP + PostgreSQL. Checkout is
-   * still a section-8 legacy Promise orchestrator, so it cannot consume the new
-   * Effect services directly without widening this task into checkout
-   * migration. Keep this server-owned facade deterministic and limited to the
-   * development golden-path IDs. Delete it in task 12.5 with the remaining
-   * completed temporary checkout bridges.
+   * routes after moving that module to Effect HTTP + PostgreSQL. Checkout still
+   * consumes a Promise-shaped region dependency, so this server-owned facade is
+   * deterministic and limited to the development golden-path IDs. Remove it
+   * when checkout accepts the migrated region Effect service directly.
    */
   const checkoutRegionService = {
     validateRegionConstraints: (input: Record<string, unknown>) => {
@@ -594,8 +582,8 @@ export const createServerCommerceRuntime = ({
    * Mirrors only the development storefront publishability invariant that the
    * deleted D1 `sales_channel_product` seed row used to provide. Do not extend
    * this into a general sales-channel adapter; migrated code must use the
-   * Effect HTTP/Layer-backed region-sales-channel module. Task 12.5 removes
-   * this facade with the remaining completed temporary checkout bridges.
+   * Effect HTTP/Layer-backed region-sales-channel module. Remove it when
+   * checkout accepts the migrated sales-channel Effect service directly.
    */
   const checkoutSalesChannelService = {
     checkProductPublishability: (input: Record<string, unknown>) => {
@@ -622,8 +610,8 @@ export const createServerCommerceRuntime = ({
   };
   const services = {
     cart: createCartService({
+      actorService: cartActorService,
       clock,
-      coordinator: cartCoordinator,
       eventPublisher,
       idGenerator,
       repository: repositories.cart,

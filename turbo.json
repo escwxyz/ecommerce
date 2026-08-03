@@ -24,13 +24,10 @@
       "cache": false,
       "persistent": true
     },
-    "db:push": {
+    "db:status": {
       "cache": false
     },
-    "db:seed": {
-      "cache": false
-    },
-    "db:generate": {
+    "db:migrate": {
       "cache": false
     },
     "deploy": {

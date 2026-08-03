@@ -90,8 +90,8 @@ uses an in-memory adapter:
   than the PostgreSQL cart repository;
 - Cloudflare workflow metadata and state stores are optional and are not yet
   composed with PostgreSQL in the deployed Worker;
-- cart and inventory still enter coordination through temporary Promise
-  facades;
+- cart and inventory now enter coordination through the permanent
+  `KeyedActorService` contract;
 - the generic keyed actor has a no-op command interpreter; module-specific
   actors have not yet been composed;
 - notification realtime uses raw Durable Object SQLite rather than the
@@ -99,5 +99,5 @@ uses an in-memory adapter:
 
 These are composition or migration gaps, not alternate ownership decisions.
 Task 9.9 owns restart, interruption, replay, duplicate-delivery, compensation,
-and timer-recovery evidence. Task 12.5 removes the temporary coordinator
-facades.
+and timer-recovery evidence. The temporary coordinator facades were removed in
+task 12.5.

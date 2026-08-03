@@ -3,7 +3,6 @@ import { Context, Layer } from "effect";
 import type { CommerceEventEnvelope } from "../events/index";
 import type { CommerceModuleGraph } from "../modules/index";
 import type { CommerceQueuePublisher } from "../queues/index";
-import type { StatefulCoordinator } from "../stateful/index";
 import type {
   CommerceWorkflowMetadataStore,
   CommerceWorkflowRuntime,
@@ -82,14 +81,6 @@ export type WorkflowRuntimeService = CommerceWorkflowRuntime;
 /** Durable workflow metadata projection contract exposed as an Effect service tag. */
 export type WorkflowMetadataStoreService = CommerceWorkflowMetadataStore;
 
-/**
- * Legacy Promise coordinator exposed as an Effect service tag.
- *
- * @deprecated Task 9.6 replaces its Cloudflare adapter with
- * `KeyedActorService` from `@ecommerce/core/stateful`.
- */
-export type StatefulCoordinatorService = StatefulCoordinator;
-
 /** Runtime-neutral queue publisher contract exposed as an Effect service tag. */
 export type QueuePublisherService = CommerceQueuePublisher;
 
@@ -139,12 +130,6 @@ export const WorkflowMetadataStoreService =
     "@ecommerce/core/WorkflowMetadataStoreService"
   );
 
-/** @deprecated Use `KeyedActorService` from `@ecommerce/core/stateful`. */
-export const StatefulCoordinatorService =
-  Context.Service<StatefulCoordinatorService>(
-    "@ecommerce/core/StatefulCoordinatorService"
-  );
-
 /** Effect tag for queue publisher implementations. */
 export const QueuePublisherService = Context.Service<QueuePublisherService>(
   "@ecommerce/core/QueuePublisherService"
@@ -186,10 +171,6 @@ export const workflowRuntimeLayer = (service: WorkflowRuntimeService) =>
 export const workflowMetadataStoreLayer = (
   service: WorkflowMetadataStoreService
 ) => Layer.succeed(WorkflowMetadataStoreService, service);
-
-/** @deprecated Use `keyedActorLayer` from `@ecommerce/core/stateful`. */
-export const statefulCoordinatorLayer = (service: StatefulCoordinatorService) =>
-  Layer.succeed(StatefulCoordinatorService, service);
 
 /** Creates a Layer for queue publisher implementations. */
 export const queuePublisherLayer = (service: QueuePublisherService) =>

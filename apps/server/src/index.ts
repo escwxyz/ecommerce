@@ -25,7 +25,6 @@ import {
   createCustomerServiceLayer,
   defaultCustomerService,
 } from "@ecommerce/customer";
-import { createD1Database } from "@ecommerce/db-d1";
 import { env } from "@ecommerce/env/server";
 import {
   createFulfillmentServiceLayer,
@@ -104,7 +103,6 @@ export {
   KeyedActorDurableObject,
 };
 
-const database = createD1Database(serverEnv.DB);
 const clock = {
   now: () => new Date(),
 };
@@ -144,7 +142,6 @@ const runtime = createServerCommerceRuntime({
     namespace: serverEnv.CART_CACHE,
     projectionRepository: cartProjectionRepository,
   }),
-  db: database.db,
   notificationProviders: queuedNotificationProviders,
   notificationRuntime: notificationEventQueuePublisher,
 });
@@ -155,7 +152,7 @@ const checkoutContribution =
 
 const auth = createAuth({
   baseURL: serverEnv.BETTER_AUTH_URL,
-  database: database.authDatabase,
+  database: serverEnv.DB,
   permissionStatement: builtinPermissionStatement,
   secret: serverEnv.BETTER_AUTH_SECRET,
   trustedOrigins: [serverEnv.CORS_ORIGIN],

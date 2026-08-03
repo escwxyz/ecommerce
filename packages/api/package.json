@@ -19,7 +19,6 @@
     "@ecommerce/checkout": "workspace:*",
     "@ecommerce/core": "workspace:*",
     "@ecommerce/customer": "workspace:*",
-    "@ecommerce/db": "workspace:*",
     "@ecommerce/env": "workspace:*",
     "@ecommerce/fulfillment": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
@@ -33,8 +32,7 @@
     "@ecommerce/store": "workspace:*",
     "@ecommerce/tax": "workspace:*",
     "dotenv": "catalog:",
-    "effect": "catalog:",
-    "zod": "catalog:"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@ecommerce/config": "workspace:*",
