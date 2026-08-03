@@ -10,12 +10,15 @@ import {
   resetPostgresDevelopmentDatabase,
   rollbackPostgresDevelopmentDatabase,
   runPostgresMigrations,
+  seedPostgresDevelopmentDatabase,
 } from "./index";
 
 type CliCommand =
   | "migrate"
   | "rollback-development"
+  | "reset-and-seed-development"
   | "reset-development"
+  | "seed-development"
   | "status";
 
 const args = process.argv.slice(2);
@@ -31,7 +34,9 @@ const printUsageAndExit = (): never => {
       "  status",
       "  migrate",
       "  rollback-development --confirm-development-reset",
+      "  reset-and-seed-development --confirm-development-reset",
       "  reset-development --confirm-development-reset",
+      "  seed-development",
       "",
       "Required environment:",
       "  POSTGRES_URL",
@@ -44,7 +49,9 @@ const isCliCommand = (value: string | undefined): value is CliCommand =>
   value === "status" ||
   value === "migrate" ||
   value === "rollback-development" ||
-  value === "reset-development";
+  value === "reset-and-seed-development" ||
+  value === "reset-development" ||
+  value === "seed-development";
 
 if (!isCliCommand(command)) {
   printUsageAndExit();
@@ -97,10 +104,21 @@ const program: EffectValue<
         rollbackPostgresDevelopmentDatabase({ allowDestructive })
       );
     }
+    case "reset-and-seed-development": {
+      return asCliResult(
+        resetPostgresDevelopmentDatabase({ allowDestructive }).pipe(
+          Effect.andThen(runPostgresMigrations()),
+          Effect.andThen(seedPostgresDevelopmentDatabase())
+        )
+      );
+    }
     case "reset-development": {
       return asCliResult(
         resetPostgresDevelopmentDatabase({ allowDestructive })
       );
+    }
+    case "seed-development": {
+      return asCliResult(seedPostgresDevelopmentDatabase());
     }
     case "status": {
       return asCliResult(getPostgresMigrationStatus());

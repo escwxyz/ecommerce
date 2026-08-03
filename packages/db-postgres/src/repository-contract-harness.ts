@@ -2,10 +2,6 @@ import { createRepositoryContractHarness } from "@ecommerce/core/testing";
 import type { RepositoryContractHarness } from "@ecommerce/core/testing";
 import { Effect, Layer, Redacted } from "effect";
 
-import type {
-  PostgresDrizzleConfig,
-  PostgresDrizzleService,
-} from "./postgres-drizzle";
 import type { PostgresPoolConfig } from "./index";
 import {
   createPostgresDatabaseLayer,
@@ -13,6 +9,10 @@ import {
   postgresAdapterTarget,
   runPostgresMigrations,
 } from "./index";
+import type {
+  PostgresDrizzleConfig,
+  PostgresDrizzleService,
+} from "./postgres-drizzle";
 
 /** Environment variable used by opt-in local PostgreSQL contract suites. */
 export const localPostgresContractUrlEnv = "POSTGRES_URL" as const;

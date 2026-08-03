@@ -17,8 +17,10 @@
   },
   "scripts": {
     "db:migrate": "bun ./src/cli.ts migrate",
+    "db:reset-and-seed-development": "bun ./src/cli.ts reset-and-seed-development",
     "db:reset-development": "bun ./src/cli.ts reset-development",
     "db:rollback-development": "bun ./src/cli.ts rollback-development",
+    "db:seed-development": "bun ./src/cli.ts seed-development",
     "db:status": "bun ./src/cli.ts status",
     "check-types": "tsc --noEmit",
     "test": "bun test ./src",

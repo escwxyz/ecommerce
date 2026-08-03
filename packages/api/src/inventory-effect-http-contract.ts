@@ -124,15 +124,11 @@ export const inventoryAdminHttpApiGroup = HttpApiGroup.make(
     })
   )
   .add(
-    HttpApiEndpoint.post(
-      "inventoryReserve",
-      "/admin/inventory/reservations",
-      {
-        error: inventoryWriteErrors,
-        payload: ReserveInventoryInputSchema,
-        success: ReservationResultApiSuccessSchema,
-      }
-    )
+    HttpApiEndpoint.post("inventoryReserve", "/admin/inventory/reservations", {
+      error: inventoryWriteErrors,
+      payload: ReserveInventoryInputSchema,
+      success: ReservationResultApiSuccessSchema,
+    })
   )
   .add(
     HttpApiEndpoint.post(

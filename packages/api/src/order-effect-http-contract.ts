@@ -54,12 +54,14 @@ export const orderWriteErrors = [
   ...orderPersistenceErrors,
 ] as const;
 
-export const OrderAggregateSuccessSchema =
-  createApiSuccessSchema(OrderAggregateApiSchema);
+export const OrderAggregateSuccessSchema = createApiSuccessSchema(
+  OrderAggregateApiSchema
+);
 export const OrderAggregateNullableSuccessSchema = createApiSuccessSchema(
   Schema.NullOr(OrderAggregateApiSchema)
 );
-export const OrderListSuccessSchema = createApiSuccessSchema(OrderApiListSchema);
+export const OrderListSuccessSchema =
+  createApiSuccessSchema(OrderApiListSchema);
 export const OrderTransactionSuccessSchema = createApiSuccessSchema(
   OrderTransactionApiRecordSchema
 );
@@ -100,11 +102,15 @@ export const orderAdminHttpApiGroup = HttpApiGroup.make(
     )
   )
   .add(
-    HttpApiEndpoint.post("orderTransitionStatus", "/admin/orders/:orderId/status", {
-      error: orderWriteErrors,
-      payload: TransitionOrderStatusInputSchema,
-      success: OrderAggregateSuccessSchema,
-    })
+    HttpApiEndpoint.post(
+      "orderTransitionStatus",
+      "/admin/orders/:orderId/status",
+      {
+        error: orderWriteErrors,
+        payload: TransitionOrderStatusInputSchema,
+        success: OrderAggregateSuccessSchema,
+      }
+    )
   )
   .middleware(EffectHttpExecutionMiddleware)
   .middleware(EffectHttpAuthMiddleware)

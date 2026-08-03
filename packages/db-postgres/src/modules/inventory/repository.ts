@@ -252,7 +252,9 @@ const toInventoryLevelRecord = (
       stockedQuantity: row.stockedQuantity,
       updatedAt: row.updatedAt,
     }).pipe(
-      Effect.mapError(() => toRepositoryDecodeFailure("inventory-level", "read"))
+      Effect.mapError(() =>
+        toRepositoryDecodeFailure("inventory-level", "read")
+      )
     );
   });
 
@@ -375,7 +377,12 @@ const saveReservationWithExecutor = ({
     const [duplicateRow] = yield* executor
       .select()
       .from(postgresInventoryReservation)
-      .where(eq(postgresInventoryReservation.idempotencyKey, reservation.idempotencyKey))
+      .where(
+        eq(
+          postgresInventoryReservation.idempotencyKey,
+          reservation.idempotencyKey
+        )
+      )
       .limit(1)
       .pipe(Effect.mapError(toRepositoryUnavailable("read")));
 
@@ -391,8 +398,14 @@ const saveReservationWithExecutor = ({
       .from(postgresInventoryLevel)
       .where(
         and(
-          eq(postgresInventoryLevel.inventoryItemId, reservation.inventoryItemId),
-          eq(postgresInventoryLevel.stockLocationId, reservation.stockLocationId)
+          eq(
+            postgresInventoryLevel.inventoryItemId,
+            reservation.inventoryItemId
+          ),
+          eq(
+            postgresInventoryLevel.stockLocationId,
+            reservation.stockLocationId
+          )
         )
       )
       .limit(1)
@@ -400,7 +413,10 @@ const saveReservationWithExecutor = ({
 
     const level = levelRow ? yield* decodeInventoryLevelRow(levelRow) : null;
 
-    if (!level || level.stockedQuantity - level.reservedQuantity < reservation.quantity) {
+    if (
+      !level ||
+      level.stockedQuantity - level.reservedQuantity < reservation.quantity
+    ) {
       return { status: "insufficient-stock" as const };
     }
 
@@ -434,7 +450,12 @@ export const createPostgresInventoryRepository = (
         const rows = yield* executor
           .select()
           .from(postgresInventoryAdjustmentEvent)
-          .where(eq(postgresInventoryAdjustmentEvent.inventoryItemId, inventoryItemId))
+          .where(
+            eq(
+              postgresInventoryAdjustmentEvent.inventoryItemId,
+              inventoryItemId
+            )
+          )
           .orderBy(desc(postgresInventoryAdjustmentEvent.createdAt))
           .pipe(Effect.mapError(toRepositoryUnavailable("read")));
 
@@ -446,7 +467,9 @@ export const createPostgresInventoryRepository = (
         const [row] = yield* executor
           .select()
           .from(postgresInventoryAdjustmentEvent)
-          .where(eq(postgresInventoryAdjustmentEvent.idempotencyKey, idempotencyKey))
+          .where(
+            eq(postgresInventoryAdjustmentEvent.idempotencyKey, idempotencyKey)
+          )
           .limit(1)
           .pipe(Effect.mapError(toRepositoryUnavailable("read")));
 
@@ -487,7 +510,9 @@ export const createPostgresInventoryRepository = (
         const [row] = yield* executor
           .select()
           .from(postgresInventoryReservation)
-          .where(eq(postgresInventoryReservation.idempotencyKey, idempotencyKey))
+          .where(
+            eq(postgresInventoryReservation.idempotencyKey, idempotencyKey)
+          )
           .limit(1)
           .pipe(Effect.mapError(toRepositoryUnavailable("read")));
 
@@ -548,7 +573,10 @@ export const createPostgresInventoryRepository = (
             set: insert,
             target: postgresInventoryAdjustmentEvent.id,
           })
-          .pipe(Effect.asVoid, Effect.mapError(toRepositoryUnavailable("write")));
+          .pipe(
+            Effect.asVoid,
+            Effect.mapError(toRepositoryUnavailable("write"))
+          );
 
         return event;
       }),
@@ -563,7 +591,10 @@ export const createPostgresInventoryRepository = (
             set: insert,
             target: postgresInventoryItem.id,
           })
-          .pipe(Effect.asVoid, Effect.mapError(toRepositoryUnavailable("write")));
+          .pipe(
+            Effect.asVoid,
+            Effect.mapError(toRepositoryUnavailable("write"))
+          );
 
         return item;
       }),
@@ -581,7 +612,10 @@ export const createPostgresInventoryRepository = (
               postgresInventoryLevel.stockLocationId,
             ],
           })
-          .pipe(Effect.asVoid, Effect.mapError(toRepositoryUnavailable("write")));
+          .pipe(
+            Effect.asVoid,
+            Effect.mapError(toRepositoryUnavailable("write"))
+          );
 
         return level;
       }),
@@ -615,7 +649,10 @@ export const createPostgresInventoryRepository = (
             set: insert,
             target: postgresInventoryStockLocation.id,
           })
-          .pipe(Effect.asVoid, Effect.mapError(toRepositoryUnavailable("write")));
+          .pipe(
+            Effect.asVoid,
+            Effect.mapError(toRepositoryUnavailable("write"))
+          );
 
         return location;
       }),

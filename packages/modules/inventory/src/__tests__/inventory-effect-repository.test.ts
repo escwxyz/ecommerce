@@ -127,7 +127,9 @@ const runInventoryRepositoryContract = (
         )
       ).resolves.toEqual(reservation);
       await expect(
-        Effect.runPromise(repository.findReservationsForLevel(item.id, location.id))
+        Effect.runPromise(
+          repository.findReservationsForLevel(item.id, location.id)
+        )
       ).resolves.toEqual([reservation]);
       await expect(
         Effect.runPromise(repository.saveAdjustmentEvent(event))

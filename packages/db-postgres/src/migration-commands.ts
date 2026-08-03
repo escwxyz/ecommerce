@@ -1,4 +1,5 @@
 import { PgClient } from "@effect/sql-pg";
+import { sql } from "drizzle-orm";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import type { MigrationMeta } from "drizzle-orm/migrator";
 import { Effect, Schema } from "effect";
@@ -10,8 +11,10 @@ import {
   defaultPostgresMigrationsTable,
 } from "./migration-config";
 import type { PostgresMigrationRunnerOptions } from "./migration-config";
+import { PostgresDrizzleService } from "./postgres-drizzle";
 import {
   commerceMigrationAuditTableName,
+  commerceOutbox,
   commerceOutboxDeadLetterTableName,
   commerceOutboxTableName,
   postgresCartAdjustmentTableName,
@@ -63,12 +66,15 @@ export type PostgresMigrationCommand =
   | "apply"
   | "rollback-development"
   | "reset-development"
+  | "reset-and-seed-development"
+  | "seed-development"
   | "status";
 
 export type PostgresMigrationCommandPhase =
   | "connection"
   | "destructive-confirmation"
   | "local-migrations"
+  | "seed"
   | "status-query";
 
 /** Expected command failure emitted by the PostgreSQL migration command layer. */
@@ -79,6 +85,8 @@ export class PostgresMigrationCommandFailure extends Schema.TaggedErrorClass<Pos
       "apply",
       "rollback-development",
       "reset-development",
+      "reset-and-seed-development",
+      "seed-development",
       "status",
     ]),
     message: Schema.NonEmptyString,
@@ -86,6 +94,7 @@ export class PostgresMigrationCommandFailure extends Schema.TaggedErrorClass<Pos
       "connection",
       "destructive-confirmation",
       "local-migrations",
+      "seed",
       "status-query",
     ]),
   }
@@ -139,6 +148,15 @@ export interface PostgresDevelopmentMigrationCommandPlan {
   readonly command: "rollback-development" | "reset-development";
   readonly requiresConfirmation: true;
   readonly statements: readonly string[];
+}
+
+export interface PostgresDevelopmentSeedReport {
+  readonly adapter: typeof postgresAdapterTarget;
+  readonly insertedRows: 0;
+  readonly mode: "schema-only";
+  readonly message: string;
+  readonly seededAt: Date;
+  readonly verifiedTables: readonly string[];
 }
 
 const drizzleDefaultMigrationsSchema = "drizzle";
@@ -293,8 +311,8 @@ const readAppliedPostgresMigrations = (
   config: PostgresMigrationConfigResolved
 ) =>
   Effect.gen(function* readAppliedPostgresMigrationsGenerator() {
-    const sql = yield* PgClient.PgClient;
-    const tableExistsRows = yield* sql.unsafe<{
+    const postgres = yield* PgClient.PgClient;
+    const tableExistsRows = yield* postgres.unsafe<{
       readonly exists: string | null;
     }>('SELECT to_regclass($1) AS "exists"', [
       qualifyPostgresObjectName(
@@ -309,7 +327,7 @@ const readAppliedPostgresMigrations = (
       return noAppliedMigrations;
     }
 
-    return yield* sql.unsafe<PostgresAppliedMigrationRow>(
+    return yield* postgres.unsafe<PostgresAppliedMigrationRow>(
       `SELECT id, hash, created_at AS "createdAt", name, applied_at AS "appliedAt"
        FROM ${quoteQualifiedPostgresName(
          config.migrationsSchema,
@@ -528,14 +546,63 @@ export const rollbackPostgresDevelopmentDatabase = ({
       )
   );
 
+/**
+ * Verifies the post-migration development seed state.
+ *
+ * The current Effect backend intentionally has no PostgreSQL commerce fixture
+ * rows: checkout development IDs are server-owned constants until checkout
+ * consumes migrated module services directly. This seed command is still an
+ * Effect/Drizzle boundary so future fixture rows must be added here instead of
+ * reviving the removed D1/Kysely seed path.
+ */
+export const seedPostgresDevelopmentDatabase = (): Effect.Effect<
+  PostgresDevelopmentSeedReport,
+  PostgresMigrationCommandFailure,
+  PostgresDrizzleService
+> =>
+  PostgresDrizzleService.use((service) =>
+    service.database
+      .execute<{ count: number }>(
+        sql`SELECT COUNT(*)::int AS "count" FROM ${commerceOutbox}`
+      )
+      .pipe(
+        Effect.flatMap((result) => {
+          const outboxCount =
+            normalizeDrizzleRows<{ count: number }>(result)[0]?.count ?? 0;
+
+          if (outboxCount !== 0) {
+            return Effect.fail(
+              new PostgresMigrationCommandFailure({
+                command: "seed-development",
+                message:
+                  "Development seed expected a clean post-migration outbox",
+                phase: "seed",
+              })
+            );
+          }
+
+          return Effect.succeed({
+            adapter: postgresAdapterTarget,
+            insertedRows: 0 as const,
+            message:
+              "No PostgreSQL commerce fixture rows are required; development checkout fixtures are server-owned constants.",
+            mode: "schema-only" as const,
+            seededAt: new Date(),
+            verifiedTables: [commerceOutboxTableName] as const,
+          });
+        }),
+        Effect.mapError(toPostgresSeedFailure)
+      )
+  );
+
 const runDevelopmentResetPlan = (
   command: "rollback-development" | "reset-development",
   plan: PostgresDevelopmentMigrationCommandPlan
 ) =>
   Effect.gen(function* runDevelopmentResetPlanGenerator() {
-    const sql = yield* PgClient.PgClient;
+    const postgres = yield* PgClient.PgClient;
     for (const statement of plan.statements) {
-      yield* sql.unsafe(statement);
+      yield* postgres.unsafe(statement);
     }
 
     return plan;
@@ -558,6 +625,35 @@ const toPostgresDevelopmentResetFailure =
       message: toFailureMessage(error),
       phase: "connection",
     });
+
+const toPostgresSeedFailure = (
+  error: unknown
+): PostgresMigrationCommandFailure =>
+  error instanceof PostgresMigrationCommandFailure
+    ? error
+    : new PostgresMigrationCommandFailure({
+        command: "seed-development",
+        message: toFailureMessage(error),
+        phase: "seed",
+      });
+
+const hasRows = <TRow>(
+  value: unknown
+): value is { readonly rows: readonly TRow[] } =>
+  typeof value === "object" &&
+  value !== null &&
+  Array.isArray(Reflect.get(value, "rows"));
+
+const normalizeDrizzleRows = <TRow>(value: unknown): readonly TRow[] =>
+  Array.isArray(value) ? value : normalizeDrizzleRowsObject<TRow>(value);
+
+const normalizeDrizzleRowsObject = <TRow>(value: unknown): readonly TRow[] => {
+  if (hasRows<TRow>(value)) {
+    return value.rows;
+  }
+
+  return [];
+};
 
 const quotePostgresIdentifier = (value: string): string =>
   `"${value.replaceAll('"', '""')}"`;

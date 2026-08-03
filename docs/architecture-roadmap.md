@@ -58,6 +58,37 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
+As of 2026-08-03, the `adopt-effect-4-backend-architecture` implementation is
+in completion audit. Backend commerce code has moved to Effect-native schemas,
+service contracts, repository contracts, PostgreSQL Drizzle adapters, Effect
+HTTP APIs, storefront SDK transports, workflow/outbox/queue/actor contracts,
+plugin contracts, and telemetry conventions. Legacy backend Hono route
+composition, oRPC router/procedure coupling, Zod boundary schemas, Kysely
+contracts/adapters, completed temporary bridges, and backend forbidden-import
+gaps have been removed from the migrated backend surface.
+
+The local PostgreSQL operational path is now Drizzle/Effect-only:
+
+- `bun run db:reset-and-seed-development -- --confirm-development-reset`
+  resets the adapter-owned development schema, reapplies checked-in
+  migrations, and runs the schema-only development seed.
+- `POSTGRES_URL=... bun run --cwd packages/db-postgres db:status` reports the
+  live migration table state; on 2026-08-03 it reported 14 applied migrations,
+  zero pending migrations, and zero failed migrations against the local
+  OrbStack/Docker PostgreSQL instance.
+- `POSTGRES_URL=... bun run --cwd packages/db-postgres test:live` verifies live
+  migration application, transactional outbox commit/rollback behavior,
+  duplicate constraint surfacing, row decoding, and concurrent outbox claiming.
+
+Current completion evidence is tracked in
+`openspec/changes/adopt-effect-4-backend-architecture/evidence.md`. Root
+`bun run test`, backend/API/SDK/server package typechecks, `bun run build`, and
+live PostgreSQL verification pass. Root `bun run check` and
+`bun run check-types` are intentionally not marked clean because they still
+include pre-existing or untracked workspace surfaces outside this task:
+`.vscode/settings.json`, untracked `apps/web/src/routeTree.gen.ts`, and
+untracked `apps/web` dashboard/oRPC type errors.
+
 As of 2026-07-28, tasks 1.1 through 10.2 of
 `adopt-effect-4-backend-architecture` are complete. The store tracer slice and
 customer/product/region-sales-channel/pricing/inventory foundational slices,

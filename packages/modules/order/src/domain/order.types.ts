@@ -1,5 +1,6 @@
 import type { Effect as EffectValue } from "effect/Effect";
 
+import type { OrderExpectedError } from "./order.errors";
 import type {
   CreateOrderFromCheckoutInputSchema,
   CreateOrderLineItemInputSchema,
@@ -29,7 +30,6 @@ import type {
   RecordOrderTransactionInputSchema,
   TransitionOrderStatusInputSchema,
 } from "./order.schema";
-import type { OrderExpectedError } from "./order.errors";
 
 export type OrderId = typeof OrderIdSchema.Type;
 export type OrderLineItemId = typeof OrderLineItemIdSchema.Type;

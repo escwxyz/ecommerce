@@ -353,7 +353,7 @@ export const createPostgresTaxRepository = (
           .orderBy(desc(postgresTaxRate.createdAt))
       ).pipe(
         Effect.flatMap((rows) =>
-          Effect.forEach(rows, (row) => decodeRateRow(row, "read"))
+          Effect.all(rows.map((row) => decodeRateRow(row, "read")))
         )
       ),
     findRegionById: (id) =>

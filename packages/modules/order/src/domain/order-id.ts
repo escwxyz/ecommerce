@@ -7,9 +7,17 @@ import {
   OrderLineItemIdSchema,
   OrderTransactionIdSchema,
 } from "./order.schema";
-import type { OrderId, OrderLineItemId, OrderTransactionId } from "./order.types";
+import type {
+  OrderId,
+  OrderLineItemId,
+  OrderTransactionId,
+} from "./order.types";
 
-export type { OrderId, OrderLineItemId, OrderTransactionId } from "./order.types";
+export type {
+  OrderId,
+  OrderLineItemId,
+  OrderTransactionId,
+} from "./order.types";
 
 export const ORDER_ID_PREFIX = "ord_" as const;
 export const ORDER_LINE_ITEM_ID_PREFIX = "ordli_" as const;

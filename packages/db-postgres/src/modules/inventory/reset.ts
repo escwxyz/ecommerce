@@ -28,9 +28,7 @@ export const resetPostgresInventoryTables = PostgresDrizzleService.use(
         .pipe(Effect.asVoid)
         .pipe(
           Effect.andThen(
-            transaction
-              .delete(postgresInventoryReservation)
-              .pipe(Effect.asVoid)
+            transaction.delete(postgresInventoryReservation).pipe(Effect.asVoid)
           ),
           Effect.andThen(
             transaction.delete(postgresInventoryLevel).pipe(Effect.asVoid)

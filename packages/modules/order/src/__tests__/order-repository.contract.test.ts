@@ -122,7 +122,9 @@ const runOrderRepositoryContract = (
         Effect.runPromise(repository.findOrderById(orderId))
       ).resolves.toEqual(aggregate.order);
       await expect(
-        Effect.runPromise(repository.findOrderByIdempotencyKey("order_contract"))
+        Effect.runPromise(
+          repository.findOrderByIdempotencyKey("order_contract")
+        )
       ).resolves.toEqual(aggregate.order);
       await expect(
         Effect.runPromise(repository.getOrderAggregate(orderId))

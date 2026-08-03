@@ -91,13 +91,12 @@ export class InMemoryOrderRepository implements ResettableOrderRepository {
 
   readonly findOrderByIdempotencyKey = (
     idempotencyKey: string
-  ): Effect.Effect<OrderRecord | null, OrderExpectedError> => {
-    const self = this;
-    return Effect.gen(function* findOrderByIdempotencyKeyEffect() {
-      const orderId = self.#orderIdempotency.get(idempotencyKey);
-      return orderId ? yield* self.findOrderById(orderId as OrderId) : null;
-    });
-  };
+  ): Effect.Effect<OrderRecord | null, OrderExpectedError> =>
+    Effect.flatMap(
+      Effect.sync(() => this.#orderIdempotency.get(idempotencyKey) ?? null),
+      (orderId) =>
+        orderId ? this.findOrderById(orderId as OrderId) : Effect.succeed(null)
+    );
 
   readonly findStateTransitionByIdempotencyKey = (
     idempotencyKey: string
@@ -155,102 +154,96 @@ export class InMemoryOrderRepository implements ResettableOrderRepository {
   readonly saveOrderTransaction = (
     transaction: OrderTransactionRecord,
     idempotencyKey: string
-  ): Effect.Effect<OrderTransactionRecord, OrderExpectedError> => {
-    const self = this;
-    return Effect.gen(function* saveOrderTransactionEffect() {
-      const existingId = self.#transactionIdempotency.get(idempotencyKey);
+  ): Effect.Effect<OrderTransactionRecord, OrderExpectedError> =>
+    Effect.suspend(() => {
+      const existingId = this.#transactionIdempotency.get(idempotencyKey);
 
       if (existingId) {
-        const existing = self.#aggregates
+        const existing = this.#aggregates
           .get(transaction.orderId)
           ?.transactions.find(
             (candidate: OrderTransactionRecord) => candidate.id === existingId
           );
 
         if (existing) {
-          return {
+          return Effect.succeed({
             ...existing,
             createdAt: cloneDate(existing.createdAt),
             updatedAt: cloneDate(existing.updatedAt),
-          };
+          });
         }
       }
 
-      const aggregate = self.#aggregates.get(transaction.orderId);
+      const aggregate = this.#aggregates.get(transaction.orderId);
 
       if (!aggregate) {
-        return yield* new OrderNotFound({ orderId: transaction.orderId });
+        return Effect.fail(new OrderNotFound({ orderId: transaction.orderId }));
       }
 
-      self.#aggregates.set(transaction.orderId, {
+      this.#aggregates.set(transaction.orderId, {
         ...aggregate,
         transactions: [...aggregate.transactions, transaction],
       });
-      self.#transactionIdempotency.set(idempotencyKey, transaction.id);
+      this.#transactionIdempotency.set(idempotencyKey, transaction.id);
 
-      return {
+      return Effect.succeed({
         ...transaction,
         createdAt: cloneDate(transaction.createdAt),
         updatedAt: cloneDate(transaction.updatedAt),
-      };
+      });
     });
-  };
 
   readonly saveStateTransition = (
     transition: OrderStateTransitionRecord,
     idempotencyKey: string
-  ): Effect.Effect<OrderStateTransitionRecord, OrderExpectedError> => {
-    const self = this;
-    return Effect.gen(function* saveStateTransitionEffect() {
-      const existing = self.#transitionIdempotency.get(idempotencyKey);
+  ): Effect.Effect<OrderStateTransitionRecord, OrderExpectedError> =>
+    Effect.suspend(() => {
+      const existing = this.#transitionIdempotency.get(idempotencyKey);
 
       if (existing) {
-        return {
+        return Effect.succeed({
           ...existing,
           changedAt: cloneDate(existing.changedAt),
           metadata: { ...existing.metadata },
-        };
+        });
       }
 
-      const aggregate = self.#aggregates.get(transition.orderId);
+      const aggregate = this.#aggregates.get(transition.orderId);
 
       if (!aggregate) {
-        return yield* new OrderNotFound({ orderId: transition.orderId });
+        return Effect.fail(new OrderNotFound({ orderId: transition.orderId }));
       }
 
-      self.#aggregates.set(transition.orderId, {
+      this.#aggregates.set(transition.orderId, {
         ...aggregate,
         stateTransitions: [...aggregate.stateTransitions, transition],
       });
-      self.#transitionIdempotency.set(idempotencyKey, transition);
+      this.#transitionIdempotency.set(idempotencyKey, transition);
 
-      return {
+      return Effect.succeed({
         ...transition,
         changedAt: cloneDate(transition.changedAt),
         metadata: { ...transition.metadata },
-      };
+      });
     });
-  };
 
   readonly updateOrder = (
     order: OrderRecord
-  ): Effect.Effect<OrderRecord, OrderExpectedError> => {
-    const self = this;
-    return Effect.gen(function* updateOrderEffect() {
-      const aggregate = self.#aggregates.get(order.id);
+  ): Effect.Effect<OrderRecord, OrderExpectedError> =>
+    Effect.suspend(() => {
+      const aggregate = this.#aggregates.get(order.id);
 
       if (!aggregate) {
-        return yield* new OrderNotFound({ orderId: order.id });
+        return Effect.fail(new OrderNotFound({ orderId: order.id }));
       }
 
-      self.#aggregates.set(order.id, {
+      this.#aggregates.set(order.id, {
         ...aggregate,
         order: cloneOrder(order),
       });
 
-      return cloneOrder(order);
+      return Effect.succeed(cloneOrder(order));
     });
-  };
 }
 
 export const createInMemoryOrderRepository = (): OrderRepository =>

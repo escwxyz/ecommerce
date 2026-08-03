@@ -8,6 +8,19 @@ has been removed.
 bun run db:migrate
 ```
 
+For a clean local development reset, use the PostgreSQL adapter command with an
+explicit local `POSTGRES_URL` and destructive confirmation:
+
+```sh
+POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/ecommerce \
+  bun run db:reset-and-seed-development -- --confirm-development-reset
+```
+
+The current PostgreSQL development seed is schema-only. It verifies the clean
+post-migration database through the Effect/Drizzle adapter and inserts zero
+commerce fixture rows. Do not add seed rows outside
+`@ecommerce/db-postgres`'s Effect/Drizzle seed command.
+
 Better Auth still owns a provider-private D1 table baseline generated under
 `packages/auth/src/migrations/sql/0000_auth.sql`. That D1 seam is for auth
 session/account/verification storage only and is not a commerce seed path.

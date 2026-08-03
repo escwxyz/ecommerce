@@ -30,8 +30,9 @@ export const OrderSerializedIdSchema = OrderTrimmedStringSchema.pipe(
 export const OrderLineItemSerializedIdSchema = OrderTrimmedStringSchema.pipe(
   Schema.check(Schema.isStartsWith("ordli_"))
 );
-export const OrderTransactionSerializedIdSchema =
-  OrderTrimmedStringSchema.pipe(Schema.check(Schema.isStartsWith("ordtxn_")));
+export const OrderTransactionSerializedIdSchema = OrderTrimmedStringSchema.pipe(
+  Schema.check(Schema.isStartsWith("ordtxn_"))
+);
 
 export const OrderIsoDateTimeStringSchema = OrderTrimmedStringSchema.pipe(
   Schema.check(Schema.makeFilter(isCanonicalIsoDateTime))

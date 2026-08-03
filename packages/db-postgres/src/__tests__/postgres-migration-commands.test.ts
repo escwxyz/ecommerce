@@ -14,6 +14,7 @@ import {
   resetPostgresDevelopmentDatabase,
   resolvePostgresMigrationCommandConfig,
   rollbackPostgresDevelopmentDatabase,
+  seedPostgresDevelopmentDatabase,
   summarizePostgresMigrationStatus,
 } from "../index";
 
@@ -210,6 +211,7 @@ describe("PostgreSQL migration commands", () => {
     ]);
     expect(Effect.isEffect(resetPostgresDevelopmentDatabase())).toBe(true);
     expect(Effect.isEffect(rollbackPostgresDevelopmentDatabase())).toBe(true);
+    expect(Effect.isEffect(seedPostgresDevelopmentDatabase())).toBe(true);
   });
 
   it("exposes package-local migration command scripts", () => {
@@ -219,8 +221,11 @@ describe("PostgreSQL migration commands", () => {
 
     expect(packageJson.scripts).toMatchObject({
       "db:migrate": "bun ./src/cli.ts migrate",
+      "db:reset-and-seed-development":
+        "bun ./src/cli.ts reset-and-seed-development",
       "db:reset-development": "bun ./src/cli.ts reset-development",
       "db:rollback-development": "bun ./src/cli.ts rollback-development",
+      "db:seed-development": "bun ./src/cli.ts seed-development",
       "db:status": "bun ./src/cli.ts status",
     });
   });

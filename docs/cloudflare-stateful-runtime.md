@@ -151,6 +151,12 @@ migration input. Its Cloudflare facade now dispatches through the permanent
 Effect Layer and schema protocol. Task 12.5 removes that facade, the legacy
 core types, and the temporary class export alias.
 
+As of the task-12 cleanup audit on 2026-08-03, those temporary stateful
+bridges have been removed from the completed backend surface. Future
+stateful-runtime work should compose through the permanent Effect workflow,
+queue, outbox, and keyed-actor contracts rather than restoring Promise
+coordinator aliases or legacy server-side route shims.
+
 Task 9.9 completes the portable and Cloudflare recovery gate:
 
 - actual Effect interruption leaves a workflow resumable and does not record a

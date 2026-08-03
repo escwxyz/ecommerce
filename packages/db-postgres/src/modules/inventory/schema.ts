@@ -65,7 +65,9 @@ export const postgresInventoryStockLocation = pgTable(
       .notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   },
-  (table) => [index("inventory_stock_location_created_at_idx").on(table.createdAt)]
+  (table) => [
+    index("inventory_stock_location_created_at_idx").on(table.createdAt),
+  ]
 );
 
 export const postgresInventoryLevel = pgTable(

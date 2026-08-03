@@ -126,7 +126,9 @@ export const orderAdminHttpApiHandlers = HttpApiBuilder.group(
         withEffectHttpPermission(
           withCurrentRequest(
             OrderService.use((service) =>
-              service.listOrders.pipe(Effect.map((orders) => orders.map(serializeOrder)))
+              service.listOrders.pipe(
+                Effect.map((orders) => orders.map(serializeOrder))
+              )
             )
           ),
           orderPermissions.read
@@ -148,7 +150,9 @@ export const orderAdminHttpApiHandlers = HttpApiBuilder.group(
         withEffectHttpPermission(
           withCurrentRequest(
             OrderService.use((service) =>
-              service.transitionStatus(payload).pipe(Effect.map(serializeAggregate))
+              service
+                .transitionStatus(payload)
+                .pipe(Effect.map(serializeAggregate))
             )
           ),
           orderPermissions.write

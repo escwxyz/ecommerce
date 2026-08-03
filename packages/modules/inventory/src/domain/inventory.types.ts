@@ -36,7 +36,7 @@ export type StockLocationId = typeof StockLocationIdSchema.Type;
 export type InventoryLevelId = typeof InventoryLevelIdSchema.Type;
 export type InventoryReservationId = typeof InventoryReservationIdSchema.Type;
 export type InventoryAdjustmentEventId =
-  typeof InventoryAdjustmentEventRecordSchema.Type["id"];
+  (typeof InventoryAdjustmentEventRecordSchema.Type)["id"];
 
 export type CreateInventoryItemInput =
   typeof CreateInventoryItemInputSchema.Type;
@@ -45,13 +45,10 @@ export type InventoryItemApiRecord = typeof InventoryItemApiRecordSchema.Type;
 export type CreateStockLocationInput =
   typeof CreateStockLocationInputSchema.Type;
 export type StockLocationRecord = typeof StockLocationRecordSchema.Type;
-export type StockLocationApiRecord =
-  typeof StockLocationApiRecordSchema.Type;
-export type SetInventoryLevelInput =
-  typeof SetInventoryLevelInputSchema.Type;
+export type StockLocationApiRecord = typeof StockLocationApiRecordSchema.Type;
+export type SetInventoryLevelInput = typeof SetInventoryLevelInputSchema.Type;
 export type InventoryLevelRecord = typeof InventoryLevelRecordSchema.Type;
-export type InventoryLevelApiRecord =
-  typeof InventoryLevelApiRecordSchema.Type;
+export type InventoryLevelApiRecord = typeof InventoryLevelApiRecordSchema.Type;
 export type InventoryReservationStatus =
   typeof InventoryReservationStatusSchema.Type;
 export type ReserveInventoryInput = typeof ReserveInventoryInputSchema.Type;
@@ -92,7 +89,10 @@ export interface InventoryRepository {
   >;
   readonly findAdjustmentEventByIdempotencyKey: (
     idempotencyKey: string
-  ) => EffectValue<InventoryAdjustmentEventRecord | null, InventoryExpectedError>;
+  ) => EffectValue<
+    InventoryAdjustmentEventRecord | null,
+    InventoryExpectedError
+  >;
   readonly findInventoryItemById: (
     id: InventoryItemId
   ) => EffectValue<InventoryItemRecord | null, InventoryExpectedError>;

@@ -19,6 +19,10 @@ runtime-neutral repository services.
 - `rollbackPostgresDevelopmentDatabase` and
   `resetPostgresDevelopmentDatabase` execute development-only reset plans after
   explicit destructive confirmation.
+- `seedPostgresDevelopmentDatabase` verifies the schema-only development seed
+  state through Drizzle. It currently inserts zero commerce fixture rows because
+  server-owned checkout development IDs are constants until checkout consumes
+  migrated module services directly.
 
 The Layer constructors do not open a connection until the Layer is built by an
 Effect runtime. Credential-free tests therefore verify composition and type
@@ -60,6 +64,8 @@ not copy Kysely or D1 migration history into the PostgreSQL baseline.
 - `bun run db:migrate`
 - `bun run db:rollback-development`
 - `bun run db:reset-development`
+- `bun run db:reset-and-seed-development`
+- `bun run db:seed-development`
 
 All commands require `POSTGRES_URL`. Status is read-only and reports pending,
 applied, and failed records by comparing local Drizzle migration files with the
@@ -67,6 +73,15 @@ Drizzle migration journal. The rollback and reset commands are development-only
 because this migration has no production data. They require explicit destructive
 confirmation with `-- --confirm-development-reset` and only drop adapter-owned
 foundation objects plus Drizzle's migration schema.
+
+The reset-and-seed command runs the destructive reset, applies all checked-in
+Drizzle migrations, then runs the schema-only seed verification through
+`PostgresDrizzleService`. It is the canonical local task 12.7 command:
+
+```sh
+POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/ecommerce \
+  bun run db:reset-and-seed-development -- --confirm-development-reset
+```
 
 ## Repository contract harness rule
 

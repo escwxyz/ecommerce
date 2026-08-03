@@ -42,8 +42,6 @@ describe("Effect 4 HttpApi canary", () => {
       baseUrl: "https://commerce.example",
     });
 
-    expect(buildUrl.system.health()).toBe(
-      "https://commerce.example/health"
-    );
+    expect(buildUrl.system.health()).toBe("https://commerce.example/health");
   });
 });

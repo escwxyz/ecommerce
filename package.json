@@ -44,6 +44,8 @@
     "dev:server": "turbo -F server dev",
     "db:status": "turbo -F @ecommerce/db-postgres db:status",
     "db:migrate": "turbo -F @ecommerce/db-postgres db:migrate",
+    "db:reset-and-seed-development": "turbo -F @ecommerce/db-postgres db:reset-and-seed-development",
+    "db:seed-development": "turbo -F @ecommerce/db-postgres db:seed-development",
     "deploy": "turbo -F @ecommerce/infra deploy",
     "destroy": "turbo -F @ecommerce/infra destroy",
     "test": "turbo test",

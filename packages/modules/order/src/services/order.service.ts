@@ -140,19 +140,19 @@ const publishOrderEvent = ({
     try: () =>
       Promise.resolve(
         eventPublisher.publish(
-        createEventEnvelope({
-          causationId,
-          correlationId,
-          id: createPrefixedId(idGenerator, "evt_"),
-          name,
-          payload,
-          sourceModule: "order",
-          subject: {
-            id: orderId,
-            type: "order",
-          },
-          workflowRunId,
-        })
+          createEventEnvelope({
+            causationId,
+            correlationId,
+            id: createPrefixedId(idGenerator, "evt_"),
+            name,
+            payload,
+            sourceModule: "order",
+            subject: {
+              id: orderId,
+              type: "order",
+            },
+            workflowRunId,
+          })
         )
       ),
   });

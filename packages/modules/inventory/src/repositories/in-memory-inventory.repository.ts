@@ -13,7 +13,10 @@ import type {
   StockLocationId,
   StockLocationRecord,
 } from "../domain";
-import { InventoryRepositoryService, InventoryValidationFailure } from "../domain";
+import {
+  InventoryRepositoryService,
+  InventoryValidationFailure,
+} from "../domain";
 
 export interface ResettableInventoryRepository extends InventoryRepository {
   readonly clear: EffectValue<void, never>;
@@ -54,9 +57,7 @@ const toLevelKey = (
   stockLocationId: StockLocationId
 ): string => `${inventoryItemId}:${stockLocationId}`;
 
-export class InMemoryInventoryRepository
-  implements ResettableInventoryRepository
-{
+export class InMemoryInventoryRepository implements ResettableInventoryRepository {
   readonly #adjustmentEvents = new Map<
     string,
     InventoryAdjustmentEventRecord
@@ -122,15 +123,13 @@ export class InMemoryInventoryRepository
     stockLocationId: StockLocationId
   ): EffectValue<InventoryLevelRecord | null, InventoryExpectedError> =>
     Effect.sync(
-      () => this.#levels.get(toLevelKey(inventoryItemId, stockLocationId)) ?? null
+      () =>
+        this.#levels.get(toLevelKey(inventoryItemId, stockLocationId)) ?? null
     );
 
   readonly findReservationByIdempotencyKey = (
     idempotencyKey: string
-  ): EffectValue<
-    InventoryReservationRecord | null,
-    InventoryExpectedError
-  > =>
+  ): EffectValue<InventoryReservationRecord | null, InventoryExpectedError> =>
     Effect.sync(() => this.#reservationIdempotency.get(idempotencyKey) ?? null);
 
   readonly findReservationsForLevel = (
@@ -241,10 +240,7 @@ export class InMemoryInventoryRepository
         updatedAt: reservation.updatedAt,
       });
       this.#reservations.set(reservation.id, reservation);
-      this.#reservationIdempotency.set(
-        reservation.idempotencyKey,
-        reservation
-      );
+      this.#reservationIdempotency.set(reservation.idempotencyKey, reservation);
 
       return {
         reservation,

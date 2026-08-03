@@ -30,6 +30,12 @@
     "db:migrate": {
       "cache": false
     },
+    "db:reset-and-seed-development": {
+      "cache": false
+    },
+    "db:seed-development": {
+      "cache": false
+    },
     "deploy": {
       "cache": false
     },
