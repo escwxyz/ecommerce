@@ -1,5 +1,8 @@
+import { Effect } from "effect";
+
 import type {
   CartAdjustmentRecord,
+  CartExpectedError,
   CartId,
   CartLineItemId,
   CartLineItemRecord,
@@ -17,11 +20,19 @@ import {
 } from "./cart-cache.types";
 import { syncCartProjection } from "./cart-projection";
 
+const getFailureReason = (failure: unknown): string =>
+  typeof failure === "object" &&
+  failure !== null &&
+  "message" in failure &&
+  typeof failure.message === "string"
+    ? failure.message
+    : "Cart projection sync failed.";
+
 export interface CreateCachedCartRepositoryOptions {
   readonly cache: CartActiveCache;
   readonly onProjectionSyncFailure?: (
     failure: CartProjectionSyncFailure
-  ) => Promise<void> | void;
+  ) => Effect.Effect<void, CartExpectedError> | void;
   readonly projectionRepository: CartRepository;
   readonly scope?: CartOwnershipScope | (() => CartOwnershipScope);
 }
@@ -39,219 +50,223 @@ export const createCachedCartRepository = ({
 }: CreateCachedCartRepositoryOptions): CartRepository => {
   const getScope = () => resolveScope(scope);
 
-  const syncProjectionAfterCacheWrite = async (
-    cartId: CartId
-  ): Promise<void> => {
-    const currentScope = getScope();
-    const aggregate = await cache.getCartAggregate({
-      id: cartId,
-      scope: currentScope,
-    });
-
-    if (!aggregate) {
-      return;
-    }
-
-    try {
-      await syncCartProjection({
-        aggregate,
-        repository: projectionRepository,
+  const syncProjectionAfterCacheWrite = (cartId: CartId) =>
+    Effect.gen(function* syncProjectionAfterCacheWriteEffect() {
+      const currentScope = getScope();
+      const aggregate = yield* cache.getCartAggregate({
+        id: cartId,
+        scope: currentScope,
       });
-    } catch (error) {
+
+      if (!aggregate) {
+        return;
+      }
+
+      const result = yield* Effect.result(
+        syncCartProjection({
+          aggregate,
+          repository: projectionRepository,
+        })
+      );
+
+      if (result._tag === "Success") {
+        return;
+      }
+
       const failure = {
         cartId,
         failedAt: new Date(),
-        reason: error instanceof Error ? error.message : String(error),
+        reason: getFailureReason(result.failure),
         scope: currentScope,
       };
-      await cache.recordProjectionSyncFailure?.(failure);
-      await onProjectionSyncFailure?.(failure);
-    }
-  };
+      if (cache.recordProjectionSyncFailure) {
+        yield* cache.recordProjectionSyncFailure(failure);
+      }
+      const observed = onProjectionSyncFailure?.(failure);
 
-  const hydrateAggregate = async (id: CartId) => {
-    const currentScope = getScope();
-    let cached = null;
+      if (observed) {
+        yield* observed;
+      }
+    });
 
-    try {
-      cached = await cache.getCartAggregate({
-        id,
-        scope: currentScope,
-      });
-    } catch (error) {
-      if (isCartCacheOwnershipError(error)) {
+  const hydrateAggregate = (id: CartId) =>
+    Effect.gen(function* hydrateAggregateEffect() {
+      const currentScope = getScope();
+      let ownershipDenied = false;
+      const cached = yield* cache
+        .getCartAggregate({
+          id,
+          scope: currentScope,
+        })
+        .pipe(
+          Effect.catchIf(isCartCacheOwnershipError, () => {
+            ownershipDenied = true;
+            return Effect.succeed(null);
+          })
+        );
+
+      if (ownershipDenied) {
         return null;
       }
 
-      throw error;
-    }
+      if (cached) {
+        return cached;
+      }
 
-    if (cached) {
-      return cached;
-    }
+      const projected = yield* projectionRepository.getCartAggregate(id);
 
-    const projected = await projectionRepository.getCartAggregate(id);
+      if (!projected) {
+        return null;
+      }
 
-    if (!projected) {
-      return null;
-    }
+      yield* cache.hydrateCartAggregate({
+        aggregate: projected,
+        scope: currentScope,
+      });
 
-    await cache.hydrateCartAggregate({
-      aggregate: projected,
-      scope: currentScope,
+      return projected;
     });
 
-    return projected;
-  };
-
   return {
-    findAdjustmentByIdempotencyKey: async (idempotencyKey) => {
-      const currentScope = getScope();
-      let cached = null;
+    findAdjustmentByIdempotencyKey: (idempotencyKey) =>
+      Effect.gen(function* findAdjustmentByIdempotencyKeyEffect() {
+        const currentScope = getScope();
+        const cached = yield* cache
+          .findAdjustmentByIdempotencyKey({
+            idempotencyKey,
+            scope: currentScope,
+          })
+          .pipe(
+            Effect.catchIf(isCartCacheOwnershipError, () =>
+              Effect.succeed(null)
+            )
+          );
 
-      try {
-        cached = await cache.findAdjustmentByIdempotencyKey({
-          idempotencyKey,
-          scope: currentScope,
-        });
-      } catch (error) {
-        if (isCartCacheOwnershipError(error)) {
-          return null;
-        }
-
-        throw error;
-      }
-
-      return (
-        cached ??
-        (await projectionRepository.findAdjustmentByIdempotencyKey(
-          idempotencyKey
-        ))
-      );
-    },
-    findCartById: async (id) => {
-      const aggregate = await hydrateAggregate(id);
-
-      return aggregate?.cart ?? null;
-    },
-    findLineItemById: async (id: CartLineItemId, cartId?: CartId) => {
-      const currentScope = getScope();
-      let cached = null;
-
-      try {
-        cached = await cache.findLineItemById({
-          id,
-          cartId,
-          scope: currentScope,
-        });
-      } catch (error) {
-        if (isCartCacheOwnershipError(error)) {
-          return null;
-        }
-
-        throw error;
-      }
-
-      return (
-        cached ?? (await projectionRepository.findLineItemById(id, cartId))
-      );
-    },
-    findLineItemByIdempotencyKey: async (idempotencyKey) => {
-      const currentScope = getScope();
-      let cached = null;
-
-      try {
-        cached = await cache.findLineItemByIdempotencyKey({
-          idempotencyKey,
-          scope: currentScope,
-        });
-      } catch (error) {
-        if (isCartCacheOwnershipError(error)) {
-          return null;
-        }
-
-        throw error;
-      }
-
-      return (
-        cached ??
-        (await projectionRepository.findLineItemByIdempotencyKey(
-          idempotencyKey
-        ))
-      );
-    },
-    getCartAggregate: hydrateAggregate,
-    listCarts: () => projectionRepository.listCarts(),
-    removeLineItem: async (id, cartId) => {
-      const currentScope = getScope();
-      let item: CartLineItemRecord | null = null;
-
-      if (cartId) {
-        item = await cache
+        return (
+          cached ??
+          (yield* projectionRepository.findAdjustmentByIdempotencyKey(
+            idempotencyKey
+          ))
+        );
+      }),
+    findCartById: (id) =>
+      hydrateAggregate(id).pipe(
+        Effect.map((aggregate) => aggregate?.cart ?? null)
+      ),
+    findLineItemById: (id: CartLineItemId, cartId?: CartId) =>
+      Effect.gen(function* findLineItemByIdEffect() {
+        const currentScope = getScope();
+        const cached = yield* cache
           .findLineItemById({
             id,
             cartId,
             scope: currentScope,
           })
-          .catch((error: unknown) => {
-            if (isCartCacheOwnershipError(error)) {
-              return null;
-            }
+          .pipe(
+            Effect.catchIf(isCartCacheOwnershipError, () =>
+              Effect.succeed(null)
+            )
+          );
 
-            throw error;
-          });
-      }
+        return (
+          cached ?? (yield* projectionRepository.findLineItemById(id, cartId))
+        );
+      }),
+    findLineItemByIdempotencyKey: (idempotencyKey) =>
+      Effect.gen(function* findLineItemByIdempotencyKeyEffect() {
+        const currentScope = getScope();
+        const cached = yield* cache
+          .findLineItemByIdempotencyKey({
+            idempotencyKey,
+            scope: currentScope,
+          })
+          .pipe(
+            Effect.catchIf(isCartCacheOwnershipError, () =>
+              Effect.succeed(null)
+            )
+          );
 
-      if (!item) {
-        item = await projectionRepository.findLineItemById(id, cartId);
-      }
+        return (
+          cached ??
+          (yield* projectionRepository.findLineItemByIdempotencyKey(
+            idempotencyKey
+          ))
+        );
+      }),
+    getCartAggregate: hydrateAggregate,
+    listCarts: projectionRepository.listCarts,
+    removeLineItem: (id, cartId) =>
+      Effect.gen(function* removeLineItemEffect() {
+        const currentScope = getScope();
+        let item: CartLineItemRecord | null = null;
 
-      const aggregate = await cache.removeLineItem({
-        cartId: cartId ?? item?.cartId,
-        id,
-        scope: currentScope,
-      });
+        if (cartId) {
+          item = yield* cache
+            .findLineItemById({
+              id,
+              cartId,
+              scope: currentScope,
+            })
+            .pipe(
+              Effect.catchIf(isCartCacheOwnershipError, () =>
+                Effect.succeed(null)
+              )
+            );
+        }
 
-      await projectionRepository.removeLineItem(id, cartId ?? item?.cartId);
+        if (!item) {
+          item = yield* projectionRepository.findLineItemById(id, cartId);
+        }
 
-      if (aggregate) {
-        await syncProjectionAfterCacheWrite(aggregate.cart.id);
-      }
-    },
-    saveAdjustment: async (
+        const aggregate = yield* cache.removeLineItem({
+          cartId: cartId ?? item?.cartId,
+          id,
+          scope: currentScope,
+        });
+
+        yield* projectionRepository.removeLineItem(id, cartId ?? item?.cartId);
+
+        if (aggregate) {
+          yield* syncProjectionAfterCacheWrite(aggregate.cart.id);
+        }
+      }),
+    saveAdjustment: (
       adjustment: CartAdjustmentRecord,
       idempotencyKey: string
-    ) => {
-      const saved = await cache.saveAdjustment({
-        adjustment,
-        idempotencyKey,
-        scope: getScope(),
-      });
+    ) =>
+      Effect.gen(function* saveAdjustmentEffect() {
+        const saved = yield* cache.saveAdjustment({
+          adjustment,
+          idempotencyKey,
+          scope: getScope(),
+        });
 
-      await syncProjectionAfterCacheWrite(saved.cartId);
+        yield* syncProjectionAfterCacheWrite(saved.cartId);
 
-      return saved;
-    },
-    saveCart: async (cart: CartRecord) => {
-      const saved = await cache.saveCart({
-        cart,
-        scope: getScope(),
-      });
+        return saved;
+      }),
+    saveCart: (cart: CartRecord) =>
+      Effect.gen(function* saveCartEffect() {
+        const saved = yield* cache.saveCart({
+          cart,
+          scope: getScope(),
+        });
 
-      await syncProjectionAfterCacheWrite(saved.id);
+        yield* syncProjectionAfterCacheWrite(saved.id);
 
-      return saved;
-    },
-    saveLineItem: async (item: CartLineItemRecord, idempotencyKey?: string) => {
-      const saved = await cache.saveLineItem({
-        idempotencyKey,
-        item,
-        scope: getScope(),
-      });
+        return saved;
+      }),
+    saveLineItem: (item: CartLineItemRecord, idempotencyKey?: string) =>
+      Effect.gen(function* saveLineItemEffect() {
+        const saved = yield* cache.saveLineItem({
+          idempotencyKey,
+          item,
+          scope: getScope(),
+        });
 
-      await syncProjectionAfterCacheWrite(saved.cartId);
+        yield* syncProjectionAfterCacheWrite(saved.cartId);
 
-      return saved;
-    },
+        return saved;
+      }),
   };
 };

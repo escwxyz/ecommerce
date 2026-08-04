@@ -3,8 +3,14 @@ import type {
   EventPublisherServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
+import {
+  ClockService,
+  EventPublisherService,
+  IdGeneratorService,
+} from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import { Context, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
 import type {
@@ -14,7 +20,9 @@ import type {
   CreatePromotionInput,
   CreatePromotionRuleInput,
   CreatePromotionUsageLimitInput,
+  PromotionAdjustment,
   PromotionAdjustmentResult,
+  PromotionExpectedError,
   PromotionRecord,
   PromotionRedemptionRecord,
   PromotionRepository,
@@ -29,12 +37,17 @@ import {
   PROMOTION_REDEMPTION_ID_PREFIX,
   PROMOTION_RULE_ID_PREFIX,
   PROMOTION_USAGE_LIMIT_ID_PREFIX,
-  createCampaignId,
-  createPromotionAdjustmentId,
-  createPromotionId,
-  createPromotionRedemptionId,
-  createPromotionRuleId,
-  createPromotionUsageLimitId,
+  PromotionCampaignNotFound,
+  PromotionNotFound,
+  PromotionRepositoryService,
+  PromotionUnsupportedUsageLimitScope,
+  PromotionValidationFailure,
+  createCampaignIdEffect,
+  createPromotionAdjustmentIdEffect,
+  createPromotionIdEffect,
+  createPromotionRedemptionIdEffect,
+  createPromotionRuleIdEffect,
+  createPromotionUsageLimitIdEffect,
 } from "../domain";
 import { defaultPromotionRepository } from "../repositories";
 
@@ -63,21 +76,27 @@ export interface PromotionRedemptionRecordedEventPayload {
   readonly promotionId: string;
 }
 
+export type PromotionServiceFailure = PromotionExpectedError;
+
 export interface PromotionServiceShape {
-  calculateAdjustments(
+  readonly calculateAdjustments: (
     input: CalculatePromotionAdjustmentsInput
-  ): Promise<PromotionAdjustmentResult>;
-  createCampaign(input: CreateCampaignInput): Promise<CampaignRecord>;
-  createPromotion(input: CreatePromotionInput): Promise<PromotionRecord>;
-  createPromotionRule(
+  ) => EffectValue<PromotionAdjustmentResult, PromotionServiceFailure>;
+  readonly createCampaign: (
+    input: CreateCampaignInput
+  ) => EffectValue<CampaignRecord, PromotionServiceFailure>;
+  readonly createPromotion: (
+    input: CreatePromotionInput
+  ) => EffectValue<PromotionRecord, PromotionServiceFailure>;
+  readonly createPromotionRule: (
     input: CreatePromotionRuleInput
-  ): Promise<PromotionRuleRecord>;
-  createUsageLimit(
+  ) => EffectValue<PromotionRuleRecord, PromotionServiceFailure>;
+  readonly createUsageLimit: (
     input: CreatePromotionUsageLimitInput
-  ): Promise<PromotionUsageLimitRecord>;
-  recordRedemption(
+  ) => EffectValue<PromotionUsageLimitRecord, PromotionServiceFailure>;
+  readonly recordRedemption: (
     input: RecordPromotionRedemptionInput
-  ): Promise<PromotionRedemptionRecord>;
+  ) => EffectValue<PromotionRedemptionRecord, PromotionServiceFailure>;
 }
 
 export const PromotionService = Context.Service<PromotionServiceShape>(
@@ -112,18 +131,22 @@ const normalizeCurrencyCode = (currencyCode: string): string =>
 
 const normalizeText = (value: string): string => value.trim();
 
-const ensureUsageLimitScopeIsSupported = (
-  scope: CreatePromotionUsageLimitInput["scope"]
-): void => {
-  if (scope === "customer") {
-    throw new Error("Customer-scoped usage limits are not supported yet.");
-  }
-};
-
 const createId = (prefix: string, idGenerator: IdGeneratorServiceShape) => {
   const rawId = idGenerator.nextId();
   return rawId.startsWith(prefix) ? rawId : `${prefix}${rawId}`;
 };
+
+const publishEvent = (
+  eventPublisher: EventPublisherServiceShape,
+  envelope: Parameters<EventPublisherServiceShape["publish"]>[0]
+) =>
+  Effect.tryPromise({
+    catch: () =>
+      new PromotionValidationFailure({
+        message: "Promotion event publication failed.",
+      }),
+    try: () => Promise.resolve(eventPublisher.publish(envelope)),
+  }).pipe(Effect.asVoid);
 
 const getPromotionIsActive = (
   promotion: PromotionRecord,
@@ -183,62 +206,64 @@ const calculateDiscountAmount = ({
   return -Math.min(cappedValue, subtotal);
 };
 
-const getIsUsageLimitAvailable = async ({
+const getIsUsageLimitAvailable = ({
   promotion,
   repository,
 }: {
   readonly promotion: PromotionRecord;
   readonly repository: PromotionRepository;
-}): Promise<boolean> => {
-  const usageLimits = await repository.findUsageLimitsByPromotionId(
-    promotion.id
-  );
+}): EffectValue<boolean, PromotionServiceFailure> =>
+  Effect.gen(function* getIsUsageLimitAvailableEffect() {
+    const usageLimits = yield* repository.findUsageLimitsByPromotionId(
+      promotion.id
+    );
 
-  for (const usageLimit of usageLimits) {
-    if (usageLimit.scope !== "total") {
-      continue;
+    for (const usageLimit of usageLimits) {
+      if (usageLimit.scope !== "total") {
+        continue;
+      }
+
+      const redemptionCount = yield* repository.countRedemptions(promotion.id);
+
+      if (redemptionCount >= usageLimit.limit) {
+        return false;
+      }
     }
 
-    const redemptionCount = await repository.countRedemptions(promotion.id);
+    return true;
+  });
 
-    if (redemptionCount >= usageLimit.limit) {
-      return false;
-    }
-  }
-
-  return true;
-};
-
-const getCandidatePromotions = async ({
+const getCandidatePromotions = ({
   promotionCodes,
   repository,
 }: {
   readonly promotionCodes: readonly string[];
   readonly repository: PromotionRepository;
-}): Promise<readonly PromotionRecord[]> => {
-  const promotions: PromotionRecord[] = [
-    ...(await repository.listAutomaticPromotions()),
-  ];
-  const uniquePromotionCodes = new Set<string>();
+}): EffectValue<readonly PromotionRecord[], PromotionServiceFailure> =>
+  Effect.gen(function* getCandidatePromotionsEffect() {
+    const promotions: PromotionRecord[] = [
+      ...(yield* repository.listAutomaticPromotions),
+    ];
+    const uniquePromotionCodes = new Set<string>();
 
-  for (const code of promotionCodes) {
-    const normalizedCode = normalizeCode(code);
+    for (const code of promotionCodes) {
+      const normalizedCode = normalizeCode(code);
 
-    if (uniquePromotionCodes.has(normalizedCode)) {
-      continue;
+      if (uniquePromotionCodes.has(normalizedCode)) {
+        continue;
+      }
+
+      uniquePromotionCodes.add(normalizedCode);
+
+      const promotion = yield* repository.findPromotionByCode(normalizedCode);
+
+      if (promotion) {
+        promotions.push(promotion);
+      }
     }
 
-    uniquePromotionCodes.add(normalizedCode);
-
-    const promotion = await repository.findPromotionByCode(normalizedCode);
-
-    if (promotion) {
-      promotions.push(promotion);
-    }
-  }
-
-  return promotions;
-};
+    return promotions;
+  });
 
 export const createPromotionService = ({
   clock = createDefaultClock(),
@@ -246,248 +271,301 @@ export const createPromotionService = ({
   idGenerator = createDefaultIdGenerator(),
   repository = defaultPromotionRepository,
 }: CreatePromotionServiceOptions = {}): PromotionServiceShape => ({
-  calculateAdjustments: async (input) => {
-    const now = clock.now();
-    const context = input.context ?? {};
-    const currencyCode = normalizeCurrencyCode(input.cart.currencyCode);
-    const promotions = await getCandidatePromotions({
-      promotionCodes: input.promotionCodes ?? [],
-      repository,
-    });
-    const adjustments: PromotionAdjustmentResult["adjustments"] = [];
-
-    for (const promotion of promotions) {
-      if (!getPromotionIsActive(promotion, now)) {
-        continue;
-      }
-
-      if (!(await getIsUsageLimitAvailable({ promotion, repository }))) {
-        continue;
-      }
-
-      const rules = await repository.findRulesByPromotionId(promotion.id);
-
-      if (!getRulesMatch({ context, rules })) {
-        continue;
-      }
-
-      const amount = calculateDiscountAmount({
-        promotion,
-        subtotal: input.cart.subtotal,
+  calculateAdjustments: (input) =>
+    Effect.gen(function* calculateAdjustmentsEffect() {
+      const now = clock.now();
+      const context = input.context ?? {};
+      const currencyCode = normalizeCurrencyCode(input.cart.currencyCode);
+      const promotions = yield* getCandidatePromotions({
+        promotionCodes: input.promotionCodes ?? [],
+        repository,
       });
+      const adjustments: PromotionAdjustment[] = [];
 
-      if (amount === 0) {
-        continue;
-      }
+      for (const promotion of promotions) {
+        if (!getPromotionIsActive(promotion, now)) {
+          continue;
+        }
 
-      adjustments.push({
-        amount,
-        currencyCode,
-        id: createPromotionAdjustmentId(
+        if (!(yield* getIsUsageLimitAvailable({ promotion, repository }))) {
+          continue;
+        }
+
+        const rules = yield* repository.findRulesByPromotionId(promotion.id);
+
+        if (!getRulesMatch({ context, rules })) {
+          continue;
+        }
+
+        const amount = calculateDiscountAmount({
+          promotion,
+          subtotal: input.cart.subtotal,
+        });
+
+        if (amount === 0) {
+          continue;
+        }
+
+        const id = yield* createPromotionAdjustmentIdEffect(
           createId(PROMOTION_ADJUSTMENT_ID_PREFIX, idGenerator)
-        ),
-        promotionId: promotion.id,
-        target: promotion.applicationMethod.target,
-        trace: {
-          promotionCode: promotion.code,
-          ruleMatches: getMatchedRuleKeys(rules),
-          source: promotion.code ? "discount-code" : "automatic",
-        },
-      });
-    }
+        );
 
-    const result: PromotionAdjustmentResult = {
-      adjustments,
-      cartId: input.cart.id,
-      currencyCode,
-      subtotal: input.cart.subtotal,
-      totalDiscount: adjustments.reduce(
-        (total, adjustment) => total + adjustment.amount,
-        0
-      ),
-    };
-
-    await eventPublisher.publish(
-      createEventEnvelope({
-        id: createId("evt_", idGenerator),
-        name: PROMOTION_ADJUSTMENTS_CALCULATED_EVENT,
-        payload: {
-          adjustmentCount: result.adjustments.length,
-          cartId: result.cartId,
-          currencyCode: result.currencyCode,
-          totalDiscount: result.totalDiscount,
-        } satisfies PromotionAdjustmentsCalculatedEventPayload,
-        sourceModule: "promotion",
-        subject: {
-          id: result.cartId,
-          type: "cart",
-        },
-      })
-    );
-
-    return result;
-  },
-  createCampaign: (input) => {
-    const name = normalizeText(input.name);
-
-    if (!name) {
-      throw new Error("Campaign name is required.");
-    }
-
-    const now = clock.now();
-    const campaign: CampaignRecord = {
-      createdAt: now,
-      description: input.description?.trim() || null,
-      id: createCampaignId(createId(CAMPAIGN_ID_PREFIX, idGenerator)),
-      metadata: input.metadata ?? {},
-      name,
-      updatedAt: now,
-    };
-
-    return repository.saveCampaign(campaign);
-  },
-  createPromotion: async (input) => {
-    const title = normalizeText(input.title);
-
-    if (!title) {
-      throw new Error("Promotion title is required.");
-    }
-
-    const campaignId = input.campaignId
-      ? createCampaignId(input.campaignId)
-      : null;
-
-    if (campaignId) {
-      const campaign = await repository.findCampaignById(campaignId);
-
-      if (!campaign) {
-        throw new Error(`Campaign "${input.campaignId}" was not found.`);
+        adjustments.push({
+          amount,
+          currencyCode,
+          id,
+          promotionId: promotion.id,
+          target: promotion.applicationMethod.target,
+          trace: {
+            promotionCode: promotion.code,
+            ruleMatches: getMatchedRuleKeys(rules),
+            source: promotion.code ? "discount-code" : "automatic",
+          },
+        });
       }
-    }
 
-    const now = clock.now();
-    const promotion: PromotionRecord = {
-      applicationMethod: input.applicationMethod,
-      campaignId,
-      code: input.code ? normalizeCode(input.code) : null,
-      createdAt: now,
-      endsAt: input.endsAt ?? null,
-      id: createPromotionId(createId(PROMOTION_ID_PREFIX, idGenerator)),
-      metadata: input.metadata ?? {},
-      startsAt: input.startsAt ?? null,
-      status: input.status ?? "draft",
-      title,
-      updatedAt: now,
-    };
-    const saved = await repository.savePromotion(promotion);
+      const result: PromotionAdjustmentResult = {
+        adjustments,
+        cartId: input.cart.id,
+        currencyCode,
+        subtotal: input.cart.subtotal,
+        totalDiscount: adjustments.reduce(
+          (total, adjustment) => total + adjustment.amount,
+          0
+        ),
+      };
 
-    await eventPublisher.publish(
-      createEventEnvelope({
-        id: createId("evt_", idGenerator),
-        name: PROMOTION_CREATED_EVENT,
-        payload: {
-          code: saved.code,
-          id: saved.id,
-          title: saved.title,
-        } satisfies PromotionCreatedEventPayload,
-        sourceModule: "promotion",
-        subject: {
-          id: saved.id,
-          type: "promotion",
-        },
-      })
-    );
+      yield* publishEvent(
+        eventPublisher,
+        createEventEnvelope({
+          id: createId("evt_", idGenerator),
+          name: PROMOTION_ADJUSTMENTS_CALCULATED_EVENT,
+          payload: {
+            adjustmentCount: result.adjustments.length,
+            cartId: result.cartId,
+            currencyCode: result.currencyCode,
+            totalDiscount: result.totalDiscount,
+          } satisfies PromotionAdjustmentsCalculatedEventPayload,
+          sourceModule: "promotion",
+          subject: {
+            id: result.cartId,
+            type: "cart",
+          },
+        })
+      );
 
-    return saved;
-  },
-  createPromotionRule: async (input) => {
-    const promotionId = createPromotionId(input.promotionId);
-    const promotion = await repository.findPromotionById(promotionId);
+      return result;
+    }),
+  createCampaign: (input) =>
+    Effect.gen(function* createCampaignEffect() {
+      const name = normalizeText(input.name);
 
-    if (!promotion) {
-      throw new Error(`Promotion "${input.promotionId}" was not found.`);
-    }
+      if (!name) {
+        return yield* new PromotionValidationFailure({
+          message: "Campaign name is required.",
+        });
+      }
 
-    const now = clock.now();
-    const rule: PromotionRuleRecord = {
-      attribute: normalizeText(input.attribute),
-      createdAt: now,
-      id: createPromotionRuleId(
-        createId(PROMOTION_RULE_ID_PREFIX, idGenerator)
-      ),
-      promotionId,
-      updatedAt: now,
-      value: normalizeText(input.value),
-    };
+      const now = clock.now();
+      const campaign: CampaignRecord = {
+        createdAt: now,
+        description: input.description?.trim() || null,
+        id: yield* createCampaignIdEffect(
+          createId(CAMPAIGN_ID_PREFIX, idGenerator)
+        ),
+        metadata: input.metadata ?? {},
+        name,
+        updatedAt: now,
+      };
 
-    return repository.saveRule(rule);
-  },
-  createUsageLimit: async (input) => {
-    const promotionId = createPromotionId(input.promotionId);
-    const promotion = await repository.findPromotionById(promotionId);
+      return yield* repository.saveCampaign(campaign);
+    }),
+  createPromotion: (input) =>
+    Effect.gen(function* createPromotionEffect() {
+      const title = normalizeText(input.title);
 
-    if (!promotion) {
-      throw new Error(`Promotion "${input.promotionId}" was not found.`);
-    }
+      if (!title) {
+        return yield* new PromotionValidationFailure({
+          message: "Promotion title is required.",
+        });
+      }
 
-    ensureUsageLimitScopeIsSupported(input.scope);
+      const campaignId = input.campaignId
+        ? yield* createCampaignIdEffect(input.campaignId)
+        : null;
 
-    const now = clock.now();
-    const usageLimit: PromotionUsageLimitRecord = {
-      createdAt: now,
-      id: createPromotionUsageLimitId(
-        createId(PROMOTION_USAGE_LIMIT_ID_PREFIX, idGenerator)
-      ),
-      limit: input.limit,
-      promotionId,
-      scope: input.scope,
-      updatedAt: now,
-    };
+      if (campaignId) {
+        const campaign = yield* repository.findCampaignById(campaignId);
 
-    return repository.saveUsageLimit(usageLimit);
-  },
-  recordRedemption: async (input) => {
-    const promotionId = createPromotionId(input.promotionId);
-    const promotion = await repository.findPromotionById(promotionId);
+        if (!campaign) {
+          return yield* new PromotionCampaignNotFound({ campaignId });
+        }
+      }
 
-    if (!promotion) {
-      throw new Error(`Promotion "${input.promotionId}" was not found.`);
-    }
+      const now = clock.now();
+      const promotion: PromotionRecord = {
+        applicationMethod: input.applicationMethod,
+        campaignId,
+        code: input.code ? normalizeCode(input.code) : null,
+        createdAt: now,
+        endsAt: input.endsAt ?? null,
+        id: yield* createPromotionIdEffect(
+          createId(PROMOTION_ID_PREFIX, idGenerator)
+        ),
+        metadata: input.metadata ?? {},
+        startsAt: input.startsAt ?? null,
+        status: input.status ?? "draft",
+        title,
+        updatedAt: now,
+      };
+      const saved = yield* repository.savePromotion(promotion);
 
-    const redemption: PromotionRedemptionRecord = {
-      adjustmentIds: [...input.adjustmentIds],
-      cartId: input.cartId,
-      createdAt: clock.now(),
-      id: createPromotionRedemptionId(
-        createId(PROMOTION_REDEMPTION_ID_PREFIX, idGenerator)
-      ),
-      promotionId,
-    };
-    const saved = await repository.saveRedemption(redemption);
+      yield* publishEvent(
+        eventPublisher,
+        createEventEnvelope({
+          id: createId("evt_", idGenerator),
+          name: PROMOTION_CREATED_EVENT,
+          payload: {
+            code: saved.code,
+            id: saved.id,
+            title: saved.title,
+          } satisfies PromotionCreatedEventPayload,
+          sourceModule: "promotion",
+          subject: {
+            id: saved.id,
+            type: "promotion",
+          },
+        })
+      );
 
-    await eventPublisher.publish(
-      createEventEnvelope({
-        id: createId("evt_", idGenerator),
-        name: PROMOTION_REDEMPTION_RECORDED_EVENT,
-        payload: {
-          cartId: saved.cartId,
-          id: saved.id,
-          promotionId: saved.promotionId,
-        } satisfies PromotionRedemptionRecordedEventPayload,
-        sourceModule: "promotion",
-        subject: {
-          id: saved.promotionId,
-          type: "promotion",
-        },
-      })
-    );
+      return saved;
+    }),
+  createPromotionRule: (input) =>
+    Effect.gen(function* createPromotionRuleEffect() {
+      const promotionId = yield* createPromotionIdEffect(input.promotionId);
+      const promotion = yield* repository.findPromotionById(promotionId);
 
-    return saved;
-  },
+      if (!promotion) {
+        return yield* new PromotionNotFound({ promotionId });
+      }
+
+      const attribute = normalizeText(input.attribute);
+      const value = normalizeText(input.value);
+
+      if (!attribute || !value) {
+        return yield* new PromotionValidationFailure({
+          message: "Promotion rule attribute and value are required.",
+        });
+      }
+
+      const now = clock.now();
+      const rule: PromotionRuleRecord = {
+        attribute,
+        createdAt: now,
+        id: yield* createPromotionRuleIdEffect(
+          createId(PROMOTION_RULE_ID_PREFIX, idGenerator)
+        ),
+        promotionId,
+        updatedAt: now,
+        value,
+      };
+
+      return yield* repository.saveRule(rule);
+    }),
+  createUsageLimit: (input) =>
+    Effect.gen(function* createUsageLimitEffect() {
+      const promotionId = yield* createPromotionIdEffect(input.promotionId);
+      const promotion = yield* repository.findPromotionById(promotionId);
+
+      if (!promotion) {
+        return yield* new PromotionNotFound({ promotionId });
+      }
+
+      if (input.scope === "customer") {
+        return yield* new PromotionUnsupportedUsageLimitScope({
+          scope: input.scope,
+        });
+      }
+
+      const now = clock.now();
+      const usageLimit: PromotionUsageLimitRecord = {
+        createdAt: now,
+        id: yield* createPromotionUsageLimitIdEffect(
+          createId(PROMOTION_USAGE_LIMIT_ID_PREFIX, idGenerator)
+        ),
+        limit: input.limit,
+        promotionId,
+        scope: input.scope,
+        updatedAt: now,
+      };
+
+      return yield* repository.saveUsageLimit(usageLimit);
+    }),
+  recordRedemption: (input) =>
+    Effect.gen(function* recordRedemptionEffect() {
+      const promotionId = yield* createPromotionIdEffect(input.promotionId);
+      const promotion = yield* repository.findPromotionById(promotionId);
+
+      if (!promotion) {
+        return yield* new PromotionNotFound({ promotionId });
+      }
+
+      const redemption: PromotionRedemptionRecord = {
+        adjustmentIds: [...input.adjustmentIds],
+        cartId: input.cartId,
+        createdAt: clock.now(),
+        id: yield* createPromotionRedemptionIdEffect(
+          createId(PROMOTION_REDEMPTION_ID_PREFIX, idGenerator)
+        ),
+        promotionId,
+      };
+      const saved = yield* repository.saveRedemption(redemption);
+
+      yield* publishEvent(
+        eventPublisher,
+        createEventEnvelope({
+          id: createId("evt_", idGenerator),
+          name: PROMOTION_REDEMPTION_RECORDED_EVENT,
+          payload: {
+            cartId: saved.cartId,
+            id: saved.id,
+            promotionId: saved.promotionId,
+          } satisfies PromotionRedemptionRecordedEventPayload,
+          sourceModule: "promotion",
+          subject: {
+            id: saved.promotionId,
+            type: "promotion",
+          },
+        })
+      );
+
+      return saved;
+    }),
 });
 
 export const createPromotionServiceLayer = (service: PromotionServiceShape) =>
   Layer.succeed(PromotionService, service);
+
+export const createPromotionServiceLayerFromRepository = (
+  repository: PromotionRepository
+) => createPromotionServiceLayer(createPromotionService({ repository }));
+
+export const PromotionServiceLive = Layer.effect(
+  PromotionService,
+  Effect.gen(function* createPromotionServiceLiveEffect() {
+    const repository = yield* PromotionRepositoryService;
+    const clock = yield* ClockService;
+    const eventPublisher = yield* EventPublisherService;
+    const idGenerator = yield* IdGeneratorService;
+
+    return createPromotionService({
+      clock,
+      eventPublisher,
+      idGenerator,
+      repository,
+    });
+  })
+);
 
 export const defaultPromotionService = createPromotionService({
   repository: defaultPromotionRepository,

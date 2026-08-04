@@ -1,9 +1,13 @@
+import { Effect, Layer } from "effect";
+
 import type {
+  ProductExpectedError,
   ProductCatalog,
   ProductId,
   ProductRecord,
   ProductRepository,
 } from "../domain";
+import { ProductNotFound, ProductRepositoryService } from "../domain";
 
 export interface ResettableProductRepository extends ProductRepository {
   clear(): void;
@@ -46,11 +50,11 @@ export class InMemoryProductRepository implements ResettableProductRepository {
   #mutateProductCatalog(
     productId: ProductId,
     mutate: (catalog: ProductCatalog) => ProductCatalog
-  ): Promise<ProductRecord> {
+  ): Effect.Effect<ProductRecord, ProductExpectedError> {
     const product = this.#records.get(productId);
 
     if (!product) {
-      throw new Error(`Product "${productId}" was not found.`);
+      return Effect.fail(new ProductNotFound({ productId }));
     }
 
     const updated = {
@@ -59,13 +63,13 @@ export class InMemoryProductRepository implements ResettableProductRepository {
     };
 
     this.#records.set(productId, updated);
-    return Promise.resolve(updated);
+    return Effect.succeed(updated);
   }
 
   addProductCategory(
     productId: ProductId,
     category: ProductCatalog["categories"][number]
-  ): Promise<ProductRecord> {
+  ) {
     return this.#mutateProductCatalog(productId, (catalog) => ({
       ...catalog,
       categories: [...catalog.categories, category],
@@ -75,7 +79,7 @@ export class InMemoryProductRepository implements ResettableProductRepository {
   addProductCollection(
     productId: ProductId,
     collection: ProductCatalog["collections"][number]
-  ): Promise<ProductRecord> {
+  ) {
     return this.#mutateProductCatalog(productId, (catalog) => ({
       ...catalog,
       collections: [...catalog.collections, collection],
@@ -85,7 +89,7 @@ export class InMemoryProductRepository implements ResettableProductRepository {
   addProductMedia(
     productId: ProductId,
     media: ProductCatalog["media"][number]
-  ): Promise<ProductRecord> {
+  ) {
     return this.#mutateProductCatalog(productId, (catalog) => ({
       ...catalog,
       media: [...catalog.media, media],
@@ -95,7 +99,7 @@ export class InMemoryProductRepository implements ResettableProductRepository {
   addProductOption(
     productId: ProductId,
     option: ProductCatalog["options"][number]
-  ): Promise<ProductRecord> {
+  ) {
     return this.#mutateProductCatalog(productId, (catalog) => ({
       ...catalog,
       options: [...catalog.options, option],
@@ -110,7 +114,7 @@ export class InMemoryProductRepository implements ResettableProductRepository {
     readonly optionId: string;
     readonly productId: ProductId;
     readonly value: ProductCatalog["options"][number]["values"][number];
-  }): Promise<ProductRecord> {
+  }) {
     return this.#mutateProductCatalog(productId, (catalog) => ({
       ...catalog,
       options: catalog.options.map((option) =>
@@ -121,7 +125,7 @@ export class InMemoryProductRepository implements ResettableProductRepository {
     }));
   }
 
-  addProductTag(productId: ProductId, tag: string): Promise<ProductRecord> {
+  addProductTag(productId: ProductId, tag: string) {
     return this.#mutateProductCatalog(productId, (catalog) => ({
       ...catalog,
       tags: [...catalog.tags, tag],
@@ -131,34 +135,36 @@ export class InMemoryProductRepository implements ResettableProductRepository {
   addProductVariant(
     productId: ProductId,
     variant: ProductCatalog["variants"][number]
-  ): Promise<ProductRecord> {
+  ) {
     return this.#mutateProductCatalog(productId, (catalog) => ({
       ...catalog,
       variants: [...catalog.variants, variant],
     }));
   }
 
-  findProductByHandle(handle: string): Promise<ProductRecord | null> {
+  findProductByHandle(handle: string) {
     for (const record of this.#records.values()) {
       if (record.handle === handle) {
-        return Promise.resolve(record);
+        return Effect.succeed(record);
       }
     }
 
-    return Promise.resolve(null);
+    return Effect.succeed(null);
   }
 
-  findProductById(id: string): Promise<ProductRecord | null> {
-    return Promise.resolve(this.#records.get(id) ?? null);
+  findProductById(id: ProductId) {
+    return Effect.succeed(this.#records.get(id) ?? null);
   }
 
-  listProducts(): Promise<readonly ProductRecord[]> {
-    return Promise.resolve(sortProducts(this.#records.values()));
-  }
+  readonly listProducts = Effect.sync(() =>
+    sortProducts(this.#records.values())
+  );
 
-  saveProduct(product: ProductRecord): Promise<ProductRecord> {
-    this.#records.set(product.id, product);
-    return Promise.resolve(product);
+  saveProduct(product: ProductRecord) {
+    return Effect.sync(() => {
+      this.#records.set(product.id, product);
+      return product;
+    });
   }
 
   setProductCatalogMetadata({
@@ -171,7 +177,7 @@ export class InMemoryProductRepository implements ResettableProductRepository {
     readonly productId: ProductId;
     readonly publishedAt?: Date | null;
     readonly searchableText?: string;
-  }): Promise<ProductRecord> {
+  }) {
     return this.#mutateProductCatalog(productId, (catalog) => ({
       ...catalog,
       metadata,
@@ -181,9 +187,11 @@ export class InMemoryProductRepository implements ResettableProductRepository {
     }));
   }
 
-  updateProduct(product: ProductRecord): Promise<ProductRecord> {
-    this.#records.set(product.id, product);
-    return Promise.resolve(product);
+  updateProduct(product: ProductRecord) {
+    return Effect.sync(() => {
+      this.#records.set(product.id, product);
+      return product;
+    });
   }
 }
 
@@ -194,3 +202,9 @@ export const createInMemoryProductRepository = (): ProductRepository =>
 
 export const createResettableInMemoryProductRepository =
   (): ResettableProductRepository => new InMemoryProductRepository();
+
+export const createInMemoryProductRepositoryLayer = () =>
+  Layer.effect(
+    ProductRepositoryService,
+    Effect.sync(() => new InMemoryProductRepository() as ProductRepository)
+  );

@@ -5,7 +5,7 @@ import {
   createSystemCartScope,
   createVisitorCartScope,
 } from "@ecommerce/cart/cache";
-import { createCartId } from "@ecommerce/cart/domain";
+import { CartValidationFailure, createCartId } from "@ecommerce/cart/domain";
 import { createResettableInMemoryCartRepository } from "@ecommerce/cart/repository";
 import { createCartService } from "@ecommerce/cart/service";
 import {
@@ -13,26 +13,38 @@ import {
   defineSandboxPlugin,
   defineWorkflow,
   createEventCollector,
+  createInMemoryWorkflowStateStore,
   createInMemoryWorkflowMetadataStore,
   createSequenceIdGenerator,
   createStaticClock,
+  QueuePublisherService,
+  WorkflowRuntimeService,
 } from "@ecommerce/core";
+import {
+  KeyedActorCommandSchema,
+  KeyedActorService,
+} from "@ecommerce/core/stateful";
 import {
   createFakeNotificationProvider,
   createNotificationEventService,
 } from "@ecommerce/notification-event";
 import { createInMemoryNotificationEventRepository } from "@ecommerce/notification-event/repository";
+import { Effect, Schema } from "effect";
 
 import {
   activateSandboxPlugin,
   createCloudflareQueuePublisher,
+  createCloudflareQueuePublisherLayer,
   createCloudflareQueuedNotificationProvider,
+  CloudflareQueuePublishFailure,
   createCartCacheDurableObjectName,
   createCloudflareCartCacheRepository,
   composeSandboxPluginDispatch,
   createCloudflareSandboxPluginRunner,
-  createCloudflareStatefulCoordinator,
+  createCloudflareKeyedActorLayer,
   createCloudflareWorkflowRuntime,
+  createCloudflareWorkflowRuntimeLayer,
+  CloudflareWorkflowRuntimeFailure,
   createInMemorySandboxPluginMetadataStore,
   createInMemorySandboxStorage,
   createNotificationEventQueuePublisher,
@@ -48,6 +60,7 @@ import type {
   CloudflareWorkerCode,
   CloudflareWorkerLoaderBinding,
   NotificationEventQueueMessage,
+  SandboxBridge,
 } from "./index";
 
 const createFakeWorkflowBinding = () => {
@@ -136,15 +149,56 @@ const createFakeDurableObjectNamespace = () => {
         fetch: async (request: Request) => {
           fetches.push(request);
           const body = (await request.json()) as {
+            readonly command?: {
+              readonly actor: {
+                readonly key: string;
+                readonly type: string;
+              };
+              readonly causationId?: string;
+              readonly commandId: string;
+              readonly commandName: string;
+              readonly correlationId: string;
+              readonly idempotencyKey: string;
+              readonly schemaVersion: number;
+              readonly subject?: {
+                readonly id: string;
+                readonly type: string;
+              };
+              readonly workflowRunId?: string;
+            };
             readonly idempotencyKey?: string;
+            readonly operation?: string;
           };
           requests.push(body);
 
-          const key = body.idempotencyKey;
+          const key = body.command?.idempotencyKey ?? body.idempotencyKey;
           const duplicate = key ? idempotencyKeys.has(key) : false;
 
           if (key) {
             idempotencyKeys.add(key);
+          }
+
+          if (body.operation === "dispatch" && body.command) {
+            return Response.json({
+              operation: "dispatch-result",
+              result: {
+                actor: body.command.actor,
+                causationId: body.command.causationId,
+                commandId: body.command.commandId,
+                commandName: body.command.commandName,
+                completedAt: "2026-06-06T12:00:00.000Z",
+                correlationId: body.command.correlationId,
+                duplicate,
+                idempotencyKey: body.command.idempotencyKey,
+                output: {
+                  mutationCount: idempotencyKeys.size,
+                },
+                schemaVersion: body.command.schemaVersion,
+                stateVersion: 0,
+                subject: body.command.subject,
+                workflowRunId: body.command.workflowRunId,
+              },
+            });
           }
 
           return Response.json({
@@ -363,7 +417,7 @@ const createFakeCartCacheNamespace = () => {
 };
 
 describe("cloudflare cart cache adapter", () => {
-  it("routes active cart mutations through deterministic cart Durable Object names and syncs D1 projection", async () => {
+  it("routes active cart mutations through deterministic cart Durable Object names and syncs the projection repository", async () => {
     const cartCache = createFakeCartCacheNamespace();
     const projectionRepository = createResettableInMemoryCartRepository();
     const repository = createCloudflareCartCacheRepository({
@@ -382,33 +436,39 @@ describe("cloudflare cart cache adapter", () => {
       repository,
     });
 
-    const cart = await service.createCart({ currencyCode: "USD" });
-    const aggregate = await service.addLineItem({
-      cartId: cart.id,
-      correlationId: "cart_cf_line",
-      idempotencyKey: "cart_cf_line",
-      productId: "prod_hat",
-      quantity: 1,
-      title: "Hat",
-      unitPrice: 1200,
-      variantId: "variant_hat",
-    });
-    const duplicate = await service.addLineItem({
-      cartId: cart.id,
-      correlationId: "cart_cf_line",
-      idempotencyKey: "cart_cf_line",
-      productId: "prod_hat",
-      quantity: 1,
-      title: "Hat",
-      unitPrice: 1200,
-      variantId: "variant_hat",
-    });
+    const cart = await Effect.runPromise(
+      service.createCart({ currencyCode: "USD" })
+    );
+    const aggregate = await Effect.runPromise(
+      service.addLineItem({
+        cartId: cart.id,
+        correlationId: "cart_cf_line",
+        idempotencyKey: "cart_cf_line",
+        productId: "prod_hat",
+        quantity: 1,
+        title: "Hat",
+        unitPrice: 1200,
+        variantId: "variant_hat",
+      })
+    );
+    const duplicate = await Effect.runPromise(
+      service.addLineItem({
+        cartId: cart.id,
+        correlationId: "cart_cf_line",
+        idempotencyKey: "cart_cf_line",
+        productId: "prod_hat",
+        quantity: 1,
+        title: "Hat",
+        unitPrice: 1200,
+        variantId: "variant_hat",
+      })
+    );
 
     expect(cartCache.fetches.map(({ name }) => name)).toContain(
       createCartCacheDurableObjectName(cart.id)
     );
     await expect(
-      projectionRepository.getCartAggregate(cart.id)
+      Effect.runPromise(projectionRepository.getCartAggregate(cart.id))
     ).resolves.toMatchObject({
       lineItems: [
         {
@@ -432,7 +492,9 @@ describe("cloudflare cart cache adapter", () => {
       idGenerator: createSequenceIdGenerator(["cart_seed", "evt_seed"]),
       repository: seedRepository,
     });
-    const cart = await seedService.createCart({ currencyCode: "USD" });
+    const cart = await Effect.runPromise(
+      seedService.createCart({ currencyCode: "USD" })
+    );
     const emptyCache = createFakeCartCacheNamespace();
     const hydratedRepository = createCloudflareCartCacheRepository({
       namespace: emptyCache.namespace,
@@ -441,16 +503,19 @@ describe("cloudflare cart cache adapter", () => {
     });
 
     await expect(
-      hydratedRepository.getCartAggregate(cart.id)
+      Effect.runPromise(hydratedRepository.getCartAggregate(cart.id))
     ).resolves.toMatchObject({
       cart: {
         id: cart.id,
       },
     });
 
-    const failingProjection = createResettableInMemoryCartRepository();
-    failingProjection.saveCart = async () => {
-      throw new Error("projection offline");
+    const failingProjection = {
+      ...createResettableInMemoryCartRepository(),
+      saveCart: () =>
+        Effect.fail(
+          new CartValidationFailure({ message: "projection offline" })
+        ),
     };
     const failuresCache = createFakeCartCacheNamespace();
     const failingRepository = createCloudflareCartCacheRepository({
@@ -464,7 +529,7 @@ describe("cloudflare cart cache adapter", () => {
       repository: failingRepository,
     });
 
-    await failingService.createCart({ currencyCode: "USD" });
+    await Effect.runPromise(failingService.createCart({ currencyCode: "USD" }));
 
     expect(failuresCache.failures).toEqual([
       expect.objectContaining({
@@ -496,13 +561,15 @@ describe("cloudflare cart cache adapter", () => {
       idGenerator: createSequenceIdGenerator(["cart_owner", "evt_owner"]),
       repository: visitorRepository,
     });
-    const cart = await visitorService.createCart({ currencyCode: "USD" });
+    const cart = await Effect.runPromise(
+      visitorService.createCart({ currencyCode: "USD" })
+    );
 
     await expect(
-      customerRepository.getCartAggregate(cart.id)
+      Effect.runPromise(customerRepository.getCartAggregate(cart.id))
     ).resolves.toBeNull();
     await expect(
-      systemRepository.getCartAggregate(cart.id)
+      Effect.runPromise(systemRepository.getCartAggregate(cart.id))
     ).resolves.toMatchObject({
       cart: {
         id: cart.id,
@@ -513,34 +580,36 @@ describe("cloudflare cart cache adapter", () => {
   it("rejects mismatched customer scope when hydrating a projected customer cart", async () => {
     const cartCache = createFakeCartCacheNamespace();
     const projectionRepository = createResettableInMemoryCartRepository();
-    const customerCart = await projectionRepository.saveCart({
-      billingAddress: null,
-      completedAt: null,
-      createdAt: new Date("2026-06-16T10:00:00.000Z"),
-      currencyCode: "USD",
-      customerId: "cus_1",
-      email: null,
-      id: createCartId("cart_projection"),
-      metadata: {},
-      paymentCollectionId: null,
-      regionId: null,
-      salesChannelId: null,
-      shippingAddress: null,
-      shippingOptionId: null,
-      status: "active",
-      totals: {
-        adjustmentTotal: 0,
+    const customerCart = await Effect.runPromise(
+      projectionRepository.saveCart({
+        billingAddress: null,
+        completedAt: null,
+        createdAt: new Date("2026-06-16T10:00:00.000Z"),
         currencyCode: "USD",
-        discountTotal: 0,
-        giftCardTotal: 0,
-        itemSubtotal: 0,
-        shippingTotal: 0,
-        subtotal: 0,
-        taxTotal: 0,
-        total: 0,
-      },
-      updatedAt: new Date("2026-06-16T10:00:00.000Z"),
-    });
+        customerId: "cus_1",
+        email: null,
+        id: createCartId("cart_projection"),
+        metadata: {},
+        paymentCollectionId: null,
+        regionId: null,
+        salesChannelId: null,
+        shippingAddress: null,
+        shippingOptionId: null,
+        status: "active",
+        totals: {
+          adjustmentTotal: 0,
+          currencyCode: "USD",
+          discountTotal: 0,
+          giftCardTotal: 0,
+          itemSubtotal: 0,
+          shippingTotal: 0,
+          subtotal: 0,
+          taxTotal: 0,
+          total: 0,
+        },
+        updatedAt: new Date("2026-06-16T10:00:00.000Z"),
+      })
+    );
     const mismatchedRepository = createCloudflareCartCacheRepository({
       namespace: cartCache.namespace,
       projectionRepository,
@@ -548,23 +617,28 @@ describe("cloudflare cart cache adapter", () => {
     });
 
     await expect(
-      mismatchedRepository.getCartAggregate(customerCart.id)
+      Effect.runPromise(mismatchedRepository.getCartAggregate(customerCart.id))
     ).rejects.toThrow(/denied/);
 
     await expect(
-      createCloudflareCartCacheRepository({
-        namespace: cartCache.namespace,
-        projectionRepository,
-        scope: createVisitorCartScope("visitor_2"),
-      }).getCartAggregate(customerCart.id)
+      Effect.runPromise(
+        createCloudflareCartCacheRepository({
+          namespace: cartCache.namespace,
+          projectionRepository,
+          scope: createVisitorCartScope("visitor_2"),
+        }).getCartAggregate(customerCart.id)
+      )
     ).rejects.toThrow(/denied/);
   });
 
   it("reads active line items from the Durable Object when projection sync fails", async () => {
     const cartCache = createFakeCartCacheNamespace();
-    const projectionRepository = createResettableInMemoryCartRepository();
-    projectionRepository.saveLineItem = async () => {
-      throw new Error("projection unavailable");
+    const projectionRepository = {
+      ...createResettableInMemoryCartRepository(),
+      saveLineItem: () =>
+        Effect.fail(
+          new CartValidationFailure({ message: "projection unavailable" })
+        ),
     };
     const repository = createCloudflareCartCacheRepository({
       namespace: cartCache.namespace,
@@ -582,17 +656,21 @@ describe("cloudflare cart cache adapter", () => {
       repository,
     });
 
-    const cart = await service.createCart({ currencyCode: "USD" });
-    const withLineItem = await service.addLineItem({
-      cartId: cart.id,
-      correlationId: "cart_line_do",
-      idempotencyKey: "cart_line_do",
-      productId: "prod_hat",
-      quantity: 1,
-      title: "Hat",
-      unitPrice: 1200,
-      variantId: "variant_hat",
-    });
+    const cart = await Effect.runPromise(
+      service.createCart({ currencyCode: "USD" })
+    );
+    const withLineItem = await Effect.runPromise(
+      service.addLineItem({
+        cartId: cart.id,
+        correlationId: "cart_line_do",
+        idempotencyKey: "cart_line_do",
+        productId: "prod_hat",
+        quantity: 1,
+        title: "Hat",
+        unitPrice: 1200,
+        variantId: "variant_hat",
+      })
+    );
     const lineItem = withLineItem.lineItems[0];
 
     if (!lineItem) {
@@ -600,7 +678,7 @@ describe("cloudflare cart cache adapter", () => {
     }
 
     await expect(
-      repository.findLineItemById(lineItem.id, cart.id)
+      Effect.runPromise(repository.findLineItemById(lineItem.id, cart.id))
     ).resolves.toMatchObject({
       id: lineItem.id,
       cartId: cart.id,
@@ -681,16 +759,18 @@ describe("cloudflare workflow runtime adapter", () => {
       }),
     });
 
-    const published = await service.publishEvent({
-      correlationId: "corr_notify_1",
-      name: "order.placed",
-      payload: { orderId: "order_1" },
-      sourceModule: "order",
-      workflowRunId: "wf_notify_1",
-    });
+    const published = await Effect.runPromise(
+      service.publishEvent({
+        correlationId: "corr_notify_1",
+        name: "order.placed",
+        payload: { orderId: "order_1" },
+        sourceModule: "order",
+        workflowRunId: "wf_notify_1",
+      })
+    );
 
     await expect(
-      repository.findOutboxById(published.outbox.id)
+      Effect.runPromise(repository.findOutboxById(published.outbox.id))
     ).resolves.toMatchObject({
       id: "evt_cf_notify_1",
       status: "pending",
@@ -730,22 +810,26 @@ describe("cloudflare workflow runtime adapter", () => {
       repository,
     });
 
-    await service.upsertNotificationTemplate({
-      channel: "email",
-      id: "ntpl_cf_notify_1",
-      name: "Order placed",
-      providerKey: "email",
-      templateKey: "order.placed",
-    });
+    await Effect.runPromise(
+      service.upsertNotificationTemplate({
+        channel: "email",
+        id: "ntpl_cf_notify_1",
+        name: "Order placed",
+        providerKey: "email",
+        templateKey: "order.placed",
+      })
+    );
 
-    const dispatch = await service.dispatchNotification({
-      channel: "email",
-      correlationId: "corr_notify_2",
-      idempotencyKey: "notify_order_1",
-      payload: { orderId: "order_1" },
-      recipient: { address: "ada@example.com", type: "email" },
-      templateKey: "order.placed",
-    });
+    const dispatch = await Effect.runPromise(
+      service.dispatchNotification({
+        channel: "email",
+        correlationId: "corr_notify_2",
+        idempotencyKey: "notify_order_1",
+        payload: { orderId: "order_1" },
+        recipient: { address: "ada@example.com", type: "email" },
+        templateKey: "order.placed",
+      })
+    );
     const provider = createFakeNotificationProvider("email");
     const message = fakeQueue.messages[0] as NotificationEventQueueMessage;
 
@@ -775,7 +859,9 @@ describe("cloudflare workflow runtime adapter", () => {
     });
 
     expect(provider.deliveries).toHaveLength(1);
-    await expect(repository.listDispatches()).resolves.toMatchObject([
+    await expect(
+      Effect.runPromise(repository.listDispatches)
+    ).resolves.toMatchObject([
       {
         id: "ndsp_cf_notify_1",
         status: "delivered",
@@ -800,21 +886,25 @@ describe("cloudflare workflow runtime adapter", () => {
       repository,
     });
 
-    await service.upsertNotificationTemplate({
-      channel: "email",
-      id: "ntpl_cf_notify_failed",
-      name: "Order placed",
-      providerKey: "email",
-      templateKey: "order.placed",
-    });
-    await service.dispatchNotification({
-      channel: "email",
-      correlationId: "corr_notify_failed",
-      idempotencyKey: "notify_order_failed",
-      payload: { orderId: "order_1" },
-      recipient: { address: "ada@example.com", type: "email" },
-      templateKey: "order.placed",
-    });
+    await Effect.runPromise(
+      service.upsertNotificationTemplate({
+        channel: "email",
+        id: "ntpl_cf_notify_failed",
+        name: "Order placed",
+        providerKey: "email",
+        templateKey: "order.placed",
+      })
+    );
+    await Effect.runPromise(
+      service.dispatchNotification({
+        channel: "email",
+        correlationId: "corr_notify_failed",
+        idempotencyKey: "notify_order_failed",
+        payload: { orderId: "order_1" },
+        recipient: { address: "ada@example.com", type: "email" },
+        templateKey: "order.placed",
+      })
+    );
 
     const message = fakeQueue.messages[0] as NotificationEventQueueMessage;
     const queueMessage = {
@@ -833,7 +923,6 @@ describe("cloudflare workflow runtime adapter", () => {
         status: "failed" as const,
       }),
     };
-
     await processNotificationEventQueueBatch(
       { messages: [queueMessage] },
       {
@@ -845,7 +934,9 @@ describe("cloudflare workflow runtime adapter", () => {
     );
 
     expect(retrySpy).toHaveBeenCalledTimes(1);
-    await expect(repository.listDispatches()).resolves.toMatchObject([
+    await expect(
+      Effect.runPromise(repository.listDispatches)
+    ).resolves.toMatchObject([
       {
         id: "ndsp_cf_notify_failed",
         lastError: "temporary provider failure",
@@ -871,21 +962,25 @@ describe("cloudflare workflow runtime adapter", () => {
       repository,
     });
 
-    await service.upsertNotificationTemplate({
-      channel: "email",
-      id: "ntpl_cf_notify_thrown",
-      name: "Order placed",
-      providerKey: "email",
-      templateKey: "order.placed",
-    });
-    await service.dispatchNotification({
-      channel: "email",
-      correlationId: "corr_notify_thrown",
-      idempotencyKey: "notify_order_thrown",
-      payload: { orderId: "order_1" },
-      recipient: { address: "ada@example.com", type: "email" },
-      templateKey: "order.placed",
-    });
+    await Effect.runPromise(
+      service.upsertNotificationTemplate({
+        channel: "email",
+        id: "ntpl_cf_notify_thrown",
+        name: "Order placed",
+        providerKey: "email",
+        templateKey: "order.placed",
+      })
+    );
+    await Effect.runPromise(
+      service.dispatchNotification({
+        channel: "email",
+        correlationId: "corr_notify_thrown",
+        idempotencyKey: "notify_order_thrown",
+        payload: { orderId: "order_1" },
+        recipient: { address: "ada@example.com", type: "email" },
+        templateKey: "order.placed",
+      })
+    );
 
     const message = fakeQueue.messages[0] as NotificationEventQueueMessage;
     const queueMessage = {
@@ -917,7 +1012,9 @@ describe("cloudflare workflow runtime adapter", () => {
 
     expect(deliveries).toBe(1);
     expect(retrySpy).toHaveBeenCalledTimes(1);
-    await expect(repository.listDispatches()).resolves.toMatchObject([
+    await expect(
+      Effect.runPromise(repository.listDispatches)
+    ).resolves.toMatchObject([
       {
         id: "ndsp_cf_notify_thrown",
         lastError: "provider timeout",
@@ -959,7 +1056,7 @@ describe("cloudflare workflow runtime adapter", () => {
     ]);
   });
 
-  it("preserves queue and stateful coordination metadata through platform adapters", async () => {
+  it("preserves queue and keyed actor metadata through platform adapters", async () => {
     const fakeQueue = createFakeQueue();
     const fakeNamespace = createFakeDurableObjectNamespace();
     const clock = createStaticClock(new Date("2026-06-06T12:00:00.000Z"));
@@ -967,8 +1064,7 @@ describe("cloudflare workflow runtime adapter", () => {
       clock,
       queue: fakeQueue.queue as Queue<never>,
     });
-    const coordinator = createCloudflareStatefulCoordinator({
-      clock,
+    const actorLayer = createCloudflareKeyedActorLayer({
       namespace: fakeNamespace.namespace,
     });
 
@@ -990,16 +1086,28 @@ describe("cloudflare workflow runtime adapter", () => {
     });
 
     const queued = await queuePublisher.publish(message);
-    const coordinated = await coordinator.coordinate({
+    const command = Schema.decodeUnknownSync(KeyedActorCommandSchema)({
+      actor: {
+        key: "cart_1",
+        type: "cart",
+      },
       causationId: message.id,
-      coordinatorKey: "cart:cart_1",
+      commandId: message.idempotencyKey,
+      commandName: "cart.reserve",
       correlationId: message.correlationId,
       idempotencyKey: message.idempotencyKey,
-      operationName: "cart.reserve",
       payload: message.payload,
+      issuedAt: clock.now().toISOString(),
+      schemaVersion: 1,
       subject: message.subject,
       workflowRunId: message.workflowRunId,
     });
+    const coordinated = await Effect.runPromise(
+      Effect.gen(function* dispatchKeyedActorCommand() {
+        const actor = yield* KeyedActorService;
+        return yield* actor.dispatch(command);
+      }).pipe(Effect.provide(actorLayer))
+    );
 
     expect(queued).toEqual({
       messageId: "msg_runtime_1",
@@ -1007,18 +1115,73 @@ describe("cloudflare workflow runtime adapter", () => {
     });
     expect(fakeQueue.messages).toEqual([message]);
     expect(coordinated).toMatchObject({
+      actor: {
+        key: "cart_1",
+        type: "cart",
+      },
       causationId: "msg_runtime_1",
-      coordinatorKey: "cart:cart_1",
+      commandName: "cart.reserve",
       correlationId: "corr_runtime_1",
       duplicate: false,
       idempotencyKey: "checkout:cart_1",
-      operationName: "cart.reserve",
       subject: {
         id: "cart_1",
         type: "cart",
       },
       workflowRunId: "run_runtime_1",
     });
+  });
+
+  it("provides Cloudflare queue publishers through Effect Layers and typed failures", async () => {
+    const telemetryEvents: unknown[] = [];
+    const failingQueue = {
+      metrics: async () => ({
+        backlogBytes: 0,
+        backlogCount: 0,
+      }),
+      send: async () => {
+        throw new Error("queue unavailable");
+      },
+      sendBatch: async () => undefined,
+    } as unknown as Queue<never>;
+    const message = defineQueueMessage({
+      correlationId: "corr_queue_layer",
+      id: "msg_queue_layer",
+      idempotencyKey: "queue:layer",
+      payload: { ok: true },
+      queueName: "commerce-work",
+      traceId: "trace_queue_layer",
+      type: "commerce.test",
+    });
+    const layer = createCloudflareQueuePublisherLayer({
+      clock: createStaticClock(new Date("2026-06-06T12:30:00.000Z")),
+      queue: failingQueue,
+      telemetry: {
+        record: (event) => {
+          telemetryEvents.push(event);
+        },
+      },
+    });
+
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* publishWithLayer() {
+          const publisher = yield* QueuePublisherService;
+          return yield* Effect.tryPromise({
+            catch: (cause) => cause,
+            try: () => publisher.publish(message),
+          });
+        }).pipe(Effect.provide(layer))
+      )
+    ).rejects.toBeInstanceOf(CloudflareQueuePublishFailure);
+    expect(telemetryEvents).toMatchObject([
+      {
+        correlationId: "corr_queue_layer",
+        kind: "queue.publish.failed",
+        messageId: "msg_queue_layer",
+        traceId: "trace_queue_layer",
+      },
+    ]);
   });
 
   it("does not duplicate queued or coordinated work for duplicate workflow starts", async () => {
@@ -1121,6 +1284,113 @@ describe("cloudflare workflow runtime adapter", () => {
     );
   });
 
+  it("deduplicates workflow starts across runtime instances with shared state", async () => {
+    const workflowBinding = createFakeWorkflowBinding();
+    const fakeQueue = createFakeQueue();
+    const { publisher } = createEventCollector();
+    const state = createInMemoryWorkflowStateStore();
+    const telemetryEvents: unknown[] = [];
+    const clock = createStaticClock(new Date("2026-06-06T14:00:00.000Z"));
+    const workflow = defineWorkflow({
+      key: "checkout.workflow-state",
+      version: 1,
+      steps: [],
+    });
+    const request = {
+      workflow,
+      correlationId: "corr_state_dedupe",
+      idempotencyKey: "checkout:state",
+      input: { cartId: "cart_state" },
+    } as const;
+    const firstRuntime = createCloudflareWorkflowRuntime({
+      bindings: {
+        dispatchQueue: fakeQueue.queue as Queue<never>,
+        workflow: workflowBinding.binding,
+      },
+      clock,
+      ids: createSequenceIdGenerator(["run_cf_state_1", "evt_cf_state_1"]),
+      publisher,
+      stateStore: state.store,
+      telemetry: {
+        record: (event) => {
+          telemetryEvents.push(event);
+        },
+      },
+    });
+
+    const first = await firstRuntime.start(request);
+    const secondRuntime = createCloudflareWorkflowRuntime({
+      bindings: {
+        dispatchQueue: fakeQueue.queue as Queue<never>,
+        workflow: workflowBinding.binding,
+      },
+      clock,
+      ids: createSequenceIdGenerator(["run_cf_state_2", "evt_cf_state_2"]),
+      publisher,
+      stateStore: state.store,
+    });
+    const second = await secondRuntime.start(request);
+
+    expect(second.runId).toBe(first.runId);
+    expect(fakeQueue.messages).toHaveLength(1);
+    expect(state.states.get(first.runId)).toMatchObject({
+      correlationId: "corr_state_dedupe",
+      historyReference: "cloudflare:run_cf_state_1",
+      idempotencyKey: "checkout:state",
+      schemaVersion: 1,
+      status: "pending",
+      workflowKey: "checkout.workflow-state",
+    });
+    expect(telemetryEvents).toContainEqual(
+      expect.objectContaining({
+        kind: "workflow.start.succeeded",
+        runId: "run_cf_state_1",
+      })
+    );
+  });
+
+  it("provides Cloudflare workflow runtimes through Effect Layers and typed failures", async () => {
+    const { publisher } = createEventCollector();
+    const workflow = defineWorkflow({
+      key: "checkout.workflow-layer",
+      version: 1,
+      steps: [],
+    });
+    const layer = createCloudflareWorkflowRuntimeLayer({
+      bindings: {
+        workflow: {
+          create: async () => {
+            throw new Error("workflow binding unavailable");
+          },
+          createBatch: async (): Promise<WorkflowInstance[]> => [],
+          get: async () => {
+            throw new Error("not expected");
+          },
+        } as unknown as Workflow<unknown>,
+      },
+      clock: createStaticClock(new Date("2026-06-06T14:30:00.000Z")),
+      ids: createSequenceIdGenerator(["run_cf_layer"]),
+      publisher,
+    });
+
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* startWithLayer() {
+          const runtime = yield* WorkflowRuntimeService;
+          return yield* Effect.tryPromise({
+            catch: (cause) => cause,
+            try: () =>
+              runtime.start({
+                workflow,
+                correlationId: "corr_workflow_layer",
+                input: {},
+              }),
+          });
+        }).pipe(Effect.provide(layer))
+      )
+    ).rejects.toBeInstanceOf(CloudflareWorkflowRuntimeFailure);
+  });
+
   it("reconciles Cloudflare instance status back to the shared contract", async () => {
     const workflowBinding = createFakeWorkflowBinding();
     const { publisher } = createEventCollector();
@@ -1207,6 +1477,7 @@ const createBridgeContext = () => ({
   pluginId: "tax-sandbox",
   pluginVersion: "1.0.0",
   tenantId: "tenant_1",
+  traceId: "trace_sandbox_1",
 });
 
 describe("cloudflare sandbox plugin runtime", () => {
@@ -1288,6 +1559,7 @@ describe("cloudflare sandbox plugin runtime", () => {
       decision: "allow",
       operationType: "invoke",
       pluginId: "tax-sandbox",
+      traceId: "trace_sandbox_1",
     });
   });
 
@@ -1315,6 +1587,7 @@ describe("cloudflare sandbox plugin runtime", () => {
     ).rejects.toMatchObject({
       code: "platform-capability-unavailable",
       pluginId: "tax-sandbox",
+      traceId: "trace_sandbox_1",
     });
   });
 
@@ -1360,6 +1633,93 @@ describe("cloudflare sandbox plugin runtime", () => {
     });
 
     expect(loadedCode?.globalOutbound).toBeNull();
+  });
+
+  it("passes only the mediated Effect-backed bridge to Worker Loader entrypoints", async () => {
+    const plugin = createSandboxPlugin();
+    let exposedEnv: Record<string, unknown> | undefined;
+    const loader: CloudflareWorkerLoaderBinding = {
+      get: () => {
+        throw new Error("unused");
+      },
+      load: () => ({
+        getEntrypoint: () => ({
+          fetch: async (_request, env) => {
+            exposedEnv = env as Record<string, unknown>;
+            const sandboxEnv = env as {
+              readonly bridge: Pick<SandboxBridge, "routeResponse">;
+            };
+
+            return Response.json(
+              await sandboxEnv.bridge.routeResponse({
+                body: {
+                  mediated: true,
+                },
+                status: 200,
+                type: "routeResponse",
+              })
+            );
+          },
+        }),
+      }),
+    };
+
+    const result = await createCloudflareSandboxPluginRunner({ loader }).invoke(
+      {
+        bridgeContext: createBridgeContext(),
+        compatibilityDate: "2026-06-04",
+        entrypointKey: "tax.quote",
+        manifest: plugin.manifest,
+        policy: {
+          canActivate: true,
+          deniedAllowedHosts: [],
+          deniedCapabilities: [],
+          deniedStorageNamespaces: [],
+          grantedAllowedHosts: [],
+          grantedCapabilities: ["bridge:log", "route:respond"],
+          grantedStorageNamespaces: [],
+          pluginId: "tax-sandbox",
+        },
+      }
+    );
+
+    expect(exposedEnv).toBeDefined();
+    expect(Object.keys(exposedEnv ?? {}).toSorted()).toEqual([
+      "bridge",
+      "context",
+    ]);
+    expect(exposedEnv?.context).toMatchObject({
+      correlationId: "corr_sandbox_1",
+      traceId: "trace_sandbox_1",
+    });
+    expect(Object.keys(exposedEnv?.bridge ?? {}).toSorted()).toEqual([
+      "commerceAction",
+      "emitEvent",
+      "fetch",
+      "log",
+      "routeResponse",
+      "storageRead",
+      "storageWrite",
+    ]);
+    expect(JSON.stringify(Object.keys(exposedEnv ?? {}))).not.toMatch(
+      /(?:binding|database|durable|env|loader|postgres|secret|sql|storage)/iu
+    );
+    expect(result.response).toEqual({
+      body: {
+        mediated: true,
+      },
+      status: 200,
+      type: "routeResponse",
+    });
+    expect(result.auditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          decision: "allow",
+          operationType: "routeResponse",
+          pluginId: "tax-sandbox",
+        }),
+      ])
+    );
   });
 
   it("enforces bridge capability, outbound host, and storage scope", async () => {
@@ -1420,16 +1780,180 @@ describe("cloudflare sandbox plugin runtime", () => {
           decision: "deny",
           operationType: "storage",
           resource: "secrets",
+          traceId: "trace_sandbox_1",
         }),
         expect.objectContaining({
           decision: "deny",
           operationType: "fetch",
+          traceId: "trace_sandbox_1",
         }),
         expect.objectContaining({
           decision: "deny",
           operationType: "routeResponse",
+          traceId: "trace_sandbox_1",
         }),
       ])
+    );
+  });
+
+  it("classifies Worker Loader invalid responses and defects with invoke audit evidence", async () => {
+    const plugin = createSandboxPlugin();
+    const createLoaderReturning = (
+      response: unknown
+    ): CloudflareWorkerLoaderBinding => ({
+      get: () => {
+        throw new Error("unused");
+      },
+      load: () => ({
+        getEntrypoint: () => ({
+          fetch: async () => response,
+        }),
+      }),
+    });
+
+    await expect(
+      createCloudflareSandboxPluginRunner({
+        loader: createLoaderReturning({ malformed: true }),
+      }).invoke({
+        bridgeContext: createBridgeContext(),
+        compatibilityDate: "2026-06-04",
+        entrypointKey: "tax.quote",
+        manifest: plugin.manifest,
+        policy: {
+          canActivate: true,
+          deniedAllowedHosts: [],
+          deniedCapabilities: [],
+          deniedStorageNamespaces: [],
+          grantedAllowedHosts: [],
+          grantedCapabilities: ["bridge:log"],
+          grantedStorageNamespaces: [],
+          pluginId: "tax-sandbox",
+        },
+      })
+    ).rejects.toMatchObject({
+      code: "invalid-response",
+      message: "Sandbox entrypoint returned an invalid response shape.",
+    });
+
+    const defectAuditEvents: unknown[] = [];
+    const defectiveLoader: CloudflareWorkerLoaderBinding = {
+      get: () => {
+        throw new Error("unused");
+      },
+      load: () => ({
+        getEntrypoint: () => ({
+          fetch: async () => {
+            throw new Error("sandbox defect");
+          },
+        }),
+      }),
+    };
+
+    await expect(
+      createCloudflareSandboxPluginRunner({
+        audit: {
+          emit: (event) => {
+            defectAuditEvents.push(event);
+          },
+        },
+        loader: defectiveLoader,
+      }).invoke({
+        bridgeContext: createBridgeContext(),
+        compatibilityDate: "2026-06-04",
+        entrypointKey: "tax.quote",
+        manifest: plugin.manifest,
+        policy: {
+          canActivate: true,
+          deniedAllowedHosts: [],
+          deniedCapabilities: [],
+          deniedStorageNamespaces: [],
+          grantedAllowedHosts: [],
+          grantedCapabilities: ["bridge:log"],
+          grantedStorageNamespaces: [],
+          pluginId: "tax-sandbox",
+        },
+      })
+    ).rejects.toMatchObject({
+      code: "platform-execution-failed",
+      message: "sandbox defect",
+      reason: "defect",
+    });
+    expect(defectAuditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          decision: "deny",
+          operationType: "invoke",
+          reason: "sandbox defect",
+        }),
+      ])
+    );
+  });
+
+  it("classifies Worker Loader invocation timeouts without exposing raw host state", async () => {
+    const plugin = createSandboxPlugin();
+    const auditEvents: unknown[] = [];
+    const loader: CloudflareWorkerLoaderBinding = {
+      get: () => {
+        throw new Error("unused");
+      },
+      load: () => ({
+        getEntrypoint: () => ({
+          fetch: () =>
+            new Promise((resolve) => {
+              setTimeout(() => {
+                resolve(
+                  Response.json({
+                    decision: "continue",
+                    type: "hook",
+                  })
+                );
+              }, 50);
+            }),
+        }),
+      }),
+    };
+
+    await expect(
+      createCloudflareSandboxPluginRunner({
+        audit: {
+          emit: (event) => {
+            auditEvents.push(event);
+          },
+        },
+        invocationTimeoutMs: 1,
+        loader,
+      }).invoke({
+        bridgeContext: createBridgeContext(),
+        compatibilityDate: "2026-06-04",
+        entrypointKey: "tax.quote",
+        manifest: plugin.manifest,
+        policy: {
+          canActivate: true,
+          deniedAllowedHosts: [],
+          deniedCapabilities: [],
+          deniedStorageNamespaces: [],
+          grantedAllowedHosts: [],
+          grantedCapabilities: ["bridge:log"],
+          grantedStorageNamespaces: [],
+          pluginId: "tax-sandbox",
+        },
+      })
+    ).rejects.toMatchObject({
+      code: "platform-execution-failed",
+      message: "Sandbox plugin invocation timed out after 1ms.",
+      reason: "timeout",
+    });
+    expect(auditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          decision: "deny",
+          operationType: "invoke",
+          reason: "Sandbox plugin invocation timed out after 1ms.",
+        }),
+      ])
+    );
+    expect(JSON.stringify(auditEvents)).not.toMatch(
+      /(?:binding|database|loader|postgres|secret|sql)/iu
     );
   });
 

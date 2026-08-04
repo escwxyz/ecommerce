@@ -1,4 +1,5 @@
 export {
+  createOrderRepositoryLayer,
   createInMemoryOrderRepository,
   createResettableInMemoryOrderRepository,
   defaultOrderRepository,

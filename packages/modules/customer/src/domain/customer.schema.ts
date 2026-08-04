@@ -1,109 +1,207 @@
-import { z } from "zod";
+import { Schema } from "effect";
 
-export const CustomerMetadataSchema = z.record(z.string(), z.string());
+const customerEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 
-export const CustomerAddressKindSchema = z.enum(["billing", "shipping"]);
+const isCanonicalIsoDateTime = (value: string): boolean => {
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+};
 
-export const CustomerAddressSchema = z.object({
-  address1: z.string().min(1),
-  address2: z.string().optional(),
-  city: z.string().min(1),
-  company: z.string().optional(),
-  countryCode: z.string().min(2),
-  firstName: z.string().optional(),
-  id: z.string().min(1).startsWith("caddr_"),
-  isDefaultBilling: z.boolean(),
-  isDefaultShipping: z.boolean(),
+/** Stable commerce customer profile identifier owned by the customer module. */
+export const CustomerIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("cust_")),
+  Schema.brand("CustomerId")
+);
+
+/** Stable customer address identifier owned by the customer module. */
+export const CustomerAddressIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("caddr_")),
+  Schema.brand("CustomerAddressId")
+);
+
+/** Stable customer group identifier owned by the customer module. */
+export const CustomerGroupIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("cgrp_")),
+  Schema.brand("CustomerGroupId")
+);
+
+export const CustomerSerializedIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("cust_"))
+);
+export const CustomerSerializedAddressIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("caddr_"))
+);
+export const CustomerSerializedGroupIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("cgrp_"))
+);
+
+export const CustomerTrimmedStringSchema = Schema.Trimmed.pipe(
+  Schema.check(Schema.isMinLength(1))
+);
+
+export const CustomerEmailSchema = CustomerTrimmedStringSchema.pipe(
+  Schema.check(Schema.isPattern(customerEmailPattern))
+);
+
+/** Canonical UTC ISO datetime string emitted by customer API serializers. */
+export const CustomerIsoDateTimeStringSchema = CustomerTrimmedStringSchema.pipe(
+  Schema.check(Schema.makeFilter(isCanonicalIsoDateTime))
+);
+
+export const CustomerMetadataSchema = Schema.Record(
+  Schema.String,
+  Schema.String
+);
+
+export const CustomerAddressKindSchema = Schema.Literals([
+  "billing",
+  "shipping",
+]);
+
+export const CustomerAddressSchema = Schema.Struct({
+  address1: CustomerTrimmedStringSchema,
+  address2: Schema.optional(CustomerTrimmedStringSchema),
+  city: CustomerTrimmedStringSchema,
+  company: Schema.optional(CustomerTrimmedStringSchema),
+  countryCode: CustomerTrimmedStringSchema,
+  firstName: Schema.optional(CustomerTrimmedStringSchema),
+  id: CustomerAddressIdSchema,
+  isDefaultBilling: Schema.Boolean,
+  isDefaultShipping: Schema.Boolean,
   kind: CustomerAddressKindSchema,
-  lastName: z.string().optional(),
+  lastName: Schema.optional(CustomerTrimmedStringSchema),
   metadata: CustomerMetadataSchema,
-  phone: z.string().optional(),
-  postalCode: z.string().min(1),
-  province: z.string().optional(),
+  phone: Schema.optional(CustomerTrimmedStringSchema),
+  postalCode: CustomerTrimmedStringSchema,
+  province: Schema.optional(CustomerTrimmedStringSchema),
 });
 
-export const CustomerGroupSchema = z.object({
-  handle: z.string().min(1),
-  id: z.string().min(1).startsWith("cgrp_"),
+export const CustomerGroupSchema = Schema.Struct({
+  handle: CustomerTrimmedStringSchema,
+  id: CustomerGroupIdSchema,
   metadata: CustomerMetadataSchema,
-  name: z.string().min(1),
+  name: CustomerTrimmedStringSchema,
 });
 
-export const CustomerProfileSchema = z.object({
-  addresses: z.array(CustomerAddressSchema),
-  authUserId: z.string().min(1).nullable(),
-  createdAt: z.date(),
-  email: z.string().email(),
-  firstName: z.string().optional(),
-  groupIds: z.array(z.string().min(1).startsWith("cgrp_")),
-  id: z.string().min(1).startsWith("cust_"),
-  lastName: z.string().optional(),
+export const CustomerProfileSchema = Schema.Struct({
+  addresses: Schema.Array(CustomerAddressSchema),
+  authUserId: Schema.NullOr(CustomerTrimmedStringSchema),
+  createdAt: Schema.Date,
+  email: CustomerEmailSchema,
+  firstName: Schema.optional(CustomerTrimmedStringSchema),
+  groupIds: Schema.Array(CustomerGroupIdSchema),
+  id: CustomerIdSchema,
+  lastName: Schema.optional(CustomerTrimmedStringSchema),
   metadata: CustomerMetadataSchema,
-  phone: z.string().optional(),
-  updatedAt: z.date(),
+  phone: Schema.optional(CustomerTrimmedStringSchema),
+  updatedAt: Schema.Date,
 });
 
-export const CreateCustomerInputSchema = z.object({
-  authUserId: z.string().min(1).optional(),
-  email: z.string().email(),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  metadata: CustomerMetadataSchema.optional(),
-  phone: z.string().optional(),
+export const CreateCustomerInputSchema = Schema.Struct({
+  authUserId: Schema.optional(CustomerTrimmedStringSchema),
+  email: CustomerEmailSchema,
+  firstName: Schema.optional(Schema.String),
+  lastName: Schema.optional(Schema.String),
+  metadata: Schema.optional(CustomerMetadataSchema),
+  phone: Schema.optional(Schema.String),
 });
 
-export const UpdateCustomerProfileInputSchema = z
-  .object({
-    email: z.string().email().optional(),
-    firstName: z.string().optional(),
-    id: z.string().min(1).startsWith("cust_"),
-    lastName: z.string().optional(),
-    metadata: CustomerMetadataSchema.optional(),
-    phone: z.string().optional(),
-  })
-  .strict();
-
-export const CustomerIdentifierSchema = z.object({
-  id: z.string().min(1).startsWith("cust_"),
+export const UpdateCustomerProfileInputSchema = Schema.Struct({
+  email: Schema.optional(CustomerEmailSchema),
+  firstName: Schema.optional(Schema.String),
+  id: CustomerIdSchema,
+  lastName: Schema.optional(Schema.String),
+  metadata: Schema.optional(CustomerMetadataSchema),
+  phone: Schema.optional(Schema.String),
 });
 
-export const CreateCustomerAddressInputSchema = CustomerAddressSchema.omit({
-  id: true,
-}).extend({
-  customerId: z.string().min(1).startsWith("cust_"),
+export const CustomerIdentifierSchema = Schema.Struct({
+  id: CustomerIdSchema,
 });
 
-export const CreateCustomerGroupInputSchema = z.object({
-  handle: z.string().min(1),
-  metadata: CustomerMetadataSchema.optional(),
-  name: z.string().min(1),
+export const CreateCustomerAddressInputSchema = Schema.Struct({
+  address1: CustomerTrimmedStringSchema,
+  address2: Schema.optional(Schema.String),
+  city: CustomerTrimmedStringSchema,
+  company: Schema.optional(Schema.String),
+  countryCode: CustomerTrimmedStringSchema,
+  customerId: CustomerIdSchema,
+  firstName: Schema.optional(Schema.String),
+  isDefaultBilling: Schema.Boolean,
+  isDefaultShipping: Schema.Boolean,
+  kind: CustomerAddressKindSchema,
+  lastName: Schema.optional(Schema.String),
+  metadata: CustomerMetadataSchema,
+  phone: Schema.optional(Schema.String),
+  postalCode: CustomerTrimmedStringSchema,
+  province: Schema.optional(Schema.String),
 });
 
-export const CustomerGroupAssignmentInputSchema = z.object({
-  customerId: z.string().min(1).startsWith("cust_"),
-  groupId: z.string().min(1).startsWith("cgrp_"),
+export const CreateCustomerGroupInputSchema = Schema.Struct({
+  handle: CustomerTrimmedStringSchema,
+  metadata: Schema.optional(CustomerMetadataSchema),
+  name: CustomerTrimmedStringSchema,
 });
 
-export const LinkCustomerAuthInputSchema = z.object({
-  authUserId: z.string().min(1),
-  customerId: z.string().min(1).startsWith("cust_"),
+export const CustomerGroupAssignmentInputSchema = Schema.Struct({
+  customerId: CustomerIdSchema,
+  groupId: CustomerGroupIdSchema,
 });
 
-export const ResolveCustomerFromAuthInputSchema = z.object({
-  authUserId: z.string().min(1),
+export const LinkCustomerAuthInputSchema = Schema.Struct({
+  authUserId: CustomerTrimmedStringSchema,
+  customerId: CustomerIdSchema,
 });
 
-export const CustomerPaymentIdentitySchema = z.object({
-  customerId: z.string().min(1).startsWith("cust_"),
-  email: z.string().email(),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  phone: z.string().optional(),
+export const ResolveCustomerFromAuthInputSchema = Schema.Struct({
+  authUserId: CustomerTrimmedStringSchema,
 });
 
-export const CustomerApiProfileSchema = CustomerProfileSchema.extend({
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
+export const CustomerPaymentIdentitySchema = Schema.Struct({
+  customerId: CustomerIdSchema,
+  email: CustomerEmailSchema,
+  firstName: Schema.optional(CustomerTrimmedStringSchema),
+  lastName: Schema.optional(CustomerTrimmedStringSchema),
+  phone: Schema.optional(CustomerTrimmedStringSchema),
 });
 
-export const CustomerApiListSchema = z.array(CustomerApiProfileSchema);
+export const CustomerApiAddressSchema = Schema.Struct({
+  address1: CustomerTrimmedStringSchema,
+  address2: Schema.optional(CustomerTrimmedStringSchema),
+  city: CustomerTrimmedStringSchema,
+  company: Schema.optional(CustomerTrimmedStringSchema),
+  countryCode: CustomerTrimmedStringSchema,
+  firstName: Schema.optional(CustomerTrimmedStringSchema),
+  id: CustomerSerializedAddressIdSchema,
+  isDefaultBilling: Schema.Boolean,
+  isDefaultShipping: Schema.Boolean,
+  kind: CustomerAddressKindSchema,
+  lastName: Schema.optional(CustomerTrimmedStringSchema),
+  metadata: CustomerMetadataSchema,
+  phone: Schema.optional(CustomerTrimmedStringSchema),
+  postalCode: CustomerTrimmedStringSchema,
+  province: Schema.optional(CustomerTrimmedStringSchema),
+});
+
+export const CustomerApiGroupSchema = Schema.Struct({
+  handle: CustomerTrimmedStringSchema,
+  id: CustomerSerializedGroupIdSchema,
+  metadata: CustomerMetadataSchema,
+  name: CustomerTrimmedStringSchema,
+});
+
+export const CustomerApiProfileSchema = Schema.Struct({
+  addresses: Schema.Array(CustomerApiAddressSchema),
+  authUserId: Schema.NullOr(CustomerTrimmedStringSchema),
+  createdAt: CustomerIsoDateTimeStringSchema,
+  email: CustomerEmailSchema,
+  firstName: Schema.optional(CustomerTrimmedStringSchema),
+  groupIds: Schema.Array(CustomerSerializedGroupIdSchema),
+  id: CustomerSerializedIdSchema,
+  lastName: Schema.optional(CustomerTrimmedStringSchema),
+  metadata: CustomerMetadataSchema,
+  phone: Schema.optional(CustomerTrimmedStringSchema),
+  updatedAt: CustomerIsoDateTimeStringSchema,
+});
+
+export const CustomerApiListSchema = Schema.Array(CustomerApiProfileSchema);

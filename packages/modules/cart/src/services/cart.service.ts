@@ -3,18 +3,25 @@ import type {
   EventPublisherServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
+import {
+  ClockService,
+  EventPublisherService,
+  IdGeneratorService,
+} from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import type { StatefulCoordinator } from "@ecommerce/core/stateful";
-import { defineStatefulCoordinationRequest } from "@ecommerce/core/stateful";
-import { Context, Layer } from "effect";
+import type { KeyedActorService } from "@ecommerce/core/stateful";
+import { KeyedActorCommandSchema } from "@ecommerce/core/stateful";
+import { Context, Effect, Layer, Schema } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
-import { createInMemoryCartCoordinator } from "../coordination";
+import { createInMemoryCartActorService } from "../coordination";
 import type {
   AddCartLineItemInput,
   ApplyCartAdjustmentInput,
   AssociateCartCustomerInput,
   CartAggregate,
+  CartExpectedError,
   CartId,
   CartLineItemRecord,
   CartRecord,
@@ -31,9 +38,14 @@ import {
   CART_ADJUSTMENT_ID_PREFIX,
   CART_ID_PREFIX,
   CART_LINE_ITEM_ID_PREFIX,
-  createCartAdjustmentId,
-  createCartId,
-  createCartLineItemId,
+  CartLineItemNotFound,
+  CartNotActive,
+  CartNotFound,
+  CartRepositoryService,
+  CartValidationFailure,
+  createCartAdjustmentIdEffect,
+  createCartIdEffect,
+  createCartLineItemIdEffect,
 } from "../domain";
 import { defaultCartRepository } from "../repositories";
 
@@ -47,20 +59,40 @@ export const CART_CHECKOUT_REFERENCE_SET_EVENT =
 export const CART_ADJUSTMENT_APPLIED_EVENT = "cart.adjustment-applied" as const;
 export const CART_TOTALS_UPDATED_EVENT = "cart.totals-updated" as const;
 
+export type CartServiceFailure = CartExpectedError;
+
 export interface CartServiceShape {
-  addLineItem(input: AddCartLineItemInput): Promise<CartAggregate>;
-  applyAdjustment(input: ApplyCartAdjustmentInput): Promise<CartAggregate>;
-  associateCustomer(input: AssociateCartCustomerInput): Promise<CartAggregate>;
-  createCart(input: CreateCartInput): Promise<CartRecord>;
-  getCart(id: CartId): Promise<CartAggregate | null>;
-  listCarts(): Promise<readonly CartRecord[]>;
-  setAddresses(input: SetCartAddressesInput): Promise<CartAggregate>;
-  setCheckoutReferences(
+  readonly addLineItem: (
+    input: AddCartLineItemInput
+  ) => EffectValue<CartAggregate, CartServiceFailure>;
+  readonly applyAdjustment: (
+    input: ApplyCartAdjustmentInput
+  ) => EffectValue<CartAggregate, CartServiceFailure>;
+  readonly associateCustomer: (
+    input: AssociateCartCustomerInput
+  ) => EffectValue<CartAggregate, CartServiceFailure>;
+  readonly createCart: (
+    input: CreateCartInput
+  ) => EffectValue<CartRecord, CartServiceFailure>;
+  readonly getCart: (
+    id: CartId
+  ) => EffectValue<CartAggregate | null, CartServiceFailure>;
+  readonly listCarts: EffectValue<readonly CartRecord[], CartServiceFailure>;
+  readonly setAddresses: (
+    input: SetCartAddressesInput
+  ) => EffectValue<CartAggregate, CartServiceFailure>;
+  readonly setCheckoutReferences: (
     input: SetCartCheckoutReferencesInput
-  ): Promise<CartAggregate>;
-  setRegionChannel(input: SetCartRegionChannelInput): Promise<CartAggregate>;
-  updateLineItem(input: UpdateCartLineItemInput): Promise<CartAggregate>;
-  updateTotals(input: UpdateCartTotalsInput): Promise<CartAggregate>;
+  ) => EffectValue<CartAggregate, CartServiceFailure>;
+  readonly setRegionChannel: (
+    input: SetCartRegionChannelInput
+  ) => EffectValue<CartAggregate, CartServiceFailure>;
+  readonly updateLineItem: (
+    input: UpdateCartLineItemInput
+  ) => EffectValue<CartAggregate, CartServiceFailure>;
+  readonly updateTotals: (
+    input: UpdateCartTotalsInput
+  ) => EffectValue<CartAggregate, CartServiceFailure>;
 }
 
 export const CartService = Context.Service<CartServiceShape>(
@@ -68,8 +100,8 @@ export const CartService = Context.Service<CartServiceShape>(
 );
 
 export interface CreateCartServiceOptions {
+  readonly actorService?: KeyedActorService;
   readonly clock?: ClockServiceShape;
-  readonly coordinator?: StatefulCoordinator;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
   readonly repository?: CartRepository;
@@ -85,7 +117,7 @@ const createDefaultIdGenerator = (): IdGeneratorServiceShape => ({
 
 const createNoopEventPublisher = (): EventPublisherServiceShape => ({
   publish: () => {
-    // Cart events are emitted when a runtime event bus is composed.
+    // Cart events are optional until a runtime event bus is composed.
   },
 });
 
@@ -112,37 +144,37 @@ const createPrefixedId = (
 const normalizeCurrencyCode = (currencyCode: string): string =>
   currencyCode.trim().toUpperCase();
 
-const requireCart = async (
+const requireCart = (
   repository: CartRepository,
   id: CartId
-): Promise<CartRecord> => {
-  const cart = await repository.findCartById(id);
+): EffectValue<CartRecord, CartServiceFailure> =>
+  Effect.gen(function* requireCartEffect() {
+    const cart = yield* repository.findCartById(id);
 
-  if (!cart) {
-    throw new Error(`Cart "${id}" was not found.`);
-  }
+    if (!cart) {
+      return yield* new CartNotFound({ cartId: id });
+    }
 
-  if (cart.status !== "active") {
-    throw new Error(`Cart "${id}" is not active.`);
-  }
+    if (cart.status !== "active") {
+      return yield* new CartNotActive({ cartId: id });
+    }
 
-  return cart;
-};
+    return cart;
+  });
 
-const requireAggregate = async (
+const requireAggregate = (
   repository: CartRepository,
   id: CartId
-): Promise<CartAggregate> => {
-  const aggregate = await repository.getCartAggregate(id);
+): EffectValue<CartAggregate, CartServiceFailure> =>
+  repository
+    .getCartAggregate(id)
+    .pipe(
+      Effect.flatMap((aggregate) =>
+        aggregate ? Effect.succeed(aggregate) : new CartNotFound({ cartId: id })
+      )
+    );
 
-  if (!aggregate) {
-    throw new Error(`Cart "${id}" was not found.`);
-  }
-
-  return aggregate;
-};
-
-const publishCartEvent = async ({
+const publishCartEvent = ({
   cartId,
   causationId,
   correlationId,
@@ -160,373 +192,427 @@ const publishCartEvent = async ({
   readonly name: string;
   readonly payload: unknown;
   readonly workflowRunId?: string;
-}): Promise<void> => {
-  await eventPublisher.publish(
-    createEventEnvelope({
-      causationId,
-      correlationId,
-      id: createPrefixedId(idGenerator, "evt_"),
-      name,
-      payload,
-      sourceModule: "cart",
-      subject: {
-        id: cartId,
+}): EffectValue<void, CartValidationFailure> =>
+  Effect.tryPromise({
+    catch: () =>
+      new CartValidationFailure({
+        message: "Cart event publication failed.",
+      }),
+    try: () =>
+      Promise.resolve(
+        eventPublisher.publish(
+          createEventEnvelope({
+            causationId,
+            correlationId,
+            id: createPrefixedId(idGenerator, "evt_"),
+            name,
+            payload,
+            sourceModule: "cart",
+            subject: {
+              id: cartId,
+              type: "cart",
+            },
+            workflowRunId,
+          })
+        )
+      ),
+  }).pipe(Effect.asVoid);
+
+const coordinateCart = (
+  actorService: KeyedActorService,
+  input:
+    | AddCartLineItemInput
+    | ApplyCartAdjustmentInput
+    | AssociateCartCustomerInput
+    | SetCartAddressesInput
+    | SetCartCheckoutReferencesInput
+    | SetCartRegionChannelInput
+    | UpdateCartLineItemInput
+    | UpdateCartTotalsInput,
+  operationName: string
+): EffectValue<{ readonly duplicate: boolean }, CartValidationFailure> =>
+  Effect.gen(function* coordinateCartThroughActor() {
+    const command = yield* Schema.decodeUnknownEffect(KeyedActorCommandSchema)({
+      actor: {
+        key: input.cartId,
         type: "cart",
       },
-      workflowRunId,
-    })
-  );
-};
+      causationId: input.causationId,
+      commandId: input.idempotencyKey,
+      commandName: operationName,
+      correlationId: input.correlationId,
+      idempotencyKey: input.idempotencyKey,
+      issuedAt: new Date().toISOString(),
+      payload: input,
+      schemaVersion: 1,
+      subject: {
+        id: input.cartId,
+        type: "cart",
+      },
+      workflowRunId: input.workflowRunId,
+    }).pipe(
+      Effect.mapError(
+        () =>
+          new CartValidationFailure({ message: "Cart coordination failed." })
+      )
+    );
+
+    return yield* actorService
+      .dispatch(command)
+      .pipe(
+        Effect.mapError(
+          () =>
+            new CartValidationFailure({ message: "Cart coordination failed." })
+        )
+      );
+  });
 
 export const createCartService = ({
+  actorService = createInMemoryCartActorService(),
   clock = createDefaultClock(),
-  coordinator = createInMemoryCartCoordinator(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
   repository = defaultCartRepository,
 }: CreateCartServiceOptions = {}): CartServiceShape => {
   const service: CartServiceShape = {
-    addLineItem: async (input) => {
-      const cartId = createCartId(input.cartId);
-      const duplicate = await repository.findLineItemByIdempotencyKey(
-        input.idempotencyKey
-      );
+    addLineItem: (input) =>
+      Effect.gen(function* addCartLineItemEffect() {
+        const cartId = yield* createCartIdEffect(input.cartId);
+        const duplicate = yield* repository.findLineItemByIdempotencyKey(
+          input.idempotencyKey
+        );
 
-      if (duplicate) {
-        return requireAggregate(repository, cartId);
-      }
-
-      const coordination = await coordinator.coordinate(
-        defineStatefulCoordinationRequest({
-          causationId: input.causationId,
-          coordinatorKey: "cart.aggregate",
-          correlationId: input.correlationId,
-          idempotencyKey: input.idempotencyKey,
-          operationName: "cart.addLineItem",
-          payload: input,
-          subject: {
-            id: cartId,
-            type: "cart",
-          },
-          workflowRunId: input.workflowRunId,
-        })
-      );
-
-      if (coordination.duplicate) {
-        return requireAggregate(repository, cartId);
-      }
-
-      await requireCart(repository, cartId);
-
-      const now = clock.now();
-      const lineItem: CartLineItemRecord = {
-        cartId,
-        createdAt: now,
-        id: createCartLineItemId(
-          createPrefixedId(idGenerator, CART_LINE_ITEM_ID_PREFIX)
-        ),
-        metadata: input.metadata ?? {},
-        productId: input.productId,
-        quantity: input.quantity,
-        title: input.title.trim(),
-        unitPrice: input.unitPrice,
-        updatedAt: now,
-        variantId: input.variantId,
-      };
-
-      await repository.saveLineItem(lineItem, input.idempotencyKey);
-      await publishCartEvent({
-        cartId,
-        causationId: input.causationId,
-        correlationId: input.correlationId,
-        eventPublisher,
-        idGenerator,
-        name: CART_LINE_ITEM_ADDED_EVENT,
-        payload: {
-          cartId,
-          lineItemId: lineItem.id,
-          quantity: lineItem.quantity,
-          variantId: lineItem.variantId,
-        },
-        workflowRunId: input.workflowRunId,
-      });
-
-      return requireAggregate(repository, cartId);
-    },
-    applyAdjustment: async (input) => {
-      const cartId = createCartId(input.cartId);
-      const duplicate = await repository.findAdjustmentByIdempotencyKey(
-        input.idempotencyKey
-      );
-
-      if (duplicate) {
-        return requireAggregate(repository, cartId);
-      }
-
-      const coordination = await coordinator.coordinate(
-        defineStatefulCoordinationRequest({
-          causationId: input.causationId,
-          coordinatorKey: "cart.aggregate",
-          correlationId: input.correlationId,
-          idempotencyKey: input.idempotencyKey,
-          operationName: "cart.applyAdjustment",
-          payload: input,
-          subject: {
-            id: cartId,
-            type: "cart",
-          },
-          workflowRunId: input.workflowRunId,
-        })
-      );
-
-      if (coordination.duplicate) {
-        return requireAggregate(repository, cartId);
-      }
-
-      await requireCart(repository, cartId);
-      const lineItemId = input.lineItemId
-        ? createCartLineItemId(input.lineItemId)
-        : null;
-
-      if (lineItemId) {
-        const lineItem = await repository.findLineItemById(lineItemId, cartId);
-
-        if (!lineItem || lineItem.cartId !== cartId) {
-          throw new Error(
-            `Cart line item "${input.lineItemId}" was not found.`
-          );
+        if (duplicate) {
+          return yield* requireAggregate(repository, cartId);
         }
-      }
 
-      const now = clock.now();
-      const adjustment = await repository.saveAdjustment(
-        {
-          amount: input.amount,
+        const coordination = yield* coordinateCart(
+          actorService,
+          input,
+          "cart.addLineItem"
+        );
+
+        if (coordination.duplicate) {
+          return yield* requireAggregate(repository, cartId);
+        }
+
+        yield* requireCart(repository, cartId);
+
+        const now = clock.now();
+        const lineItem: CartLineItemRecord = {
           cartId,
           createdAt: now,
-          id: createCartAdjustmentId(
-            createPrefixedId(idGenerator, CART_ADJUSTMENT_ID_PREFIX)
+          id: yield* createCartLineItemIdEffect(
+            createPrefixedId(idGenerator, CART_LINE_ITEM_ID_PREFIX)
           ),
-          lineItemId,
           metadata: input.metadata ?? {},
-          source: input.source,
-          type: input.type,
+          productId: input.productId,
+          quantity: input.quantity,
+          title: input.title.trim(),
+          unitPrice: input.unitPrice,
           updatedAt: now,
-        },
-        input.idempotencyKey
-      );
+          variantId: input.variantId,
+        };
 
-      await publishCartEvent({
-        cartId,
-        causationId: input.causationId,
-        correlationId: input.correlationId,
-        eventPublisher,
-        idGenerator,
-        name: CART_ADJUSTMENT_APPLIED_EVENT,
-        payload: {
-          adjustmentId: adjustment.id,
-          amount: adjustment.amount,
+        yield* repository.saveLineItem(lineItem, input.idempotencyKey);
+        yield* publishCartEvent({
           cartId,
-          type: adjustment.type,
-        },
-        workflowRunId: input.workflowRunId,
-      });
+          causationId: input.causationId,
+          correlationId: input.correlationId,
+          eventPublisher,
+          idGenerator,
+          name: CART_LINE_ITEM_ADDED_EVENT,
+          payload: {
+            cartId,
+            lineItemId: lineItem.id,
+            quantity: lineItem.quantity,
+            variantId: lineItem.variantId,
+          },
+          workflowRunId: input.workflowRunId,
+        });
 
-      return requireAggregate(repository, cartId);
-    },
-    associateCustomer: async (input) => {
-      const cartId = createCartId(input.cartId);
-      const cart = await requireCart(repository, cartId);
-      const now = clock.now();
+        return yield* requireAggregate(repository, cartId);
+      }),
+    applyAdjustment: (input) =>
+      Effect.gen(function* applyCartAdjustmentEffect() {
+        const cartId = yield* createCartIdEffect(input.cartId);
+        const duplicate = yield* repository.findAdjustmentByIdempotencyKey(
+          input.idempotencyKey
+        );
 
-      await repository.saveCart({
-        ...cart,
-        customerId: input.customerId ?? cart.customerId,
-        email: input.email ?? cart.email,
-        updatedAt: now,
-      });
-      await publishCartEvent({
-        cartId,
-        causationId: input.causationId,
-        correlationId: input.correlationId,
-        eventPublisher,
-        idGenerator,
-        name: CART_CUSTOMER_ASSOCIATED_EVENT,
-        payload: {
+        if (duplicate) {
+          return yield* requireAggregate(repository, cartId);
+        }
+
+        const coordination = yield* coordinateCart(
+          actorService,
+          input,
+          "cart.applyAdjustment"
+        );
+
+        if (coordination.duplicate) {
+          return yield* requireAggregate(repository, cartId);
+        }
+
+        yield* requireCart(repository, cartId);
+        const lineItemId = input.lineItemId
+          ? yield* createCartLineItemIdEffect(input.lineItemId)
+          : null;
+
+        if (lineItemId) {
+          const lineItem = yield* repository.findLineItemById(
+            lineItemId,
+            cartId
+          );
+
+          if (!lineItem || lineItem.cartId !== cartId) {
+            return yield* new CartLineItemNotFound({
+              cartId,
+              lineItemId,
+            });
+          }
+        }
+
+        const now = clock.now();
+        const adjustment = yield* repository.saveAdjustment(
+          {
+            amount: input.amount,
+            cartId,
+            createdAt: now,
+            id: yield* createCartAdjustmentIdEffect(
+              createPrefixedId(idGenerator, CART_ADJUSTMENT_ID_PREFIX)
+            ),
+            lineItemId,
+            metadata: input.metadata ?? {},
+            source: input.source,
+            type: input.type,
+            updatedAt: now,
+          },
+          input.idempotencyKey
+        );
+
+        yield* publishCartEvent({
           cartId,
+          causationId: input.causationId,
+          correlationId: input.correlationId,
+          eventPublisher,
+          idGenerator,
+          name: CART_ADJUSTMENT_APPLIED_EVENT,
+          payload: {
+            adjustmentId: adjustment.id,
+            amount: adjustment.amount,
+            cartId,
+            type: adjustment.type,
+          },
+          workflowRunId: input.workflowRunId,
+        });
+
+        return yield* requireAggregate(repository, cartId);
+      }),
+    associateCustomer: (input) =>
+      Effect.gen(function* associateCartCustomerEffect() {
+        const cartId = yield* createCartIdEffect(input.cartId);
+        const cart = yield* requireCart(repository, cartId);
+        const now = clock.now();
+
+        yield* repository.saveCart({
+          ...cart,
           customerId: input.customerId ?? cart.customerId,
           email: input.email ?? cart.email,
-        },
-        workflowRunId: input.workflowRunId,
-      });
-
-      return requireAggregate(repository, cartId);
-    },
-    createCart: async (input) => {
-      const now = clock.now();
-      const currencyCode = normalizeCurrencyCode(input.currencyCode);
-      const cart: CartRecord = {
-        billingAddress: null,
-        completedAt: null,
-        createdAt: now,
-        currencyCode,
-        customerId: input.customerId ?? null,
-        email: input.email ?? null,
-        id: createCartId(createPrefixedId(idGenerator, CART_ID_PREFIX)),
-        metadata: input.metadata ?? {},
-        paymentCollectionId: null,
-        regionId: input.regionId ?? null,
-        salesChannelId: input.salesChannelId ?? null,
-        shippingAddress: null,
-        shippingOptionId: null,
-        status: "active",
-        totals: createEmptyTotals(currencyCode),
-        updatedAt: now,
-      };
-
-      const saved = await repository.saveCart(cart);
-      await publishCartEvent({
-        cartId: saved.id,
-        correlationId: saved.id,
-        eventPublisher,
-        idGenerator,
-        name: CART_CREATED_EVENT,
-        payload: {
-          cartId: saved.id,
-          currencyCode: saved.currencyCode,
-        },
-      });
-
-      return saved;
-    },
-    getCart: (id) => repository.getCartAggregate(id),
-    listCarts: () => repository.listCarts(),
-    setAddresses: async (input) => {
-      const cartId = createCartId(input.cartId);
-      const cart = await requireCart(repository, cartId);
-      await repository.saveCart({
-        ...cart,
-        billingAddress: input.billingAddress ?? cart.billingAddress,
-        shippingAddress: input.shippingAddress ?? cart.shippingAddress,
-        updatedAt: clock.now(),
-      });
-
-      return requireAggregate(repository, cartId);
-    },
-    setCheckoutReferences: async (input) => {
-      const cartId = createCartId(input.cartId);
-      const cart = await requireCart(repository, cartId);
-      await repository.saveCart({
-        ...cart,
-        paymentCollectionId:
-          input.paymentCollectionId ?? cart.paymentCollectionId,
-        shippingOptionId: input.shippingOptionId ?? cart.shippingOptionId,
-        updatedAt: clock.now(),
-      });
-      await publishCartEvent({
-        cartId,
-        causationId: input.causationId,
-        correlationId: input.correlationId,
-        eventPublisher,
-        idGenerator,
-        name: CART_CHECKOUT_REFERENCE_SET_EVENT,
-        payload: {
+          updatedAt: now,
+        });
+        yield* publishCartEvent({
           cartId,
+          causationId: input.causationId,
+          correlationId: input.correlationId,
+          eventPublisher,
+          idGenerator,
+          name: CART_CUSTOMER_ASSOCIATED_EVENT,
+          payload: {
+            cartId,
+            customerId: input.customerId ?? cart.customerId,
+            email: input.email ?? cart.email,
+          },
+          workflowRunId: input.workflowRunId,
+        });
+
+        return yield* requireAggregate(repository, cartId);
+      }),
+    createCart: (input) =>
+      Effect.gen(function* createCartEffect() {
+        const now = clock.now();
+        const currencyCode = normalizeCurrencyCode(input.currencyCode);
+        const cart: CartRecord = {
+          billingAddress: null,
+          completedAt: null,
+          createdAt: now,
+          currencyCode,
+          customerId: input.customerId ?? null,
+          email: input.email ?? null,
+          id: yield* createCartIdEffect(
+            createPrefixedId(idGenerator, CART_ID_PREFIX)
+          ),
+          metadata: input.metadata ?? {},
+          paymentCollectionId: null,
+          regionId: input.regionId ?? null,
+          salesChannelId: input.salesChannelId ?? null,
+          shippingAddress: null,
+          shippingOptionId: null,
+          status: "active",
+          totals: createEmptyTotals(currencyCode),
+          updatedAt: now,
+        };
+
+        const saved = yield* repository.saveCart(cart);
+        yield* publishCartEvent({
+          cartId: saved.id,
+          correlationId: saved.id,
+          eventPublisher,
+          idGenerator,
+          name: CART_CREATED_EVENT,
+          payload: {
+            cartId: saved.id,
+            currencyCode: saved.currencyCode,
+          },
+        });
+
+        return saved;
+      }),
+    getCart: (id) => repository.getCartAggregate(id),
+    listCarts: repository.listCarts,
+    setAddresses: (input) =>
+      Effect.gen(function* setCartAddressesEffect() {
+        const cartId = yield* createCartIdEffect(input.cartId);
+        const cart = yield* requireCart(repository, cartId);
+        yield* repository.saveCart({
+          ...cart,
+          billingAddress: input.billingAddress ?? cart.billingAddress,
+          shippingAddress: input.shippingAddress ?? cart.shippingAddress,
+          updatedAt: clock.now(),
+        });
+
+        return yield* requireAggregate(repository, cartId);
+      }),
+    setCheckoutReferences: (input) =>
+      Effect.gen(function* setCartCheckoutReferencesEffect() {
+        const cartId = yield* createCartIdEffect(input.cartId);
+        const cart = yield* requireCart(repository, cartId);
+        yield* repository.saveCart({
+          ...cart,
           paymentCollectionId:
             input.paymentCollectionId ?? cart.paymentCollectionId,
           shippingOptionId: input.shippingOptionId ?? cart.shippingOptionId,
-        },
-        workflowRunId: input.workflowRunId,
-      });
+          updatedAt: clock.now(),
+        });
+        yield* publishCartEvent({
+          cartId,
+          causationId: input.causationId,
+          correlationId: input.correlationId,
+          eventPublisher,
+          idGenerator,
+          name: CART_CHECKOUT_REFERENCE_SET_EVENT,
+          payload: {
+            cartId,
+            paymentCollectionId:
+              input.paymentCollectionId ?? cart.paymentCollectionId,
+            shippingOptionId: input.shippingOptionId ?? cart.shippingOptionId,
+          },
+          workflowRunId: input.workflowRunId,
+        });
 
-      return requireAggregate(repository, cartId);
-    },
-    setRegionChannel: async (input) => {
-      const cartId = createCartId(input.cartId);
-      const cart = await requireCart(repository, cartId);
-      const currencyCode = input.currencyCode
-        ? normalizeCurrencyCode(input.currencyCode)
-        : cart.currencyCode;
+        return yield* requireAggregate(repository, cartId);
+      }),
+    setRegionChannel: (input) =>
+      Effect.gen(function* setCartRegionChannelEffect() {
+        const cartId = yield* createCartIdEffect(input.cartId);
+        const cart = yield* requireCart(repository, cartId);
+        const currencyCode = input.currencyCode
+          ? normalizeCurrencyCode(input.currencyCode)
+          : cart.currencyCode;
 
-      await repository.saveCart({
-        ...cart,
-        currencyCode,
-        regionId: input.regionId ?? cart.regionId,
-        salesChannelId: input.salesChannelId ?? cart.salesChannelId,
-        totals:
-          currencyCode === cart.currencyCode
-            ? cart.totals
-            : createEmptyTotals(currencyCode),
-        updatedAt: clock.now(),
-      });
+        yield* repository.saveCart({
+          ...cart,
+          currencyCode,
+          regionId: input.regionId ?? cart.regionId,
+          salesChannelId: input.salesChannelId ?? cart.salesChannelId,
+          totals:
+            currencyCode === cart.currencyCode
+              ? cart.totals
+              : createEmptyTotals(currencyCode),
+          updatedAt: clock.now(),
+        });
 
-      return requireAggregate(repository, cartId);
-    },
-    updateLineItem: async (input) => {
-      const cartId = createCartId(input.cartId);
-      await requireCart(repository, cartId);
-      const lineItemId = createCartLineItemId(input.lineItemId);
-      const lineItem = await repository.findLineItemById(lineItemId, cartId);
+        return yield* requireAggregate(repository, cartId);
+      }),
+    updateLineItem: (input) =>
+      Effect.gen(function* updateCartLineItemEffect() {
+        const cartId = yield* createCartIdEffect(input.cartId);
+        yield* requireCart(repository, cartId);
+        const lineItemId = yield* createCartLineItemIdEffect(input.lineItemId);
+        const lineItem = yield* repository.findLineItemById(lineItemId, cartId);
 
-      if (!lineItem || lineItem.cartId !== cartId) {
-        throw new Error(`Cart line item "${input.lineItemId}" was not found.`);
-      }
+        if (!lineItem || lineItem.cartId !== cartId) {
+          return yield* new CartLineItemNotFound({ cartId, lineItemId });
+        }
 
-      await (input.quantity === 0
-        ? repository.removeLineItem(lineItemId, cartId)
-        : repository.saveLineItem({
-            ...lineItem,
+        yield* input.quantity === 0
+          ? repository.removeLineItem(lineItemId, cartId)
+          : repository
+              .saveLineItem({
+                ...lineItem,
+                quantity: input.quantity,
+                updatedAt: clock.now(),
+              })
+              .pipe(Effect.asVoid);
+
+        yield* publishCartEvent({
+          cartId,
+          causationId: input.causationId,
+          correlationId: input.correlationId,
+          eventPublisher,
+          idGenerator,
+          name: CART_LINE_ITEM_UPDATED_EVENT,
+          payload: {
+            cartId,
+            lineItemId,
             quantity: input.quantity,
-            updatedAt: clock.now(),
-          }));
+          },
+          workflowRunId: input.workflowRunId,
+        });
 
-      await publishCartEvent({
-        cartId,
-        causationId: input.causationId,
-        correlationId: input.correlationId,
-        eventPublisher,
-        idGenerator,
-        name: CART_LINE_ITEM_UPDATED_EVENT,
-        payload: {
+        return yield* requireAggregate(repository, cartId);
+      }),
+    updateTotals: (input) =>
+      Effect.gen(function* updateCartTotalsEffect() {
+        const cartId = yield* createCartIdEffect(input.cartId);
+        const cart = yield* requireCart(repository, cartId);
+        const totals = {
+          ...input.totals,
+          currencyCode: normalizeCurrencyCode(input.totals.currencyCode),
+        };
+
+        yield* repository.saveCart({
+          ...cart,
+          currencyCode: totals.currencyCode,
+          totals,
+          updatedAt: clock.now(),
+        });
+        yield* publishCartEvent({
           cartId,
-          lineItemId,
-          quantity: input.quantity,
-        },
-        workflowRunId: input.workflowRunId,
-      });
+          causationId: input.causationId,
+          correlationId: input.correlationId,
+          eventPublisher,
+          idGenerator,
+          name: CART_TOTALS_UPDATED_EVENT,
+          payload: {
+            cartId,
+            total: totals.total,
+          },
+          workflowRunId: input.workflowRunId,
+        });
 
-      return requireAggregate(repository, cartId);
-    },
-    updateTotals: async (input) => {
-      const cartId = createCartId(input.cartId);
-      const cart = await requireCart(repository, cartId);
-      const totals = {
-        ...input.totals,
-        currencyCode: normalizeCurrencyCode(input.totals.currencyCode),
-      };
-
-      await repository.saveCart({
-        ...cart,
-        currencyCode: totals.currencyCode,
-        totals,
-        updatedAt: clock.now(),
-      });
-      await publishCartEvent({
-        cartId,
-        causationId: input.causationId,
-        correlationId: input.correlationId,
-        eventPublisher,
-        idGenerator,
-        name: CART_TOTALS_UPDATED_EVENT,
-        payload: {
-          cartId,
-          total: totals.total,
-        },
-        workflowRunId: input.workflowRunId,
-      });
-
-      return requireAggregate(repository, cartId);
-    },
+        return yield* requireAggregate(repository, cartId);
+      }),
   };
 
   return service;
@@ -534,6 +620,32 @@ export const createCartService = ({
 
 export const createCartServiceLayer = (service: CartServiceShape) =>
   Layer.succeed(CartService, service);
+
+export const createCartRepositoryLayer = (repository: CartRepository) =>
+  Layer.succeed(CartRepositoryService, repository);
+
+export const createCartServiceFromDependenciesLayer = ({
+  actorService,
+}: {
+  readonly actorService?: KeyedActorService;
+} = {}) =>
+  Layer.effect(
+    CartService,
+    Effect.gen(function* createCartServiceFromDependencies() {
+      const clock = yield* ClockService;
+      const eventPublisher = yield* EventPublisherService;
+      const idGenerator = yield* IdGeneratorService;
+      const repository = yield* CartRepositoryService;
+
+      return createCartService({
+        actorService,
+        clock,
+        eventPublisher,
+        idGenerator,
+        repository,
+      });
+    })
+  );
 
 export const defaultCartService = createCartService({
   repository: defaultCartRepository,

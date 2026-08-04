@@ -7,7 +7,11 @@ import {
   createResettableInMemoryProductRepository,
   defaultProductRepository,
 } from "../repositories";
-import { createProductService } from "../services";
+import {
+  createProductRepositoryLayer,
+  createProductService,
+  createProductServiceLayer,
+} from "../services";
 
 export const resetProductState = (): void => {
   defaultProductRepository.clear();
@@ -19,3 +23,9 @@ export const createTestProductService = () =>
     idGenerator: createSequenceIdGenerator(["prod_1", "prod_2"]),
     repository: createResettableInMemoryProductRepository(),
   });
+
+export const createTestProductRepositoryLayer = () =>
+  createProductRepositoryLayer(createResettableInMemoryProductRepository());
+
+export const createTestProductServiceLayer = () =>
+  createProductServiceLayer(createTestProductService());

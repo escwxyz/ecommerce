@@ -7,6 +7,7 @@ export {
   createNotificationEventService,
   createNotificationEventServiceLayer,
   defaultNotificationEventService,
+  notificationEventServiceFromRepositoryLayer,
   type CreateNotificationEventServiceOptions,
   type FakeNotificationProvider,
   type NotificationEventServiceShape,

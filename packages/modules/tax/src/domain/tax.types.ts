@@ -1,97 +1,92 @@
-import type { Brand } from "@ecommerce/core/brand";
-import type { z } from "zod";
+import { Context } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 
+import type { TaxExpectedError } from "./tax.errors";
 import type {
   CalculateTaxInputSchema,
   CreateTaxCategoryInputSchema,
   CreateTaxProviderConfigInputSchema,
   CreateTaxRateInputSchema,
   CreateTaxRegionInputSchema,
+  TaxCalculationIdSchema,
   TaxCalculationPolicySchema,
+  TaxCalculationResultApiSchema,
   TaxCalculationResultSchema,
   TaxCategoryApiRecordSchema,
+  TaxCategoryIdSchema,
   TaxCategoryRecordSchema,
+  TaxLineApiSchema,
+  TaxLineIdSchema,
   TaxLineSchema,
   TaxProviderConfigApiRecordSchema,
+  TaxProviderConfigIdSchema,
   TaxProviderConfigRecordSchema,
   TaxRateApiRecordSchema,
+  TaxRateIdSchema,
   TaxRateRecordSchema,
   TaxRegionApiRecordSchema,
+  TaxRegionIdSchema,
   TaxRegionRecordSchema,
 } from "./tax.schema";
 
-export type TaxRegionId = Brand<string, "tax-region">;
-export type TaxRateId = Brand<string, "tax-rate">;
-export type TaxCategoryId = Brand<string, "tax-category">;
-export type TaxProviderConfigId = Brand<string, "tax-provider-config">;
-export type TaxCalculationId = Brand<string, "tax-calculation">;
-export type TaxLineId = Brand<string, "tax-line">;
-export type TaxCalculationPolicy = z.infer<typeof TaxCalculationPolicySchema>;
-export type CreateTaxRegionInput = z.infer<typeof CreateTaxRegionInputSchema>;
-export type TaxRegionRecord = Omit<
-  z.infer<typeof TaxRegionRecordSchema>,
-  "id" | "providerConfigId"
-> & {
-  readonly id: TaxRegionId;
-  readonly providerConfigId: TaxProviderConfigId | null;
-};
-export type TaxRegionApiRecord = z.infer<typeof TaxRegionApiRecordSchema>;
-export type CreateTaxRateInput = z.infer<typeof CreateTaxRateInputSchema>;
-export type TaxRateRecord = Omit<
-  z.infer<typeof TaxRateRecordSchema>,
-  "categoryId" | "id" | "regionId"
-> & {
-  readonly categoryId: TaxCategoryId | null;
-  readonly id: TaxRateId;
-  readonly regionId: TaxRegionId;
-};
-export type TaxRateApiRecord = z.infer<typeof TaxRateApiRecordSchema>;
-export type CreateTaxCategoryInput = z.infer<
-  typeof CreateTaxCategoryInputSchema
->;
-export type TaxCategoryRecord = Omit<
-  z.infer<typeof TaxCategoryRecordSchema>,
-  "id"
-> & { readonly id: TaxCategoryId };
-export type TaxCategoryApiRecord = z.infer<typeof TaxCategoryApiRecordSchema>;
-export type CreateTaxProviderConfigInput = z.infer<
-  typeof CreateTaxProviderConfigInputSchema
->;
-export type TaxProviderConfigRecord = Omit<
-  z.infer<typeof TaxProviderConfigRecordSchema>,
-  "id"
-> & { readonly id: TaxProviderConfigId };
-export type TaxProviderConfigApiRecord = z.infer<
-  typeof TaxProviderConfigApiRecordSchema
->;
-export type CalculateTaxInput = z.infer<typeof CalculateTaxInputSchema>;
-export type TaxLine = Omit<z.infer<typeof TaxLineSchema>, "id" | "rateId"> & {
-  readonly id: TaxLineId;
-  readonly rateId: TaxRateId | null;
-};
-export type TaxCalculationResult = Omit<
-  z.infer<typeof TaxCalculationResultSchema>,
-  "id" | "lines" | "regionId"
-> & {
-  readonly id: TaxCalculationId;
-  readonly lines: TaxLine[];
-  readonly regionId: TaxRegionId;
-};
+export type TaxRegionId = typeof TaxRegionIdSchema.Type;
+export type TaxRateId = typeof TaxRateIdSchema.Type;
+export type TaxCategoryId = typeof TaxCategoryIdSchema.Type;
+export type TaxProviderConfigId = typeof TaxProviderConfigIdSchema.Type;
+export type TaxCalculationId = typeof TaxCalculationIdSchema.Type;
+export type TaxLineId = typeof TaxLineIdSchema.Type;
+export type TaxCalculationPolicy = typeof TaxCalculationPolicySchema.Type;
+export type CreateTaxRegionInput = typeof CreateTaxRegionInputSchema.Type;
+export type TaxRegionRecord = typeof TaxRegionRecordSchema.Type;
+export type TaxRegionApiRecord = typeof TaxRegionApiRecordSchema.Type;
+export type CreateTaxRateInput = typeof CreateTaxRateInputSchema.Type;
+export type TaxRateRecord = typeof TaxRateRecordSchema.Type;
+export type TaxRateApiRecord = typeof TaxRateApiRecordSchema.Type;
+export type CreateTaxCategoryInput = typeof CreateTaxCategoryInputSchema.Type;
+export type TaxCategoryRecord = typeof TaxCategoryRecordSchema.Type;
+export type TaxCategoryApiRecord = typeof TaxCategoryApiRecordSchema.Type;
+export type CreateTaxProviderConfigInput =
+  typeof CreateTaxProviderConfigInputSchema.Type;
+export type TaxProviderConfigRecord = typeof TaxProviderConfigRecordSchema.Type;
+export type TaxProviderConfigApiRecord =
+  typeof TaxProviderConfigApiRecordSchema.Type;
+export type CalculateTaxInput = typeof CalculateTaxInputSchema.Type;
+export type TaxLine = typeof TaxLineSchema.Type;
+export type TaxLineApi = typeof TaxLineApiSchema.Type;
+export type TaxCalculationResult = typeof TaxCalculationResultSchema.Type;
+export type TaxCalculationResultApi = typeof TaxCalculationResultApiSchema.Type;
 
 export interface TaxRepository {
-  findActiveProviderConfigByKey(
+  readonly findActiveProviderConfigByKey: (
     providerKey: string
-  ): Promise<TaxProviderConfigRecord | null>;
-  findCategoryById(id: TaxCategoryId): Promise<TaxCategoryRecord | null>;
-  findProviderConfigById(
+  ) => EffectValue<TaxProviderConfigRecord | null, TaxExpectedError>;
+  readonly findCategoryById: (
+    id: TaxCategoryId
+  ) => EffectValue<TaxCategoryRecord | null, TaxExpectedError>;
+  readonly findProviderConfigById: (
     id: TaxProviderConfigId
-  ): Promise<TaxProviderConfigRecord | null>;
-  findRatesByRegionId(regionId: TaxRegionId): Promise<readonly TaxRateRecord[]>;
-  findRegionById(id: TaxRegionId): Promise<TaxRegionRecord | null>;
-  saveCategory(category: TaxCategoryRecord): Promise<TaxCategoryRecord>;
-  saveProviderConfig(
+  ) => EffectValue<TaxProviderConfigRecord | null, TaxExpectedError>;
+  readonly findRatesByRegionId: (
+    regionId: TaxRegionId
+  ) => EffectValue<readonly TaxRateRecord[], TaxExpectedError>;
+  readonly findRegionById: (
+    id: TaxRegionId
+  ) => EffectValue<TaxRegionRecord | null, TaxExpectedError>;
+  readonly saveCategory: (
+    category: TaxCategoryRecord
+  ) => EffectValue<TaxCategoryRecord, TaxExpectedError>;
+  readonly saveProviderConfig: (
     providerConfig: TaxProviderConfigRecord
-  ): Promise<TaxProviderConfigRecord>;
-  saveRate(rate: TaxRateRecord): Promise<TaxRateRecord>;
-  saveRegion(region: TaxRegionRecord): Promise<TaxRegionRecord>;
+  ) => EffectValue<TaxProviderConfigRecord, TaxExpectedError>;
+  readonly saveRate: (
+    rate: TaxRateRecord
+  ) => EffectValue<TaxRateRecord, TaxExpectedError>;
+  readonly saveRegion: (
+    region: TaxRegionRecord
+  ) => EffectValue<TaxRegionRecord, TaxExpectedError>;
 }
+
+/** Effect-native tax repository contract consumed by tax services. */
+export const TaxRepositoryService = Context.Service<TaxRepository>(
+  "@ecommerce/tax/TaxRepositoryService"
+);

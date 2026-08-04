@@ -15,8 +15,7 @@
   },
   "dependencies": {
     "dotenv": "catalog:",
-    "effect": "catalog:",
-    "zod": "catalog:"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@ecommerce/config": "workspace:*",

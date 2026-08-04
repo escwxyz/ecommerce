@@ -140,15 +140,15 @@ const resolveHydratedOwner = (
       return { id: cart.customerId, type: "customer" };
     }
 
-    throw new CartCacheOwnershipError(
-      `Cart "${cart.id}" is owned by customer:${cart.customerId}.`
-    );
+    throw new CartCacheOwnershipError({
+      message: `Cart "${cart.id}" is owned by customer:${cart.customerId}.`,
+    });
   }
 
   if (scope.type === "customer") {
-    throw new CartCacheOwnershipError(
-      `Cart "${cart.id}" is not assigned to an authenticated customer.`
-    );
+    throw new CartCacheOwnershipError({
+      message: `Cart "${cart.id}" is not assigned to an authenticated customer.`,
+    });
   }
 
   return scope;
@@ -166,9 +166,10 @@ const toStoredCartAggregate = (
     : null;
 
 /**
- * Durable Object host for active cart cache state. D1 remains the projection
- * store; this object stores the hot cart aggregate, ownership scope, and retry
- * metadata needed when projection sync fails after a mutation is accepted.
+ * Durable Object host for active cart cache state. PostgreSQL remains the
+ * authoritative projection store; this object owns only the hot aggregate,
+ * ownership scope, idempotency indexes, and projection-sync coordination.
+ * Actor-local state must remain disposable and recoverable from PostgreSQL.
  */
 export class CartCacheDurableObject extends DurableObject {
   async fetch(request: Request): Promise<Response> {
@@ -243,9 +244,9 @@ export class CartCacheDurableObject extends DurableObject {
       await this.ctx.storage.get<CartOwnershipScope>(ownerStorageKey);
 
     if (owner && !canAccessScope(owner, scope)) {
-      throw new CartCacheOwnershipError(
-        `Cart is owned by ${serializeCartOwnershipScope(owner)}.`
-      );
+      throw new CartCacheOwnershipError({
+        message: `Cart is owned by ${serializeCartOwnershipScope(owner)}.`,
+      });
     }
   }
 
@@ -262,9 +263,9 @@ export class CartCacheDurableObject extends DurableObject {
       !canAccessScope(current, next) &&
       !canClaimScope(current, next)
     ) {
-      throw new CartCacheOwnershipError(
-        `Cart is owned by ${serializeCartOwnershipScope(current)}.`
-      );
+      throw new CartCacheOwnershipError({
+        message: `Cart is owned by ${serializeCartOwnershipScope(current)}.`,
+      });
     }
 
     await this.ctx.storage.put(ownerStorageKey, next);

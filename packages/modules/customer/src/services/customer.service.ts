@@ -8,7 +8,9 @@ import type {
   ClockServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
-import { Context, Layer } from "effect";
+import { ClockService, IdGeneratorService } from "@ecommerce/core";
+import { Context, Effect, Layer } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
 import type {
@@ -16,6 +18,7 @@ import type {
   CreateCustomerGroupInput,
   CreateCustomerInput,
   CustomerAddress,
+  CustomerExpectedError,
   CustomerGroup,
   CustomerGroupId,
   CustomerId,
@@ -28,9 +31,13 @@ import {
   CUSTOMER_ADDRESS_ID_PREFIX,
   CUSTOMER_GROUP_ID_PREFIX,
   CUSTOMER_ID_PREFIX,
-  createCustomerAddressId,
-  createCustomerGroupId,
-  createCustomerId,
+  CustomerAuthUserConflict,
+  CustomerEmailConflict,
+  CustomerNotFound,
+  CustomerRepositoryService,
+  createCustomerAddressIdEffect,
+  createCustomerGroupIdEffect,
+  createCustomerIdEffect,
 } from "../domain";
 import { defaultCustomerRepository } from "../repositories";
 
@@ -46,33 +53,47 @@ export interface CustomerAuthLinkedEventPayload extends CustomerChangedEventPayl
   readonly authUserId: string;
 }
 
+export type CustomerServiceFailure = CustomerExpectedError;
+
 export interface CustomerServiceShape {
-  addCustomerAddress(
+  readonly addCustomerAddress: (
     input: CreateCustomerAddressInput
-  ): Promise<CustomerProfile>;
-  assignCustomerGroup(input: {
+  ) => EffectValue<CustomerProfile, CustomerServiceFailure>;
+  readonly assignCustomerGroup: (input: {
     readonly customerId: CustomerId;
     readonly groupId: CustomerGroupId;
-  }): Promise<CustomerProfile>;
-  createCustomer(input: CreateCustomerInput): Promise<CustomerProfile>;
-  createCustomerGroup(input: CreateCustomerGroupInput): Promise<CustomerGroup>;
-  getCustomerById(id: CustomerId): Promise<CustomerProfile | null>;
-  getPaymentIdentity(
+  }) => EffectValue<CustomerProfile, CustomerServiceFailure>;
+  readonly createCustomer: (
+    input: CreateCustomerInput
+  ) => EffectValue<CustomerProfile, CustomerServiceFailure>;
+  readonly createCustomerGroup: (
+    input: CreateCustomerGroupInput
+  ) => EffectValue<CustomerGroup, CustomerServiceFailure>;
+  readonly getCustomerById: (
+    id: CustomerId
+  ) => EffectValue<CustomerProfile | null, CustomerServiceFailure>;
+  readonly getPaymentIdentity: (
     customerId: CustomerId
-  ): Promise<CustomerPaymentIdentity | null>;
-  linkCustomerAuth(input: {
+  ) => EffectValue<CustomerPaymentIdentity | null, CustomerServiceFailure>;
+  readonly linkCustomerAuth: (input: {
     readonly authUserId: string;
     readonly customerId: CustomerId;
-  }): Promise<CustomerProfile>;
-  listCustomerGroups(): Promise<readonly CustomerGroup[]>;
-  listCustomers(): Promise<readonly CustomerProfile[]>;
-  resolveCustomerActor(session: AuthSession): AuthActor;
-  resolveCustomerFromAuthUserId(
+  }) => EffectValue<CustomerProfile, CustomerServiceFailure>;
+  readonly listCustomerGroups: EffectValue<
+    readonly CustomerGroup[],
+    CustomerServiceFailure
+  >;
+  readonly listCustomers: EffectValue<
+    readonly CustomerProfile[],
+    CustomerServiceFailure
+  >;
+  readonly resolveCustomerActor: (session: AuthSession) => AuthActor;
+  readonly resolveCustomerFromAuthUserId: (
     authUserId: string
-  ): Promise<CustomerProfile | null>;
-  updateCustomerProfile(
+  ) => EffectValue<CustomerProfile | null, CustomerServiceFailure>;
+  readonly updateCustomerProfile: (
     input: UpdateCustomerProfileInput
-  ): Promise<CustomerProfile>;
+  ) => EffectValue<CustomerProfile, CustomerServiceFailure>;
 }
 
 export const CustomerService = Context.Service<CustomerServiceShape>(
@@ -100,42 +121,49 @@ const normalizeOptional = (value: string | undefined): string | undefined => {
   return normalized || undefined;
 };
 
-const requireCustomer = async (
+const requireCustomer = (
   repository: CustomerRepository,
   customerId: CustomerId
-): Promise<CustomerProfile> => {
-  const customer = await repository.findCustomerById(customerId);
+): EffectValue<CustomerProfile, CustomerServiceFailure> =>
+  repository
+    .findCustomerById(customerId)
+    .pipe(
+      Effect.flatMap((customer) =>
+        customer
+          ? Effect.succeed(customer)
+          : Effect.fail(new CustomerNotFound({ customerId }))
+      )
+    );
 
-  if (!customer) {
-    throw new Error(`Customer "${customerId}" was not found.`);
-  }
-
-  return customer;
-};
-
-const requireUniqueEmail = async (
+const requireUniqueEmail = (
   repository: CustomerRepository,
   email: string,
   currentCustomerId?: CustomerId
-): Promise<void> => {
-  const existing = await repository.findCustomerByEmail(email);
+): EffectValue<void, CustomerServiceFailure> =>
+  repository.findCustomerByEmail(email).pipe(
+    Effect.flatMap((existing) => {
+      if (existing && existing.id !== currentCustomerId) {
+        return Effect.fail(new CustomerEmailConflict({ email }));
+      }
 
-  if (existing && existing.id !== currentCustomerId) {
-    throw new Error(`Customer email "${email}" already exists.`);
-  }
-};
+      return Effect.void;
+    })
+  );
 
-const requireUniqueAuthUser = async (
+const requireUniqueAuthUser = (
   repository: CustomerRepository,
   authUserId: string,
   currentCustomerId?: CustomerId
-): Promise<void> => {
-  const existing = await repository.findCustomerByAuthUserId(authUserId);
+): EffectValue<void, CustomerServiceFailure> =>
+  repository.findCustomerByAuthUserId(authUserId).pipe(
+    Effect.flatMap((existing) => {
+      if (existing && existing.id !== currentCustomerId) {
+        return Effect.fail(new CustomerAuthUserConflict({ authUserId }));
+      }
 
-  if (existing && existing.id !== currentCustomerId) {
-    throw new Error(`Auth user "${authUserId}" is already linked.`);
-  }
-};
+      return Effect.void;
+    })
+  );
 
 const createPrefixedId = (
   idGenerator: IdGeneratorServiceShape,
@@ -154,134 +182,169 @@ export const createCustomerService = ({
   const authEvaluator = createAuthorizationEvaluator(authorization);
 
   return {
-    addCustomerAddress: async (input) => {
-      await requireCustomer(repository, createCustomerId(input.customerId));
-      const address: CustomerAddress = {
-        address1: input.address1.trim(),
-        address2: normalizeOptional(input.address2),
-        city: input.city.trim(),
-        company: normalizeOptional(input.company),
-        countryCode: input.countryCode.trim().toUpperCase(),
-        firstName: normalizeOptional(input.firstName),
-        id: createCustomerAddressId(
+    addCustomerAddress: (input) =>
+      Effect.gen(function* addCustomerAddressEffect() {
+        const customerId = yield* createCustomerIdEffect(input.customerId);
+        yield* requireCustomer(repository, customerId);
+        const addressId = yield* createCustomerAddressIdEffect(
           createPrefixedId(idGenerator, CUSTOMER_ADDRESS_ID_PREFIX)
-        ),
-        isDefaultBilling: input.isDefaultBilling,
-        isDefaultShipping: input.isDefaultShipping,
-        kind: input.kind,
-        lastName: normalizeOptional(input.lastName),
-        metadata: input.metadata,
-        phone: normalizeOptional(input.phone),
-        postalCode: input.postalCode.trim(),
-        province: normalizeOptional(input.province),
-      };
+        );
+        const address: CustomerAddress = {
+          address1: input.address1.trim(),
+          address2: normalizeOptional(input.address2),
+          city: input.city.trim(),
+          company: normalizeOptional(input.company),
+          countryCode: input.countryCode.trim().toUpperCase(),
+          firstName: normalizeOptional(input.firstName),
+          id: addressId,
+          isDefaultBilling: input.isDefaultBilling,
+          isDefaultShipping: input.isDefaultShipping,
+          kind: input.kind,
+          lastName: normalizeOptional(input.lastName),
+          metadata: input.metadata,
+          phone: normalizeOptional(input.phone),
+          postalCode: input.postalCode.trim(),
+          province: normalizeOptional(input.province),
+        };
 
-      return repository.addCustomerAddress({
-        address,
-        customerId: createCustomerId(input.customerId),
-      });
-    },
+        return yield* repository.addCustomerAddress({
+          address,
+          customerId,
+        });
+      }),
     assignCustomerGroup: ({ customerId, groupId }) =>
       repository.assignCustomerGroup({ customerId, groupId }),
-    createCustomer: async (input) => {
-      const email = normalizeEmail(input.email);
-      await requireUniqueEmail(repository, email);
-      if (input.authUserId) {
-        await requireUniqueAuthUser(repository, input.authUserId);
-      }
+    createCustomer: (input) =>
+      Effect.gen(function* createCustomerEffect() {
+        const email = normalizeEmail(input.email);
+        yield* requireUniqueEmail(repository, email);
+        if (input.authUserId) {
+          yield* requireUniqueAuthUser(repository, input.authUserId);
+        }
 
-      const now = clock.now();
-      const customer: CustomerProfile = {
-        addresses: [],
-        authUserId: input.authUserId ?? null,
-        createdAt: now,
-        email,
-        firstName: normalizeOptional(input.firstName),
-        groupIds: [],
-        id: createCustomerId(createPrefixedId(idGenerator, CUSTOMER_ID_PREFIX)),
-        lastName: normalizeOptional(input.lastName),
-        metadata: input.metadata ?? {},
-        phone: normalizeOptional(input.phone),
-        updatedAt: now,
-      };
+        const now = clock.now();
+        const id = yield* createCustomerIdEffect(
+          createPrefixedId(idGenerator, CUSTOMER_ID_PREFIX)
+        );
+        const customer: CustomerProfile = {
+          addresses: [],
+          authUserId: input.authUserId ?? null,
+          createdAt: now,
+          email,
+          firstName: normalizeOptional(input.firstName),
+          groupIds: [],
+          id,
+          lastName: normalizeOptional(input.lastName),
+          metadata: input.metadata ?? {},
+          phone: normalizeOptional(input.phone),
+          updatedAt: now,
+        };
 
-      return repository.saveCustomer(customer);
-    },
-    createCustomerGroup: (input) => {
-      const group: CustomerGroup = {
-        handle: input.handle.trim().toLowerCase(),
-        id: createCustomerGroupId(
+        return yield* repository.saveCustomer(customer);
+      }),
+    createCustomerGroup: (input) =>
+      Effect.gen(function* createCustomerGroupEffect() {
+        const id = yield* createCustomerGroupIdEffect(
           createPrefixedId(idGenerator, CUSTOMER_GROUP_ID_PREFIX)
-        ),
-        metadata: input.metadata ?? {},
-        name: input.name.trim(),
-      };
+        );
+        const group: CustomerGroup = {
+          handle: input.handle.trim().toLowerCase(),
+          id,
+          metadata: input.metadata ?? {},
+          name: input.name.trim(),
+        };
 
-      if (!group.handle) {
-        throw new Error("Customer group handle is required.");
-      }
-
-      if (!group.name) {
-        throw new Error("Customer group name is required.");
-      }
-
-      return repository.saveCustomerGroup(group);
-    },
+        return yield* repository.saveCustomerGroup(group);
+      }),
     getCustomerById: (id) => repository.findCustomerById(id),
-    getPaymentIdentity: async (customerId) => {
-      const customer = await repository.findCustomerById(customerId);
+    getPaymentIdentity: (customerId) =>
+      repository.findCustomerById(customerId).pipe(
+        Effect.map((customer) =>
+          customer
+            ? {
+                customerId: customer.id,
+                email: customer.email,
+                firstName: customer.firstName,
+                lastName: customer.lastName,
+                phone: customer.phone,
+              }
+            : null
+        )
+      ),
+    linkCustomerAuth: ({ authUserId, customerId }) =>
+      Effect.gen(function* linkCustomerAuthEffect() {
+        yield* requireUniqueAuthUser(repository, authUserId, customerId);
+        yield* requireCustomer(repository, customerId);
 
-      return customer
-        ? {
-            customerId: customer.id,
-            email: customer.email,
-            firstName: customer.firstName,
-            lastName: customer.lastName,
-            phone: customer.phone,
-          }
-        : null;
-    },
-    linkCustomerAuth: async ({ authUserId, customerId }) => {
-      await requireUniqueAuthUser(repository, authUserId, customerId);
-      await requireCustomer(repository, customerId);
-
-      return repository.linkCustomerAuth({ authUserId, customerId });
-    },
-    listCustomerGroups: () => repository.listCustomerGroups(),
-    listCustomers: () => repository.listCustomers(),
+        return yield* repository.linkCustomerAuth({ authUserId, customerId });
+      }),
+    listCustomerGroups: repository.listCustomerGroups,
+    listCustomers: repository.listCustomers,
     resolveCustomerActor: (session) => authEvaluator.resolveAuthActor(session),
     resolveCustomerFromAuthUserId: (authUserId) =>
       repository.findCustomerByAuthUserId(authUserId),
-    updateCustomerProfile: async (input) => {
-      const customerId = createCustomerId(input.id);
-      const customer = await requireCustomer(repository, customerId);
-      const email = input.email ? normalizeEmail(input.email) : customer.email;
-      await requireUniqueEmail(repository, email, customerId);
+    updateCustomerProfile: (input) =>
+      Effect.gen(function* updateCustomerProfileEffect() {
+        const customerId = yield* createCustomerIdEffect(input.id);
+        const customer = yield* requireCustomer(repository, customerId);
+        const email = input.email
+          ? normalizeEmail(input.email)
+          : customer.email;
+        yield* requireUniqueEmail(repository, email, customerId);
 
-      return repository.updateCustomer({
-        ...customer,
-        email,
-        firstName:
-          input.firstName === undefined
-            ? customer.firstName
-            : normalizeOptional(input.firstName),
-        lastName:
-          input.lastName === undefined
-            ? customer.lastName
-            : normalizeOptional(input.lastName),
-        metadata: input.metadata ?? customer.metadata,
-        phone:
-          input.phone === undefined
-            ? customer.phone
-            : normalizeOptional(input.phone),
-        updatedAt: clock.now(),
-      });
-    },
+        return yield* repository.updateCustomer({
+          ...customer,
+          email,
+          firstName:
+            input.firstName === undefined
+              ? customer.firstName
+              : normalizeOptional(input.firstName),
+          lastName:
+            input.lastName === undefined
+              ? customer.lastName
+              : normalizeOptional(input.lastName),
+          metadata: input.metadata ?? customer.metadata,
+          phone:
+            input.phone === undefined
+              ? customer.phone
+              : normalizeOptional(input.phone),
+          updatedAt: clock.now(),
+        });
+      }),
   };
 };
 
 export const createCustomerServiceLayer = (service: CustomerServiceShape) =>
   Layer.succeed(CustomerService, service);
+
+/** Provides the customer repository from a concrete repository value. */
+export const createCustomerRepositoryLayer = (repository: CustomerRepository) =>
+  Layer.succeed(CustomerRepositoryService, repository);
+
+/**
+ * Builds `CustomerService` from Effect dependency services.
+ *
+ * Runtime roots use this Layer once repositories, clocks, and id generators are
+ * supplied by platform or test composition.
+ */
+export const createCustomerServiceFromDependenciesLayer = (
+  authorization?: CreateAuthorizationEvaluatorOptions
+) =>
+  Layer.effect(
+    CustomerService,
+    Effect.gen(function* customerServiceFromDependencies() {
+      const clock = yield* ClockService;
+      const idGenerator = yield* IdGeneratorService;
+      const repository = yield* CustomerRepositoryService;
+
+      return createCustomerService({
+        authorization,
+        clock,
+        idGenerator,
+        repository,
+      });
+    })
+  );
 
 export const defaultCustomerService = createCustomerService({
   repository: defaultCustomerRepository,

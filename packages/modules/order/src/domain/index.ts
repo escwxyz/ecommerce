@@ -1,48 +1,70 @@
+import { Context } from "effect";
+
+import type { OrderRepository } from "./order.types";
+
 export {
   createOrderId,
+  createOrderIdEffect,
   createOrderLineItemId,
+  createOrderLineItemIdEffect,
   createOrderTransactionId,
+  createOrderTransactionIdEffect,
   ORDER_ID_PREFIX,
   ORDER_LINE_ITEM_ID_PREFIX,
   ORDER_TRANSACTION_ID_PREFIX,
+  serializeOrderId,
+  serializeOrderLineItemId,
+  serializeOrderTransactionId,
   type OrderId,
   type OrderLineItemId,
   type OrderTransactionId,
 } from "./order-id";
 export {
-  orderMigration,
-  orderSchema,
-  orderTableName,
-  type OrderDatabase,
-  type OrderDatabaseSchema,
-  type OrderInsert,
-  type OrderRow,
-  type OrderSchemaKey,
-} from "./order.database-schema";
-export {
   CreateOrderFromCheckoutInputSchema,
   CreateOrderLineItemInputSchema,
+  OrderAddressSnapshotSchema,
   OrderAggregateApiSchema,
   OrderAggregateSchema,
   OrderApiListSchema,
   OrderApiRecordSchema,
   OrderCoordinationMetadataSchema,
+  OrderCurrencyCodeSchema,
   OrderFulfillmentReferenceSchema,
   OrderIdentifierSchema,
+  OrderIsoDateTimeStringSchema,
   OrderItemSnapshotSchema,
+  OrderLineItemIdSchema,
+  OrderLineItemSerializedIdSchema,
   OrderLineItemApiRecordSchema,
   OrderLineItemRecordSchema,
+  OrderMetadataSchema,
+  OrderNonNegativeIntegerSchema,
+  OrderNullableIsoDateTimeStringSchema,
   OrderPaymentReferenceSchema,
+  OrderPostPurchaseOperationApiRecordSchema,
+  OrderPostPurchaseOperationRecordSchema,
+  OrderPostPurchaseOperationTypeSchema,
   OrderRecordSchema,
+  OrderSerializedIdSchema,
   OrderStateTransitionApiRecordSchema,
   OrderStateTransitionRecordSchema,
   OrderStatusSchema,
   OrderTotalsSnapshotSchema,
+  OrderTransactionIdSchema,
+  OrderTransactionSerializedIdSchema,
   OrderTransactionApiRecordSchema,
   OrderTransactionRecordSchema,
   RecordOrderTransactionInputSchema,
+  OrderTransactionTypeSchema,
+  OrderTrimmedStringSchema,
   TransitionOrderStatusInputSchema,
 } from "./order.schema";
+export {
+  OrderInvalidIdentifier,
+  OrderNotFound,
+  OrderValidationFailure,
+  type OrderExpectedError,
+} from "./order.errors";
 export type {
   CreateOrderFromCheckoutInput,
   CreateOrderLineItemInput,
@@ -69,3 +91,7 @@ export type {
   RecordOrderTransactionInput,
   TransitionOrderStatusInput,
 } from "./order.types";
+
+export const OrderRepositoryService = Context.Service<OrderRepository>(
+  "@ecommerce/order/OrderRepository"
+);

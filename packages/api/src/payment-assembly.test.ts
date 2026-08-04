@@ -1,28 +1,32 @@
 import { describe, expect, it } from "bun:test";
 
 import { createAdminMetadataModel } from "./admin-metadata";
+import { adminHttpApi, createEffectHttpApiAssembly } from "./index";
+import { paymentEffectHttpApiContribution } from "./payment-effect-http-api";
 import {
   authorizationEvaluator,
   builtinPermissionStatement,
 } from "./permissions";
-import { createBuiltinRouteFragments } from "./routers";
 
 describe("payment API and admin assembly", () => {
   it("includes payment permissions in builtin permission composition", () => {
     expect(builtinPermissionStatement.payment).toEqual(["read", "write"]);
   });
 
-  it("includes payment route operations in builtin API composition", () => {
-    const paymentFragment = createBuiltinRouteFragments().find(
-      (fragment) => fragment.key === "module:payment"
-    );
+  it("includes payment Effect HTTP operations in canonical admin composition", () => {
+    const assembly = createEffectHttpApiAssembly({
+      root: adminHttpApi,
+      contributions: paymentEffectHttpApiContribution.groups,
+      surface: "admin",
+    });
 
-    expect(Object.keys(paymentFragment?.router ?? {})).toContain(
-      "paymentCollectionCreate"
+    expect(assembly.routes.map((route) => route.routeKey)).toEqual(
+      expect.arrayContaining([
+        "POST /admin/payments/collections",
+        "POST /admin/payments/providers/webhooks/parse",
+      ])
     );
-    expect(Object.keys(paymentFragment?.router ?? {})).toContain(
-      "paymentWebhookParse"
-    );
+    expect(paymentEffectHttpApiContribution.moduleName).toBe("payment");
   });
 
   it("exposes payment admin metadata through shared module contracts", () => {

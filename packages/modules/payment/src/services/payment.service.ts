@@ -2,7 +2,14 @@ import type {
   ClockServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
-import { Context, Layer } from "effect";
+import {
+  ClockService,
+  IdGeneratorService,
+  correlationContextFromHeaders,
+  createCorrelationContext,
+} from "@ecommerce/core";
+import { Context, Effect, Layer } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
 import type {
@@ -18,12 +25,15 @@ import type {
   PaymentCollection,
   PaymentCollectionDetail,
   PaymentCollectionId,
+  PaymentExpectedError,
   PaymentMethod,
   PaymentProviderRecord,
   PaymentRefund,
   PaymentRepository,
   PaymentSession,
   PaymentSessionId,
+  PaymentWebhookAction,
+  PaymentWebhookActionResult,
   RefundPaymentInput,
 } from "../domain";
 import {
@@ -35,25 +45,27 @@ import {
   PAYMENT_PROVIDER_RECORD_ID_PREFIX,
   PAYMENT_REFUND_ID_PREFIX,
   PAYMENT_SESSION_ID_PREFIX,
-  createPaymentAccountHolderId,
-  createPaymentCaptureId,
-  createPaymentCollectionId,
-  createPaymentId,
-  createPaymentMethodId,
-  createPaymentProviderRecordId,
-  createPaymentRefundId,
-  createPaymentSessionId,
+  PaymentAccountHolderNotFound,
+  PaymentNotFound,
+  PaymentProviderUnavailable,
+  PaymentRepositoryService,
+  PaymentSessionNotFound,
+  PaymentValidationFailure,
+  createPaymentAccountHolderIdEffect,
+  createPaymentCaptureIdEffect,
+  createPaymentCollectionIdEffect,
+  createPaymentIdEffect,
+  createPaymentMethodIdEffect,
+  createPaymentProviderRecordIdEffect,
+  createPaymentRefundIdEffect,
+  createPaymentSessionIdEffect,
 } from "../domain";
 import type { PaymentProviderRegistry } from "../providers";
 import {
-  emptyPaymentProviderRegistry,
   createPaymentProviderRegistry,
+  emptyPaymentProviderRegistry,
 } from "../providers";
 import { defaultPaymentRepository } from "../repositories";
-import type {
-  PaymentWebhookAction,
-  PaymentWebhookActionResult,
-} from "../webhooks";
 import { mapProviderEventsToPaymentActions } from "../webhooks";
 
 export const PAYMENT_COLLECTION_CREATED_EVENT =
@@ -65,32 +77,45 @@ export const PAYMENT_REFUNDED_EVENT = "payment.refunded" as const;
 export const PAYMENT_WEBHOOK_APPLIED_EVENT = "payment.webhook-applied" as const;
 
 export interface PaymentServiceShape {
-  applyWebhookActions(
+  readonly applyWebhookActions: (
     result: PaymentWebhookActionResult
-  ): Promise<readonly PaymentWebhookAction[]>;
-  attachPaymentMethod(input: AttachPaymentMethodInput): Promise<PaymentMethod>;
-  authorizePaymentSession(
+  ) => EffectValue<readonly PaymentWebhookAction[], PaymentExpectedError>;
+  readonly attachPaymentMethod: (
+    input: AttachPaymentMethodInput
+  ) => EffectValue<PaymentMethod, PaymentExpectedError>;
+  readonly authorizePaymentSession: (
     input: AuthorizePaymentSessionInput
-  ): Promise<Payment>;
-  capturePayment(input: CapturePaymentInput): Promise<PaymentCapture>;
-  createAccountHolder(
+  ) => EffectValue<Payment, PaymentExpectedError>;
+  readonly capturePayment: (
+    input: CapturePaymentInput
+  ) => EffectValue<PaymentCapture, PaymentExpectedError>;
+  readonly createAccountHolder: (
     input: CreatePaymentAccountHolderInput
-  ): Promise<PaymentAccountHolder>;
-  createCollection(
+  ) => EffectValue<PaymentAccountHolder, PaymentExpectedError>;
+  readonly createCollection: (
     input: CreatePaymentCollectionInput
-  ): Promise<PaymentCollection>;
-  createSession(input: CreatePaymentSessionInput): Promise<PaymentSession>;
-  getCollectionDetail(
+  ) => EffectValue<PaymentCollection, PaymentExpectedError>;
+  readonly createSession: (
+    input: CreatePaymentSessionInput
+  ) => EffectValue<PaymentSession, PaymentExpectedError>;
+  readonly getCollectionDetail: (
     id: PaymentCollectionId
-  ): Promise<PaymentCollectionDetail | null>;
-  listCollections(): Promise<readonly PaymentCollection[]>;
-  parseProviderWebhook(input: {
+  ) => EffectValue<PaymentCollectionDetail | null, PaymentExpectedError>;
+  readonly listCollections: EffectValue<
+    readonly PaymentCollection[],
+    PaymentExpectedError
+  >;
+  readonly parseProviderWebhook: (input: {
     readonly headers: Readonly<Record<string, string>>;
     readonly payload: string | Uint8Array;
     readonly providerKey: string;
-  }): Promise<PaymentWebhookActionResult>;
-  refundPayment(input: RefundPaymentInput): Promise<PaymentRefund>;
-  registerProvider(providerKey: string): Promise<PaymentProviderRecord>;
+  }) => EffectValue<PaymentWebhookActionResult, PaymentExpectedError>;
+  readonly refundPayment: (
+    input: RefundPaymentInput
+  ) => EffectValue<PaymentRefund, PaymentExpectedError>;
+  readonly registerProvider: (
+    providerKey: string
+  ) => EffectValue<PaymentProviderRecord, PaymentExpectedError>;
 }
 
 export const PaymentService = Context.Service<PaymentServiceShape>(
@@ -123,44 +148,51 @@ const createPrefixedId = (
 const normalizeCurrencyCode = (currencyCode: string): string =>
   currencyCode.trim().toUpperCase();
 
+const mapProviderFailure = (message: string) =>
+  new PaymentValidationFailure({ message });
+
+const providerCorrelation = (idempotencyKey: string) =>
+  createCorrelationContext({ requestId: idempotencyKey });
+
 const requireProvider = (
   registry: PaymentProviderRegistry,
   providerKey: string
 ) => {
   const provider = registry.getProvider(providerKey);
-
-  if (!provider) {
-    throw new Error(`Payment provider "${providerKey}" is not registered.`);
-  }
-
-  return provider;
+  return provider
+    ? Effect.succeed(provider)
+    : Effect.fail(new PaymentProviderUnavailable({ providerKey }));
 };
 
-const requireCollection = async (
+const requireCollection = (
   repository: PaymentRepository,
   collectionId: PaymentCollectionId
-): Promise<PaymentCollection> => {
-  const collection = await repository.findCollectionById(collectionId);
+) =>
+  Effect.gen(function* requirePaymentCollectionEffect() {
+    const collection = yield* repository.findCollectionById(collectionId);
 
-  if (!collection) {
-    throw new Error(`Payment collection "${collectionId}" was not found.`);
-  }
+    if (!collection) {
+      return yield* new PaymentValidationFailure({
+        message: `Payment collection "${collectionId}" was not found.`,
+      });
+    }
 
-  return collection;
-};
+    return collection;
+  });
 
-const requireSession = async (
+const requireSession = (
   repository: PaymentRepository,
   sessionId: PaymentSessionId
-): Promise<PaymentSession> => {
-  const session = await repository.findSessionById(sessionId);
+) =>
+  Effect.gen(function* requirePaymentSessionEffect() {
+    const session = yield* repository.findSessionById(sessionId);
 
-  if (!session) {
-    throw new Error(`Payment session "${sessionId}" was not found.`);
-  }
+    if (!session) {
+      return yield* new PaymentSessionNotFound({ sessionId });
+    }
 
-  return session;
-};
+    return session;
+  });
 
 const getCollectionStatusForPayment = (
   paymentStatus: Payment["status"]
@@ -243,14 +275,14 @@ export const createPaymentService = ({
   const updateCollectionStatus = (
     collection: PaymentCollection,
     status: PaymentCollection["status"]
-  ): Promise<PaymentCollection> =>
+  ) =>
     repository.saveCollection({
       ...collection,
       status,
       updatedAt: clock.now(),
     });
 
-  const savePaymentFromProviderIntent = async ({
+  const savePaymentFromProviderIntent = ({
     collection,
     providerKey,
     providerPaymentIntentId,
@@ -262,406 +294,481 @@ export const createPaymentService = ({
     readonly providerPaymentIntentId: string;
     readonly session: PaymentSession;
     readonly status: Payment["status"];
-  }): Promise<Payment> => {
-    const existing = await repository.findPaymentByProviderIntent({
-      providerKey,
-      providerPaymentIntentId,
+  }) =>
+    Effect.gen(function* savePaymentFromProviderIntentEffect() {
+      const existing = yield* repository.findPaymentByProviderIntent({
+        providerKey,
+        providerPaymentIntentId,
+      });
+      const now = clock.now();
+      const payment: Payment = existing
+        ? {
+            ...existing,
+            status,
+            updatedAt: now,
+          }
+        : {
+            amount: collection.amount,
+            collectionId: collection.id,
+            createdAt: now,
+            currencyCode: collection.currencyCode,
+            id: yield* createPaymentIdEffect(
+              createPrefixedId(idGenerator, PAYMENT_ID_PREFIX)
+            ),
+            metadata: {},
+            providerKey,
+            providerPaymentIntentId,
+            sessionId: session.id,
+            status,
+            updatedAt: now,
+          };
+
+      yield* repository.savePayment(payment);
+      yield* repository.saveSession({
+        ...session,
+        providerPaymentIntentId,
+        status: getSessionStatusForPayment(status),
+        updatedAt: now,
+      });
+      yield* updateCollectionStatus(
+        collection,
+        getCollectionStatusForPayment(status)
+      );
+
+      return payment;
     });
-    const now = clock.now();
-    const payment: Payment = existing
-      ? {
-          ...existing,
-          status,
-          updatedAt: now,
+
+  return {
+    applyWebhookActions: (result) =>
+      Effect.gen(function* applyWebhookActionsEffect() {
+        for (const action of result.actions) {
+          if (
+            action.type !== "payment.authorized" &&
+            action.type !== "payment.captured" &&
+            action.type !== "payment.failed"
+          ) {
+            continue;
+          }
+
+          const session = yield* repository.findSessionByProviderIntent({
+            providerKey: action.providerKey,
+            providerPaymentIntentId: action.paymentIntentId,
+          });
+
+          if (!session) {
+            continue;
+          }
+
+          const collection = yield* requireCollection(
+            repository,
+            session.collectionId
+          );
+          yield* savePaymentFromProviderIntent({
+            collection,
+            providerKey: action.providerKey,
+            providerPaymentIntentId: action.paymentIntentId,
+            session,
+            status: getPaymentStatusFromWebhookAction(action.type),
+          });
         }
-      : {
+
+        return result.actions;
+      }),
+    attachPaymentMethod: (input) =>
+      Effect.gen(function* attachPaymentMethodEffect() {
+        const accountHolder = yield* repository.findAccountHolderById(
+          input.accountHolderId
+        );
+
+        if (!accountHolder) {
+          return yield* new PaymentAccountHolderNotFound({
+            accountHolderId: input.accountHolderId,
+          });
+        }
+
+        const provider = yield* requireProvider(
+          providerRegistry,
+          accountHolder.providerKey
+        );
+        const providerMethod = yield* provider
+          .attachPaymentMethod({
+            correlation: providerCorrelation(
+              `${accountHolder.id}:attach-payment-method:${input.providerPaymentMethodId}`
+            ),
+            customerId: accountHolder.providerAccountHolderId,
+            providerPaymentMethodId: input.providerPaymentMethodId,
+          })
+          .pipe(
+            Effect.mapError(() =>
+              mapProviderFailure("Payment method attachment failed.")
+            )
+          );
+        const now = clock.now();
+        const method: PaymentMethod = {
+          accountHolderId: input.accountHolderId,
+          createdAt: now,
+          displayName: providerMethod.displayName,
+          id: yield* createPaymentMethodIdEffect(
+            createPrefixedId(idGenerator, PAYMENT_METHOD_ID_PREFIX)
+          ),
+          metadata: providerMethod.metadata ?? {},
+          providerKey: accountHolder.providerKey,
+          providerPaymentMethodId: providerMethod.id,
+          reusable: providerMethod.reusable,
+          type: providerMethod.type,
+          updatedAt: now,
+        };
+
+        return yield* repository.saveMethod(method);
+      }),
+    authorizePaymentSession: (input) =>
+      Effect.gen(function* authorizePaymentSessionEffect() {
+        const session = yield* requireSession(repository, input.sessionId);
+        const collection = yield* requireCollection(
+          repository,
+          session.collectionId
+        );
+        const provider = yield* requireProvider(
+          providerRegistry,
+          session.providerKey
+        );
+        const method = input.paymentMethodId
+          ? yield* repository.findMethodById(input.paymentMethodId)
+          : null;
+        const intent = yield* provider
+          .createPaymentIntent({
+            amount: {
+              amount: session.amount,
+              currencyCode: session.currencyCode,
+            },
+            captureMethod: "manual",
+            correlation: providerCorrelation(input.idempotencyKey),
+            idempotencyKey: input.idempotencyKey,
+            metadata: session.metadata,
+            paymentMethodId: method?.providerPaymentMethodId,
+          })
+          .pipe(
+            Effect.mapError(() =>
+              mapProviderFailure("Payment authorization failed.")
+            )
+          );
+
+        return yield* savePaymentFromProviderIntent({
+          collection,
+          providerKey: session.providerKey,
+          providerPaymentIntentId: intent.id,
+          session,
+          status: getPaymentStatusFromProvider(intent.status),
+        });
+      }),
+    capturePayment: (input) =>
+      Effect.gen(function* capturePaymentEffect() {
+        const existing = yield* repository.findCaptureByIdempotencyKey(
+          input.idempotencyKey
+        );
+
+        if (existing) {
+          return existing;
+        }
+
+        const payment = yield* repository.findPaymentById(input.paymentId);
+
+        if (!payment) {
+          return yield* new PaymentNotFound({ paymentId: input.paymentId });
+        }
+
+        const amount = input.amount ?? payment.amount;
+
+        if (amount > payment.amount) {
+          return yield* new PaymentValidationFailure({
+            message: `Capture amount ${amount} exceeds authorized payment amount ${payment.amount}.`,
+          });
+        }
+
+        const provider = yield* requireProvider(
+          providerRegistry,
+          payment.providerKey
+        );
+        const providerIntent = yield* provider
+          .capturePaymentIntent({
+            amount: {
+              amount,
+              currencyCode: payment.currencyCode,
+            },
+            correlation: providerCorrelation(input.idempotencyKey),
+            idempotencyKey: input.idempotencyKey,
+            paymentIntentId: payment.providerPaymentIntentId,
+          })
+          .pipe(
+            Effect.mapError(() => mapProviderFailure("Payment capture failed."))
+          );
+        const capture: PaymentCapture = {
+          amount,
+          createdAt: clock.now(),
+          currencyCode: payment.currencyCode,
+          id: yield* createPaymentCaptureIdEffect(
+            createPrefixedId(idGenerator, PAYMENT_CAPTURE_ID_PREFIX)
+          ),
+          idempotencyKey: input.idempotencyKey,
+          paymentId: payment.id,
+          providerCaptureId: providerIntent.id,
+          status:
+            providerIntent.status === "captured" ? "succeeded" : "pending",
+        };
+
+        yield* repository.savePayment({
+          ...payment,
+          status: amount < payment.amount ? "partially-captured" : "captured",
+          updatedAt: clock.now(),
+        });
+        yield* updateCollectionStatus(
+          yield* requireCollection(repository, payment.collectionId),
+          amount < payment.amount ? "partially-captured" : "captured"
+        );
+
+        return yield* repository.saveCapture(capture);
+      }),
+    createAccountHolder: (input) =>
+      Effect.gen(function* createAccountHolderEffect() {
+        const provider = yield* requireProvider(
+          providerRegistry,
+          input.providerKey
+        );
+        const providerCustomer = yield* provider
+          .createCustomer({
+            correlation: providerCorrelation(
+              `account-holder:${input.providerKey}:${
+                input.email ?? input.name ?? "anonymous"
+              }`
+            ),
+            email: input.email,
+            metadata: input.metadata,
+            name: input.name,
+          })
+          .pipe(
+            Effect.mapError(() =>
+              mapProviderFailure("Payment account holder creation failed.")
+            )
+          );
+        const existing = yield* repository.findAccountHolderByProviderId({
+          providerAccountHolderId: providerCustomer.id,
+          providerKey: input.providerKey,
+        });
+
+        if (existing) {
+          return existing;
+        }
+
+        const now = clock.now();
+        const accountHolder: PaymentAccountHolder = {
+          createdAt: now,
+          customerId: input.customerId,
+          email: input.email,
+          id: yield* createPaymentAccountHolderIdEffect(
+            createPrefixedId(idGenerator, PAYMENT_ACCOUNT_HOLDER_ID_PREFIX)
+          ),
+          metadata: input.metadata ?? {},
+          providerAccountHolderId: providerCustomer.id,
+          providerKey: input.providerKey,
+          updatedAt: now,
+        };
+
+        return yield* repository.saveAccountHolder(accountHolder);
+      }),
+    createCollection: (input) =>
+      Effect.gen(function* createPaymentCollectionEffect() {
+        const now = clock.now();
+        const collection: PaymentCollection = {
+          amount: input.amount,
+          cartId: input.cartId,
+          createdAt: now,
+          currencyCode: normalizeCurrencyCode(input.currencyCode),
+          id: yield* createPaymentCollectionIdEffect(
+            createPrefixedId(idGenerator, PAYMENT_COLLECTION_ID_PREFIX)
+          ),
+          metadata: input.metadata ?? {},
+          status: "pending",
+          updatedAt: now,
+        };
+
+        return yield* repository.saveCollection(collection);
+      }),
+    createSession: (input) =>
+      Effect.gen(function* createPaymentSessionEffect() {
+        const collection = yield* requireCollection(
+          repository,
+          input.collectionId
+        );
+        const provider = yield* requireProvider(
+          providerRegistry,
+          input.providerKey
+        );
+        const accountHolder = input.accountHolderId
+          ? yield* repository.findAccountHolderById(input.accountHolderId)
+          : null;
+        const checkoutSession =
+          input.successUrl && input.cancelUrl
+            ? yield* provider
+                .createCheckoutSession({
+                  amount: {
+                    amount: collection.amount,
+                    currencyCode: collection.currencyCode,
+                  },
+                  cancelUrl: input.cancelUrl,
+                  correlation: providerCorrelation(input.idempotencyKey),
+                  customerId: accountHolder?.providerAccountHolderId,
+                  idempotencyKey: input.idempotencyKey,
+                  metadata: input.metadata,
+                  mode: "payment",
+                  successUrl: input.successUrl,
+                })
+                .pipe(
+                  Effect.mapError(() =>
+                    mapProviderFailure(
+                      "Payment checkout session creation failed."
+                    )
+                  )
+                )
+            : null;
+        const now = clock.now();
+        const session: PaymentSession = {
           amount: collection.amount,
           collectionId: collection.id,
           createdAt: now,
           currencyCode: collection.currencyCode,
-          id: createPaymentId(createPrefixedId(idGenerator, PAYMENT_ID_PREFIX)),
-          metadata: {},
-          providerKey,
-          providerPaymentIntentId,
-          sessionId: session.id,
-          status,
+          id: yield* createPaymentSessionIdEffect(
+            createPrefixedId(idGenerator, PAYMENT_SESSION_ID_PREFIX)
+          ),
+          metadata: input.metadata ?? {},
+          providerCheckoutSessionId: checkoutSession?.id,
+          providerKey: input.providerKey,
+          providerPaymentIntentId: checkoutSession?.paymentIntentId,
+          status: "pending",
           updatedAt: now,
         };
 
-    await repository.savePayment(payment);
-    await repository.saveSession({
-      ...session,
-      providerPaymentIntentId,
-      status: getSessionStatusForPayment(status),
-      updatedAt: now,
-    });
-    await updateCollectionStatus(
-      collection,
-      getCollectionStatusForPayment(status)
-    );
+        return yield* repository.saveSession(session);
+      }),
+    getCollectionDetail: (id) =>
+      Effect.gen(function* getPaymentCollectionDetailEffect() {
+        const collection = yield* repository.findCollectionById(id);
 
-    return payment;
-  };
-
-  return {
-    applyWebhookActions: async (result) => {
-      for (const action of result.actions) {
-        if (
-          action.type !== "payment.authorized" &&
-          action.type !== "payment.captured" &&
-          action.type !== "payment.failed"
-        ) {
-          continue;
+        if (!collection) {
+          return null;
         }
 
-        const session = await repository.findSessionByProviderIntent({
-          providerKey: action.providerKey,
-          providerPaymentIntentId: action.paymentIntentId,
-        });
+        const [payments, sessions] = yield* Effect.all([
+          repository.listPaymentsForCollection(id),
+          repository.listSessionsForCollection(id),
+        ]);
 
-        if (!session) {
-          continue;
-        }
-
-        const collection = await requireCollection(
-          repository,
-          session.collectionId
-        );
-        await savePaymentFromProviderIntent({
+        return {
           collection,
-          providerKey: action.providerKey,
-          providerPaymentIntentId: action.paymentIntentId,
-          session,
-          status: getPaymentStatusFromWebhookAction(action.type),
-        });
-      }
+          payments,
+          sessions,
+        };
+      }),
+    listCollections: repository.listCollections,
+    parseProviderWebhook: ({ headers, payload, providerKey }) =>
+      Effect.gen(function* parsePaymentProviderWebhookEffect() {
+        const provider = yield* requireProvider(providerRegistry, providerKey);
+        const result = yield* provider
+          .parseWebhook({
+            correlation: correlationContextFromHeaders(
+              headers,
+              `webhook:${providerKey}`
+            ),
+            headers,
+            payload,
+          })
+          .pipe(
+            Effect.mapError(() =>
+              mapProviderFailure("Payment webhook parsing failed.")
+            )
+          );
 
-      return result.actions;
-    },
-    attachPaymentMethod: async (input) => {
-      const accountHolderId = createPaymentAccountHolderId(
-        input.accountHolderId
-      );
-      const accountHolder =
-        await repository.findAccountHolderById(accountHolderId);
-
-      if (!accountHolder) {
-        throw new Error(
-          `Payment account holder "${accountHolderId}" was not found.`
+        return mapProviderEventsToPaymentActions(result.events);
+      }),
+    refundPayment: (input) =>
+      Effect.gen(function* refundPaymentEffect() {
+        const existing = yield* repository.findRefundByIdempotencyKey(
+          input.idempotencyKey
         );
-      }
 
-      const provider = requireProvider(
-        providerRegistry,
-        accountHolder.providerKey
-      );
-      const providerMethod = await provider.attachPaymentMethod({
-        customerId: accountHolder.providerAccountHolderId,
-        providerPaymentMethodId: input.providerPaymentMethodId,
-      });
-      const now = clock.now();
-      const method: PaymentMethod = {
-        accountHolderId,
-        createdAt: now,
-        displayName: providerMethod.displayName,
-        id: createPaymentMethodId(
-          createPrefixedId(idGenerator, PAYMENT_METHOD_ID_PREFIX)
-        ),
-        metadata: providerMethod.metadata ?? {},
-        providerKey: accountHolder.providerKey,
-        providerPaymentMethodId: providerMethod.id,
-        reusable: providerMethod.reusable,
-        type: providerMethod.type,
-        updatedAt: now,
-      };
+        if (existing) {
+          return existing;
+        }
 
-      return repository.saveMethod(method);
-    },
-    authorizePaymentSession: async (input) => {
-      const session = await requireSession(
-        repository,
-        createPaymentSessionId(input.sessionId)
-      );
-      const collection = await requireCollection(
-        repository,
-        session.collectionId
-      );
-      const provider = requireProvider(providerRegistry, session.providerKey);
-      const method = input.paymentMethodId
-        ? await repository.findMethodById(
-            createPaymentMethodId(input.paymentMethodId)
-          )
-        : null;
-      const intent = await provider.createPaymentIntent({
-        amount: {
-          amount: session.amount,
-          currencyCode: session.currencyCode,
-        },
-        captureMethod: "manual",
-        idempotencyKey: input.idempotencyKey,
-        metadata: session.metadata,
-        paymentMethodId: method?.providerPaymentMethodId,
-      });
-      const status = getPaymentStatusFromProvider(intent.status);
+        const payment = yield* repository.findPaymentById(input.paymentId);
 
-      return savePaymentFromProviderIntent({
-        collection,
-        providerKey: session.providerKey,
-        providerPaymentIntentId: intent.id,
-        session,
-        status,
-      });
-    },
-    capturePayment: async (input) => {
-      const existing = await repository.findCaptureByIdempotencyKey(
-        input.idempotencyKey
-      );
+        if (!payment) {
+          return yield* new PaymentNotFound({ paymentId: input.paymentId });
+        }
 
-      if (existing) {
-        return existing;
-      }
+        const amount = input.amount ?? payment.amount;
 
-      const payment = await repository.findPaymentById(
-        createPaymentId(input.paymentId)
-      );
+        if (amount > payment.amount) {
+          return yield* new PaymentValidationFailure({
+            message: `Refund amount ${amount} exceeds payment amount ${payment.amount}.`,
+          });
+        }
 
-      if (!payment) {
-        throw new Error(`Payment "${input.paymentId}" was not found.`);
-      }
-
-      const provider = requireProvider(providerRegistry, payment.providerKey);
-      const amount = input.amount ?? payment.amount;
-
-      if (amount > payment.amount) {
-        throw new Error(
-          `Capture amount ${amount} exceeds authorized payment amount ${payment.amount}.`
+        const provider = yield* requireProvider(
+          providerRegistry,
+          payment.providerKey
         );
-      }
-
-      const providerIntent = await provider.capturePaymentIntent({
-        amount: {
+        const providerRefund = yield* provider
+          .refundPayment({
+            amount: {
+              amount,
+              currencyCode: payment.currencyCode,
+            },
+            correlation: providerCorrelation(input.idempotencyKey),
+            idempotencyKey: input.idempotencyKey,
+            paymentIntentId: payment.providerPaymentIntentId,
+            reason: input.reason,
+          })
+          .pipe(
+            Effect.mapError(() => mapProviderFailure("Payment refund failed."))
+          );
+        const refund: PaymentRefund = {
           amount,
+          createdAt: clock.now(),
           currencyCode: payment.currencyCode,
-        },
-        idempotencyKey: input.idempotencyKey,
-        paymentIntentId: payment.providerPaymentIntentId,
-      });
-      const capture: PaymentCapture = {
-        amount,
-        createdAt: clock.now(),
-        currencyCode: payment.currencyCode,
-        id: createPaymentCaptureId(
-          createPrefixedId(idGenerator, PAYMENT_CAPTURE_ID_PREFIX)
-        ),
-        idempotencyKey: input.idempotencyKey,
-        paymentId: payment.id,
-        providerCaptureId: providerIntent.id,
-        status: providerIntent.status === "captured" ? "succeeded" : "pending",
-      };
+          id: yield* createPaymentRefundIdEffect(
+            createPrefixedId(idGenerator, PAYMENT_REFUND_ID_PREFIX)
+          ),
+          idempotencyKey: input.idempotencyKey,
+          paymentId: payment.id,
+          providerRefundId: providerRefund.id,
+          reason: input.reason,
+          status: providerRefund.status,
+        };
 
-      await repository.savePayment({
-        ...payment,
-        status: amount < payment.amount ? "partially-captured" : "captured",
-        updatedAt: clock.now(),
-      });
-      await updateCollectionStatus(
-        await requireCollection(repository, payment.collectionId),
-        amount < payment.amount ? "partially-captured" : "captured"
-      );
-
-      return repository.saveCapture(capture);
-    },
-    createAccountHolder: async (input) => {
-      const provider = requireProvider(providerRegistry, input.providerKey);
-      const providerCustomer = await provider.createCustomer({
-        email: input.email,
-        metadata: input.metadata,
-        name: input.name,
-      });
-      const existing = await repository.findAccountHolderByProviderId({
-        providerAccountHolderId: providerCustomer.id,
-        providerKey: input.providerKey,
-      });
-
-      if (existing) {
-        return existing;
-      }
-
-      const now = clock.now();
-      const accountHolder: PaymentAccountHolder = {
-        createdAt: now,
-        customerId: input.customerId,
-        email: input.email,
-        id: createPaymentAccountHolderId(
-          createPrefixedId(idGenerator, PAYMENT_ACCOUNT_HOLDER_ID_PREFIX)
-        ),
-        metadata: input.metadata ?? {},
-        providerAccountHolderId: providerCustomer.id,
-        providerKey: input.providerKey,
-        updatedAt: now,
-      };
-
-      return repository.saveAccountHolder(accountHolder);
-    },
-    createCollection: (input) => {
-      const now = clock.now();
-      const collection: PaymentCollection = {
-        amount: input.amount,
-        cartId: input.cartId,
-        createdAt: now,
-        currencyCode: normalizeCurrencyCode(input.currencyCode),
-        id: createPaymentCollectionId(
-          createPrefixedId(idGenerator, PAYMENT_COLLECTION_ID_PREFIX)
-        ),
-        metadata: input.metadata ?? {},
-        status: "pending",
-        updatedAt: now,
-      };
-
-      return repository.saveCollection(collection);
-    },
-    createSession: async (input) => {
-      const collection = await requireCollection(
-        repository,
-        createPaymentCollectionId(input.collectionId)
-      );
-      const provider = requireProvider(providerRegistry, input.providerKey);
-      const accountHolder = input.accountHolderId
-        ? await repository.findAccountHolderById(
-            createPaymentAccountHolderId(input.accountHolderId)
-          )
-        : null;
-      const checkoutSession =
-        input.successUrl && input.cancelUrl
-          ? await provider.createCheckoutSession({
-              amount: {
-                amount: collection.amount,
-                currencyCode: collection.currencyCode,
-              },
-              cancelUrl: input.cancelUrl,
-              customerId: accountHolder?.providerAccountHolderId,
-              idempotencyKey: input.idempotencyKey,
-              metadata: input.metadata,
-              mode: "payment",
-              successUrl: input.successUrl,
-            })
-          : null;
-      const now = clock.now();
-      const session: PaymentSession = {
-        amount: collection.amount,
-        collectionId: collection.id,
-        createdAt: now,
-        currencyCode: collection.currencyCode,
-        id: createPaymentSessionId(
-          createPrefixedId(idGenerator, PAYMENT_SESSION_ID_PREFIX)
-        ),
-        metadata: input.metadata ?? {},
-        providerCheckoutSessionId: checkoutSession?.id,
-        providerKey: input.providerKey,
-        providerPaymentIntentId: checkoutSession?.paymentIntentId,
-        status: "pending",
-        updatedAt: now,
-      };
-
-      return repository.saveSession(session);
-    },
-    getCollectionDetail: async (id) => {
-      const collection = await repository.findCollectionById(id);
-
-      if (!collection) {
-        return null;
-      }
-
-      const [payments, sessions] = await Promise.all([
-        repository.listPaymentsForCollection(id),
-        repository.listSessionsForCollection(id),
-      ]);
-
-      return {
-        collection,
-        payments,
-        sessions,
-      };
-    },
-    listCollections: () => repository.listCollections(),
-    parseProviderWebhook: async ({ headers, payload, providerKey }) => {
-      const provider = requireProvider(providerRegistry, providerKey);
-      const result = await provider.parseWebhook({ headers, payload });
-
-      return mapProviderEventsToPaymentActions(result.events);
-    },
-    refundPayment: async (input) => {
-      const existing = await repository.findRefundByIdempotencyKey(
-        input.idempotencyKey
-      );
-
-      if (existing) {
-        return existing;
-      }
-
-      const payment = await repository.findPaymentById(
-        createPaymentId(input.paymentId)
-      );
-
-      if (!payment) {
-        throw new Error(`Payment "${input.paymentId}" was not found.`);
-      }
-
-      const provider = requireProvider(providerRegistry, payment.providerKey);
-      const amount = input.amount ?? payment.amount;
-
-      if (amount > payment.amount) {
-        throw new Error(
-          `Refund amount ${amount} exceeds payment amount ${payment.amount}.`
+        yield* updateCollectionStatus(
+          yield* requireCollection(repository, payment.collectionId),
+          amount < payment.amount ? "partially-refunded" : "refunded"
         );
-      }
 
-      const providerRefund = await provider.refundPayment({
-        amount: {
-          amount,
-          currencyCode: payment.currencyCode,
-        },
-        idempotencyKey: input.idempotencyKey,
-        paymentIntentId: payment.providerPaymentIntentId,
-        reason: input.reason,
-      });
-      const refund: PaymentRefund = {
-        amount,
-        createdAt: clock.now(),
-        currencyCode: payment.currencyCode,
-        id: createPaymentRefundId(
-          createPrefixedId(idGenerator, PAYMENT_REFUND_ID_PREFIX)
-        ),
-        idempotencyKey: input.idempotencyKey,
-        paymentId: payment.id,
-        providerRefundId: providerRefund.id,
-        reason: input.reason,
-        status: providerRefund.status,
-      };
+        return yield* repository.saveRefund(refund);
+      }),
+    registerProvider: (providerKey) =>
+      Effect.gen(function* registerPaymentProviderEffect() {
+        const provider = yield* requireProvider(providerRegistry, providerKey);
+        const now = clock.now();
+        const record: PaymentProviderRecord = {
+          createdAt: now,
+          id: yield* createPaymentProviderRecordIdEffect(
+            createPrefixedId(idGenerator, PAYMENT_PROVIDER_RECORD_ID_PREFIX)
+          ),
+          isEnabled: true,
+          providerKey,
+          providerRecordId: provider.id,
+          updatedAt: now,
+        };
 
-      await updateCollectionStatus(
-        await requireCollection(repository, payment.collectionId),
-        amount < payment.amount ? "partially-refunded" : "refunded"
-      );
-
-      return repository.saveRefund(refund);
-    },
-    registerProvider: (providerKey) => {
-      const provider = requireProvider(providerRegistry, providerKey);
-      const now = clock.now();
-      const record: PaymentProviderRecord = {
-        createdAt: now,
-        id: createPaymentProviderRecordId(
-          createPrefixedId(idGenerator, PAYMENT_PROVIDER_RECORD_ID_PREFIX)
-        ),
-        isEnabled: true,
-        providerKey,
-        providerRecordId: provider.id,
-        updatedAt: now,
-      };
-
-      return repository.saveProviderRecord(record);
-    },
+        return yield* repository.saveProviderRecord(record);
+      }),
   };
 };
 
@@ -670,6 +777,16 @@ export const defaultPaymentService = createPaymentService();
 export const createPaymentServiceLayer = (
   options: CreatePaymentServiceOptions
 ) => Layer.succeed(PaymentService, createPaymentService(options));
+
+export const PaymentServiceLayer = Layer.effect(
+  PaymentService,
+  Effect.gen(function* createPaymentServiceLayerEffect() {
+    const clock = yield* ClockService;
+    const idGenerator = yield* IdGeneratorService;
+    const repository = yield* PaymentRepositoryService;
+    return createPaymentService({ clock, idGenerator, repository });
+  })
+);
 
 export const createPaymentServiceWithProviders = (
   options: Omit<CreatePaymentServiceOptions, "providerRegistry"> & {
@@ -680,3 +797,20 @@ export const createPaymentServiceWithProviders = (
     ...options,
     providerRegistry: createPaymentProviderRegistry(options.providers),
   });
+
+/**
+ * Temporary Promise facade until checkout consumes PaymentService effects
+ * directly.
+ */
+export const createPaymentPromiseServiceFromEffectService = (
+  service: PaymentServiceShape
+) => ({
+  authorizePaymentSession: (input: AuthorizePaymentSessionInput) =>
+    Effect.runPromise(service.authorizePaymentSession(input)),
+  capturePayment: (input: CapturePaymentInput) =>
+    Effect.runPromise(service.capturePayment(input)),
+  createCollection: (input: CreatePaymentCollectionInput) =>
+    Effect.runPromise(service.createCollection(input)),
+  createSession: (input: CreatePaymentSessionInput) =>
+    Effect.runPromise(service.createSession(input)),
+});

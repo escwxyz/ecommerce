@@ -1,7 +1,7 @@
 // oxlint-disable-next-line oxc/no-barrel-file
 export * from "./promotion-id";
 // oxlint-disable-next-line oxc/no-barrel-file
-export * from "./promotion.database-schema";
+export * from "./promotion.errors";
 // oxlint-disable-next-line oxc/no-barrel-file
 export * from "./promotion.schema";
 // oxlint-disable-next-line oxc/no-barrel-file

@@ -1,4 +1,4 @@
 export {
-  InMemoryInventoryCoordinator,
-  createInMemoryInventoryCoordinator,
-} from "./in-memory-inventory.coordinator";
+  createInMemoryInventoryActorService,
+  InMemoryInventoryActorService,
+} from "./in-memory-inventory.actor";

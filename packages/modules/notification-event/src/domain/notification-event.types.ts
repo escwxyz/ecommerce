@@ -1,106 +1,67 @@
-import type { CommerceEventEnvelope } from "@ecommerce/core/events";
 import type { CommerceQueueRetryPolicy } from "@ecommerce/core/queues";
-import type { z } from "zod";
+import type { Effect as EffectValue } from "effect/Effect";
 
+import type { NotificationEventExpectedError } from "./notification-event.errors";
 import type {
   DispatchNotificationInputSchema,
   EventDeadLetterApiSchema,
+  EventDeadLetterListApiSchema,
+  EventDeadLetterRecordSchema,
   EventDeliveryFailureInputSchema,
+  EventEnvelopeApiSchema,
+  EventEnvelopeSchema,
   EventOutboxApiSchema,
+  EventOutboxRecordSchema,
   EventOutboxStatusSchema,
   EventPublishInputSchema,
   EventPublishResultApiSchema,
+  EventPublishResultSchema,
   NotificationChannelSchema,
   NotificationDispatchApiSchema,
   NotificationDispatchListApiSchema,
+  NotificationDispatchRecordSchema,
   NotificationDispatchStatusSchema,
+  NotificationProviderApiSchema,
+  NotificationProviderRecordSchema,
   NotificationRecipientSchema,
   NotificationTemplateSchema,
   UpsertNotificationTemplateInputSchema,
 } from "./notification-event.schema";
 
-export type EventOutboxStatus = z.infer<typeof EventOutboxStatusSchema>;
-export type EventPublishInput = z.infer<typeof EventPublishInputSchema>;
-export type EventDeliveryFailureInput = z.infer<
-  typeof EventDeliveryFailureInputSchema
->;
-export type EventOutboxApiRecord = z.infer<typeof EventOutboxApiSchema>;
-export type EventPublishResultApiRecord = z.infer<
-  typeof EventPublishResultApiSchema
->;
-export type EventDeadLetterApiRecord = z.infer<typeof EventDeadLetterApiSchema>;
-export type NotificationChannel = z.infer<typeof NotificationChannelSchema>;
-export type NotificationRecipient = z.infer<typeof NotificationRecipientSchema>;
-export type NotificationTemplate = z.infer<typeof NotificationTemplateSchema>;
-export type UpsertNotificationTemplateInput = z.infer<
-  typeof UpsertNotificationTemplateInputSchema
->;
-export type DispatchNotificationInput = z.infer<
-  typeof DispatchNotificationInputSchema
->;
-export type NotificationDispatchStatus = z.infer<
-  typeof NotificationDispatchStatusSchema
->;
-export type NotificationDispatchApiRecord = z.infer<
-  typeof NotificationDispatchApiSchema
->;
-export type NotificationDispatchListApiRecord = z.infer<
-  typeof NotificationDispatchListApiSchema
->;
-
-export interface EventOutboxRecord {
-  readonly attempts: number;
-  readonly availableAt: Date;
-  readonly createdAt: Date;
-  readonly envelope: CommerceEventEnvelope;
-  readonly eventId: string;
-  readonly id: string;
-  readonly lastError?: string;
-  readonly status: EventOutboxStatus;
-  readonly updatedAt: Date;
-}
-
-export interface EventDeadLetterRecord {
-  readonly attempts: number;
-  readonly createdAt: Date;
-  readonly eventId: string;
-  readonly id: string;
-  readonly outboxId: string;
-  readonly reason: string;
-}
-
-export interface EventPublishResult {
-  readonly envelope: CommerceEventEnvelope;
-  readonly outbox: EventOutboxRecord;
-}
-
-export interface NotificationProviderRecord {
-  readonly createdAt: Date;
-  readonly id: string;
-  readonly isEnabled: boolean;
-  readonly providerKey: string;
-  readonly updatedAt: Date;
-}
-
-export interface NotificationDispatchRecord {
-  readonly attempts: number;
-  readonly causationId?: string;
-  readonly channel: NotificationChannel;
-  readonly correlationId: string;
-  readonly createdAt: Date;
-  readonly deliveredAt?: Date;
-  readonly id: string;
-  readonly idempotencyKey: string;
-  readonly lastError?: string;
-  readonly payload: unknown;
-  readonly providerKey: string;
-  readonly providerMessageId?: string;
-  readonly recipient: NotificationRecipient;
-  readonly status: NotificationDispatchStatus;
-  readonly templateId: string;
-  readonly updatedAt: Date;
-  readonly workflowRunId?: string;
-}
+export type EventEnvelope = typeof EventEnvelopeSchema.Type;
+export type EventEnvelopeApiRecord = typeof EventEnvelopeApiSchema.Type;
+export type EventOutboxStatus = typeof EventOutboxStatusSchema.Type;
+export type EventPublishInput = typeof EventPublishInputSchema.Type;
+export type EventDeliveryFailureInput =
+  typeof EventDeliveryFailureInputSchema.Type;
+export type EventOutboxRecord = typeof EventOutboxRecordSchema.Type;
+export type EventOutboxApiRecord = typeof EventOutboxApiSchema.Type;
+export type EventPublishResult = typeof EventPublishResultSchema.Type;
+export type EventPublishResultApiRecord =
+  typeof EventPublishResultApiSchema.Type;
+export type EventDeadLetterRecord = typeof EventDeadLetterRecordSchema.Type;
+export type EventDeadLetterApiRecord = typeof EventDeadLetterApiSchema.Type;
+export type EventDeadLetterListApiRecord =
+  typeof EventDeadLetterListApiSchema.Type;
+export type NotificationChannel = typeof NotificationChannelSchema.Type;
+export type NotificationRecipient = typeof NotificationRecipientSchema.Type;
+export type NotificationTemplate = typeof NotificationTemplateSchema.Type;
+export type UpsertNotificationTemplateInput =
+  typeof UpsertNotificationTemplateInputSchema.Type;
+export type NotificationProviderRecord =
+  typeof NotificationProviderRecordSchema.Type;
+export type NotificationProviderApiRecord =
+  typeof NotificationProviderApiSchema.Type;
+export type DispatchNotificationInput =
+  typeof DispatchNotificationInputSchema.Type;
+export type NotificationDispatchStatus =
+  typeof NotificationDispatchStatusSchema.Type;
+export type NotificationDispatchRecord =
+  typeof NotificationDispatchRecordSchema.Type;
+export type NotificationDispatchApiRecord =
+  typeof NotificationDispatchApiSchema.Type;
+export type NotificationDispatchListApiRecord =
+  typeof NotificationDispatchListApiSchema.Type;
 
 export interface NotificationProviderDeliveryInput {
   readonly dispatch: NotificationDispatchRecord;
@@ -109,9 +70,9 @@ export interface NotificationProviderDeliveryInput {
 
 export interface NotificationProviderDeliveryResult {
   readonly deliveredAt?: Date;
+  readonly error?: string;
   readonly messageId: string;
   readonly status: "delivered" | "failed" | "queued";
-  readonly error?: string;
 }
 
 export interface NotificationProvider {
@@ -122,25 +83,45 @@ export interface NotificationProvider {
 }
 
 export interface NotificationEventRepository {
-  findDispatchByIdempotencyKey(
+  readonly findDispatchByIdempotencyKey: (
     idempotencyKey: string
-  ): Promise<NotificationDispatchRecord | null>;
-  findOutboxById(outboxId: string): Promise<EventOutboxRecord | null>;
-  findTemplateByKey(input: {
+  ) => EffectValue<
+    NotificationDispatchRecord | null,
+    NotificationEventExpectedError
+  >;
+  readonly findOutboxById: (
+    outboxId: string
+  ) => EffectValue<EventOutboxRecord | null, NotificationEventExpectedError>;
+  readonly findTemplateByKey: (input: {
     readonly channel: NotificationChannel;
     readonly templateKey: string;
-  }): Promise<NotificationTemplate | null>;
-  listDeadLetters(): Promise<readonly EventDeadLetterRecord[]>;
-  listDispatches(): Promise<readonly NotificationDispatchRecord[]>;
-  saveDeadLetter(record: EventDeadLetterRecord): Promise<EventDeadLetterRecord>;
-  saveDispatch(
+  }) => EffectValue<
+    NotificationTemplate | null,
+    NotificationEventExpectedError
+  >;
+  readonly listDeadLetters: EffectValue<
+    readonly EventDeadLetterRecord[],
+    NotificationEventExpectedError
+  >;
+  readonly listDispatches: EffectValue<
+    readonly NotificationDispatchRecord[],
+    NotificationEventExpectedError
+  >;
+  readonly saveDeadLetter: (
+    record: EventDeadLetterRecord
+  ) => EffectValue<EventDeadLetterRecord, NotificationEventExpectedError>;
+  readonly saveDispatch: (
     record: NotificationDispatchRecord
-  ): Promise<NotificationDispatchRecord>;
-  saveOutbox(record: EventOutboxRecord): Promise<EventOutboxRecord>;
-  saveProviderRecord(
+  ) => EffectValue<NotificationDispatchRecord, NotificationEventExpectedError>;
+  readonly saveOutbox: (
+    record: EventOutboxRecord
+  ) => EffectValue<EventOutboxRecord, NotificationEventExpectedError>;
+  readonly saveProviderRecord: (
     record: NotificationProviderRecord
-  ): Promise<NotificationProviderRecord>;
-  saveTemplate(template: NotificationTemplate): Promise<NotificationTemplate>;
+  ) => EffectValue<NotificationProviderRecord, NotificationEventExpectedError>;
+  readonly saveTemplate: (
+    template: NotificationTemplate
+  ) => EffectValue<NotificationTemplate, NotificationEventExpectedError>;
 }
 
 export type EventRetryPolicy = CommerceQueueRetryPolicy;

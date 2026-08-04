@@ -1,93 +1,109 @@
-import type { Brand } from "@ecommerce/core/brand";
-import type { z } from "zod";
+import { Context } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 
+import type { ProductExpectedError } from "./product.errors";
 import type {
   CreateProductInputSchema,
+  ProductApiListSchema,
+  ProductApiRecordSchema,
+  ProductCatalogApiSchema,
+  ProductCatalogSchema,
   ProductCategoryReferenceSchema,
   ProductCollectionReferenceSchema,
+  ProductIdentifierSchema,
+  ProductIdSchema,
   ProductMediaReferenceSchema,
   ProductOptionSchema,
   ProductOptionValueSchema,
-  ProductCatalogApiSchema,
-  ProductCatalogSchema,
-  ProductApiRecordSchema,
-  ProductIdentifierSchema,
+  ProductRecordSchema,
+  ProductStatusSchema,
   ProductVariantSchema,
   ProductVariantStatusSchema,
   ProductVariantValidationInputSchema,
   ProductVariantValidationResultSchema,
-  ProductRecordSchema,
-  ProductStatusSchema,
   UpdateProductCatalogInputSchema,
 } from "./product.schema";
 
-export type ProductStatus = z.infer<typeof ProductStatusSchema>;
-export type ProductVariantStatus = z.infer<typeof ProductVariantStatusSchema>;
-export type ProductId = Brand<string, "product">;
-export type CreateProductInput = z.infer<typeof CreateProductInputSchema>;
-export type UpdateProductCatalogInput = z.infer<
-  typeof UpdateProductCatalogInputSchema
->;
-export type ProductIdentifierInput = z.infer<typeof ProductIdentifierSchema>;
-export type ProductVariantValidationInput = z.infer<
-  typeof ProductVariantValidationInputSchema
->;
-export type ProductVariantValidationResult = z.infer<
-  typeof ProductVariantValidationResultSchema
->;
-export type ProductCatalog = z.infer<typeof ProductCatalogSchema>;
-export type ProductCatalogApi = z.infer<typeof ProductCatalogApiSchema>;
-export type ProductOption = z.infer<typeof ProductOptionSchema>;
-export type ProductOptionValue = z.infer<typeof ProductOptionValueSchema>;
-export type ProductVariant = z.infer<typeof ProductVariantSchema>;
-export type ProductCollectionReference = z.infer<
-  typeof ProductCollectionReferenceSchema
->;
-export type ProductCategoryReference = z.infer<
-  typeof ProductCategoryReferenceSchema
->;
-export type ProductMediaReference = z.infer<typeof ProductMediaReferenceSchema>;
-export type ProductRecord = Omit<z.infer<typeof ProductRecordSchema>, "id"> & {
-  readonly id: ProductId;
-};
-export type ProductApiRecord = z.infer<typeof ProductApiRecordSchema>;
+export type ProductStatus = typeof ProductStatusSchema.Type;
+export type ProductVariantStatus = typeof ProductVariantStatusSchema.Type;
+export type ProductId = typeof ProductIdSchema.Type;
+export type CreateProductInput = typeof CreateProductInputSchema.Type;
+export type UpdateProductCatalogInput =
+  typeof UpdateProductCatalogInputSchema.Type;
+export type ProductIdentifierInput = typeof ProductIdentifierSchema.Type;
+export type ProductVariantValidationInput =
+  typeof ProductVariantValidationInputSchema.Type;
+export type ProductVariantValidationResult =
+  typeof ProductVariantValidationResultSchema.Type;
+export type ProductCatalog = typeof ProductCatalogSchema.Type;
+export type ProductCatalogApi = typeof ProductCatalogApiSchema.Type;
+export type ProductOption = typeof ProductOptionSchema.Type;
+export type ProductOptionValue = typeof ProductOptionValueSchema.Type;
+export type ProductVariant = typeof ProductVariantSchema.Type;
+export type ProductCollectionReference =
+  typeof ProductCollectionReferenceSchema.Type;
+export type ProductCategoryReference =
+  typeof ProductCategoryReferenceSchema.Type;
+export type ProductMediaReference = typeof ProductMediaReferenceSchema.Type;
+export type ProductRecord = typeof ProductRecordSchema.Type;
+export type ProductApiRecord = typeof ProductApiRecordSchema.Type;
+export type ProductApiList = typeof ProductApiListSchema.Type;
 
 export interface ProductRepository {
-  addProductCategory(
+  readonly addProductCategory: (
     productId: ProductId,
     category: ProductCategoryReference
-  ): Promise<ProductRecord>;
-  addProductCollection(
+  ) => EffectValue<ProductRecord, ProductExpectedError>;
+  readonly addProductCollection: (
     productId: ProductId,
     collection: ProductCollectionReference
-  ): Promise<ProductRecord>;
-  addProductMedia(
+  ) => EffectValue<ProductRecord, ProductExpectedError>;
+  readonly addProductMedia: (
     productId: ProductId,
     media: ProductMediaReference
-  ): Promise<ProductRecord>;
-  addProductOption(
+  ) => EffectValue<ProductRecord, ProductExpectedError>;
+  readonly addProductOption: (
     productId: ProductId,
     option: ProductOption
-  ): Promise<ProductRecord>;
-  addProductOptionValue(input: {
+  ) => EffectValue<ProductRecord, ProductExpectedError>;
+  readonly addProductOptionValue: (input: {
     readonly optionId: string;
     readonly productId: ProductId;
     readonly value: ProductOptionValue;
-  }): Promise<ProductRecord>;
-  addProductTag(productId: ProductId, tag: string): Promise<ProductRecord>;
-  addProductVariant(
+  }) => EffectValue<ProductRecord, ProductExpectedError>;
+  readonly addProductTag: (
+    productId: ProductId,
+    tag: string
+  ) => EffectValue<ProductRecord, ProductExpectedError>;
+  readonly addProductVariant: (
     productId: ProductId,
     variant: ProductVariant
-  ): Promise<ProductRecord>;
-  findProductByHandle(handle: string): Promise<ProductRecord | null>;
-  findProductById(id: ProductId): Promise<ProductRecord | null>;
-  listProducts(): Promise<readonly ProductRecord[]>;
-  saveProduct(product: ProductRecord): Promise<ProductRecord>;
-  setProductCatalogMetadata(input: {
+  ) => EffectValue<ProductRecord, ProductExpectedError>;
+  readonly findProductByHandle: (
+    handle: string
+  ) => EffectValue<ProductRecord | null, ProductExpectedError>;
+  readonly findProductById: (
+    id: ProductId
+  ) => EffectValue<ProductRecord | null, ProductExpectedError>;
+  readonly listProducts: EffectValue<
+    readonly ProductRecord[],
+    ProductExpectedError
+  >;
+  readonly saveProduct: (
+    product: ProductRecord
+  ) => EffectValue<ProductRecord, ProductExpectedError>;
+  readonly setProductCatalogMetadata: (input: {
     readonly metadata: ProductCatalog["metadata"];
     readonly productId: ProductId;
     readonly publishedAt?: Date | null;
     readonly searchableText?: string;
-  }): Promise<ProductRecord>;
-  updateProduct(product: ProductRecord): Promise<ProductRecord>;
+  }) => EffectValue<ProductRecord, ProductExpectedError>;
+  readonly updateProduct: (
+    product: ProductRecord
+  ) => EffectValue<ProductRecord, ProductExpectedError>;
 }
+
+/** Effect-native product repository contract consumed by product services. */
+export const ProductRepositoryService = Context.Service<ProductRepository>(
+  "@ecommerce/product/ProductRepositoryService"
+);

@@ -1,11 +1,10 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { Effect as EffectType } from "effect/Effect";
 
 import type { AdminPermissionDescriptor } from "../admin/index";
 import { normalizeAdminPermission } from "../admin/index";
 import type {
   CommerceAdminSurface,
-  CommerceModuleApiFragment,
   CommerceModuleDefinition,
 } from "../modules/index";
 import {
@@ -21,10 +20,110 @@ import {
   composeCommercePermissions,
   createCommercePermissionValidator,
 } from "../permissions/index";
+import type { CorrelationContext } from "../telemetry/index";
+import { withOperationTelemetry } from "../telemetry/index";
+import type { NativePluginExecutableContribution } from "./native-plugin-contributions";
+import { createNativePluginManifest } from "./native-plugin-manifest";
 import type {
-  CommerceWorkflowDefinition,
-  CommerceWorkflowStep,
-} from "../workflows/index";
+  NativePluginManifest,
+  NativePluginManifestInput,
+} from "./native-plugin-manifest";
+import {
+  createSandboxPluginManifest,
+  SandboxBridgeContextSchema,
+  SandboxBridgeOperationSchema,
+  SandboxEntrypointResponseSchema,
+  SandboxPluginGrantPolicySchema,
+  SandboxPluginRuntimeErrorSchema,
+} from "./sandbox-plugin-schema";
+
+export {
+  SandboxBridgeFailure,
+  SandboxCapabilityBridgeService,
+  createSandboxCapabilityBridgeLayer,
+  createSandboxCapabilityBridgeService,
+  invokeSandboxBridgeOperation,
+  type SandboxBridgeQuota,
+  type SandboxCapabilityBridgeHandler,
+  type SandboxCapabilityBridgeHandlerInput,
+  type SandboxCapabilityBridgeInvocation,
+  type SandboxCapabilityBridgeOptions,
+  type SandboxCapabilityBridgeServiceShape,
+} from "./sandbox-bridge-service";
+
+export {
+  defineNativePluginApiGroupContribution,
+  defineNativePluginEventHandlerContribution,
+  defineNativePluginProviderContribution,
+  defineNativePluginServiceContribution,
+  defineNativePluginWorkflowContribution,
+  type NativePluginApiGroupContribution,
+  type NativePluginApiHandlerLayer,
+  type NativePluginEventHandlerContribution,
+  type NativePluginExecutableContribution,
+  type NativePluginExecutableContributionKind,
+  type NativePluginProviderContribution,
+  type NativePluginServiceContribution,
+  type NativePluginWorkflowContribution,
+} from "./native-plugin-contributions";
+
+export {
+  NativePluginCapabilityKeySchema,
+  NativePluginCapabilityListSchema,
+  NativePluginCapabilitySchema,
+  NativePluginIdSchema,
+  NativePluginManifestSchema,
+  NativePluginSchemaVersionSchema,
+  NativePluginTrimmedStringSchema,
+  NativePluginVersionSchema,
+  createNativePluginManifest,
+  decodeNativePluginManifest,
+  type NativePluginCapability,
+  type NativePluginManifest,
+  type NativePluginManifestInput,
+} from "./native-plugin-manifest";
+
+export {
+  CommercePermissionDescriptorSchema,
+  CommercePermissionInputSchema,
+  CommercePluginContributionSetSchema,
+  CommercePluginExtensionPointSchema,
+  CommercePluginStorageDeclarationSchema,
+  SandboxAdminMetadataResponseSchema,
+  SandboxAuditDecisionSchema,
+  SandboxAuditEventSchema,
+  SandboxBridgeAuthContextSchema,
+  SandboxBridgeCapabilityListSchema,
+  SandboxBridgeCapabilitySchema,
+  SandboxBridgeContextSchema,
+  SandboxBridgeOperationSchema,
+  SandboxBridgeOperationTypeSchema,
+  SandboxBridgePermissionCheckInputSchema,
+  SandboxEntrypointResponseSchema,
+  SandboxHookResponseSchema,
+  SandboxLifecycleResponseSchema,
+  SandboxPluginAllowedHostSchema,
+  SandboxPluginBundleIntegritySchema,
+  SandboxPluginBundleReferenceSchema,
+  SandboxPluginEntrypointKindSchema,
+  SandboxPluginEntrypointListSchema,
+  SandboxPluginEntrypointSchema,
+  SandboxPluginGrantPolicySchema,
+  SandboxPluginIdSchema,
+  SandboxPluginLifecycleCompatibilitySchema,
+  SandboxPluginLifecycleStateSchema,
+  SandboxPluginManifestSchema,
+  SandboxPluginRegistrationSchema,
+  SandboxPluginRuntimeErrorSchema,
+  SandboxPluginSchemaVersionSchema,
+  SandboxPluginStorageNamespaceSchema,
+  SandboxPluginTrimmedStringSchema,
+  SandboxPluginVersionSchema,
+  SandboxRouteResponseSchema,
+  SandboxWorkflowStepResponseSchema,
+  createSandboxPluginManifest,
+  decodeSandboxPluginManifest,
+} from "./sandbox-plugin-schema";
 
 export type CommercePluginTier = "native" | "sandbox";
 
@@ -102,17 +201,6 @@ export interface SandboxPluginEntrypoint {
   readonly exportName?: string;
 }
 
-export interface CommercePluginProviderDescriptor<
-  Implementation = unknown,
-  Kind extends string = string,
-> {
-  readonly key: string;
-  readonly contractKey: string;
-  readonly kind: Kind;
-  readonly label?: string;
-  readonly implementation?: Implementation;
-}
-
 export interface CommercePluginExtensionPoint {
   readonly type: "api" | "hook" | "workflow" | "provider" | "admin" | "storage";
   readonly name: string;
@@ -130,6 +218,7 @@ export interface CommercePluginContributionSet {
 export interface CommercePluginManifest {
   readonly id: string;
   readonly version: string;
+  readonly schemaVersion: number;
   readonly tier: CommercePluginTier;
   readonly capabilities: readonly string[];
   readonly allowedHosts?: readonly string[];
@@ -144,9 +233,10 @@ export interface SandboxPluginLifecycleCompatibility {
 
 export interface SandboxPluginManifest extends Omit<
   CommercePluginManifest,
-  "capabilities" | "tier"
+  "capabilities" | "schemaVersion" | "tier"
 > {
   readonly tier: "sandbox";
+  readonly schemaVersion: number;
   readonly capabilities: readonly SandboxBridgeCapability[];
   readonly entrypoints: readonly SandboxPluginEntrypoint[];
   readonly bundle: SandboxPluginBundleReference;
@@ -181,6 +271,7 @@ export interface SandboxBridgeContext {
   readonly tenantId: string;
   readonly scopeId?: string;
   readonly correlationId: string;
+  readonly traceId?: string;
   readonly lifecycleState: SandboxPluginLifecycleState;
   readonly grantedCapabilities: readonly SandboxBridgeCapability[];
   readonly grantedAllowedHosts: readonly string[];
@@ -209,6 +300,7 @@ export interface SandboxAuditEvent {
   readonly decision: SandboxAuditDecision;
   readonly reason: string;
   readonly correlationId: string;
+  readonly traceId?: string;
   readonly tenantId: string;
   readonly lifecycleState?: SandboxPluginLifecycleState;
   readonly entrypointKey?: string;
@@ -228,6 +320,7 @@ export interface SandboxPluginRuntimeError {
   readonly message: string;
   readonly pluginId: string;
   readonly correlationId?: string;
+  readonly traceId?: string;
   readonly reason?: string;
 }
 
@@ -283,6 +376,7 @@ export interface NativePluginLifecycleContext {
   readonly toState: NativePluginLifecycleState;
   readonly fromVersion?: string;
   readonly toVersion?: string;
+  readonly traceId?: string;
 }
 
 export type NativePluginLifecycleHook<Error = never, Requirements = never> = (
@@ -301,11 +395,11 @@ export interface NativePluginLifecycle<Error = never, Requirements = never> {
 export interface NativePluginContributions {
   readonly modules?: readonly CommerceModuleDefinition[];
   readonly permissions?: readonly CommercePermissionDescriptor[];
-  readonly apiFragments?: readonly CommerceModuleApiFragment[];
-  readonly providers?: readonly CommercePluginProviderDescriptor[];
-  readonly lifecycleHooks?: readonly string[];
-  readonly workflowSteps?: readonly CommerceWorkflowStep[];
-  readonly workflows?: readonly CommerceWorkflowDefinition[];
+  readonly services?: readonly NativePluginExecutableContribution<"Service">[];
+  readonly providers?: readonly NativePluginExecutableContribution<"Provider">[];
+  readonly apiGroups?: readonly NativePluginExecutableContribution<"ApiGroup">[];
+  readonly workflows?: readonly NativePluginExecutableContribution<"Workflow">[];
+  readonly eventHandlers?: readonly NativePluginExecutableContribution<"EventHandler">[];
   readonly adminSurfaces?: readonly CommerceAdminSurface[];
   readonly storage?: readonly CommercePluginStorageDeclaration[];
 }
@@ -318,29 +412,59 @@ export interface CommercePluginRegistration {
 export interface NativePluginRegistration<
   Contributions extends NativePluginContributions = NativePluginContributions,
 > {
-  readonly manifest: CommercePluginManifest & {
-    readonly tier: "native";
-  };
+  readonly manifest: NativePluginManifest;
   readonly contributions: Contributions;
   readonly lifecycle?: NativePluginLifecycle;
   readonly state: NativePluginLifecycleState;
 }
 
-export interface NativePluginComposition {
-  readonly plugins: readonly NativePluginRegistration[];
-  readonly activePlugins: readonly NativePluginRegistration[];
+type NativePluginContributionValue<
+  Plugin extends NativePluginRegistration,
+  Key extends keyof NativePluginContributions,
+> =
+  Plugin extends NativePluginRegistration<infer Contributions>
+    ? NonNullable<Contributions[Key]> extends readonly (infer Contribution)[]
+      ? Contribution
+      : never
+    : never;
+
+export interface NativePluginComposition<
+  Plugins extends readonly NativePluginRegistration[] =
+    readonly NativePluginRegistration[],
+> {
+  readonly plugins: Plugins;
+  readonly activePlugins: readonly Plugins[number][];
   readonly modules: readonly CommerceModuleDefinition[];
   readonly moduleGraph: ReturnType<typeof composeCommerceModules>;
   readonly permissions: CommercePermissionComposition;
-  readonly apiFragments: readonly CommerceModuleApiFragment[];
-  readonly providers: readonly CommercePluginProviderDescriptor[];
-  readonly workflowSteps: readonly CommerceWorkflowStep[];
-  readonly workflows: readonly CommerceWorkflowDefinition[];
+  readonly services: readonly NativePluginContributionValue<
+    Plugins[number],
+    "services"
+  >[];
+  readonly providers: readonly NativePluginContributionValue<
+    Plugins[number],
+    "providers"
+  >[];
+  readonly apiGroups: readonly NativePluginContributionValue<
+    Plugins[number],
+    "apiGroups"
+  >[];
+  readonly workflows: readonly NativePluginContributionValue<
+    Plugins[number],
+    "workflows"
+  >[];
+  readonly eventHandlers: readonly NativePluginContributionValue<
+    Plugins[number],
+    "eventHandlers"
+  >[];
   readonly adminSurfaces: readonly CommerceAdminSurface[];
   readonly storage: readonly CommercePluginStorageDeclaration[];
 }
 
+/** Host-owned inputs used to validate trusted plugin composition. */
 export interface NativePluginCompositionOptions {
+  /** Portable host capabilities available to active plugin Layers. */
+  readonly availableCapabilities?: readonly string[];
   readonly permissionValidator?: (
     permission: AdminPermissionDescriptor
   ) => void;
@@ -356,22 +480,25 @@ export interface NativePluginLifecycleTransition {
   readonly to: NativePluginLifecycleState;
 }
 
+/**
+ * Defines a trusted plugin only after its serializable manifest decodes.
+ *
+ * Executable contributions remain separate from the manifest so platform
+ * resources can be supplied later through portable Effect requirements.
+ */
 export const defineNativePlugin = <
   const Contributions extends NativePluginContributions =
     NativePluginContributions,
 >(registration: {
   readonly contributions?: Contributions;
   readonly lifecycle?: NativePluginLifecycle;
-  readonly manifest: Omit<CommercePluginManifest, "tier">;
+  readonly manifest: NativePluginManifestInput;
   readonly modules?: readonly string[];
   readonly state?: NativePluginLifecycleState;
 }): NativePluginRegistration<Contributions> => ({
   ...registration,
   contributions: (registration.contributions ?? {}) as Contributions,
-  manifest: {
-    ...registration.manifest,
-    tier: "native",
-  },
+  manifest: createNativePluginManifest(registration.manifest),
   state: registration.state ?? "active",
 });
 
@@ -511,11 +638,20 @@ const assertValidSandboxEntrypoints = (
 };
 
 export const defineSandboxPlugin = (registration: {
-  readonly manifest: Omit<SandboxPluginManifest, "tier">;
+  readonly manifest: Omit<SandboxPluginManifest, "schemaVersion" | "tier"> & {
+    readonly schemaVersion?: number;
+  };
   readonly permissionValidator?: (permission: CommercePermissionInput) => void;
   readonly state?: SandboxPluginLifecycleState;
 }): SandboxPluginRegistration => {
-  const manifest: SandboxPluginManifest = {
+  assertValidSandboxBundle(registration.manifest.bundle);
+  assertValidSandboxEntrypoints(registration.manifest.entrypoints);
+  assertValidContributionSet(
+    registration.manifest.contributions,
+    registration.permissionValidator
+  );
+
+  const decodedManifest = createSandboxPluginManifest({
     ...registration.manifest,
     allowedHosts: toUniqueSorted(
       (registration.manifest.allowedHosts ?? []).map(
@@ -526,7 +662,10 @@ export const defineSandboxPlugin = (registration: {
     storage: registration.manifest.storage
       ? [...registration.manifest.storage]
       : undefined,
-    tier: "sandbox",
+  });
+  const manifest: SandboxPluginManifest = {
+    ...decodedManifest,
+    contributions: registration.manifest.contributions,
   };
 
   assertNonEmptyString(manifest.id, "Sandbox plugin ID");
@@ -534,10 +673,6 @@ export const defineSandboxPlugin = (registration: {
   assertSupportedSandboxCapabilities(manifest.capabilities);
   assertValidSandboxBundle(manifest.bundle);
   assertValidSandboxEntrypoints(manifest.entrypoints);
-  assertValidContributionSet(
-    manifest.contributions,
-    registration.permissionValidator
-  );
 
   for (const storage of manifest.storage ?? []) {
     assertNonEmptyString(storage.namespace, "Sandbox storage namespace");
@@ -602,7 +737,7 @@ export const createSandboxPluginGrantPolicy = ({
     )
   );
 
-  return {
+  return Schema.decodeUnknownSync(SandboxPluginGrantPolicySchema)({
     canActivate:
       deniedCapabilities.length === 0 &&
       deniedHosts.length === 0 &&
@@ -614,65 +749,46 @@ export const createSandboxPluginGrantPolicy = ({
     grantedCapabilities: acceptedCapabilities,
     grantedStorageNamespaces: acceptedStorage,
     pluginId: manifest.id,
-  };
+  });
 };
 
 export const createSandboxRuntimeError = (
   error: SandboxPluginRuntimeError
-): SandboxPluginRuntimeError => error;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+): SandboxPluginRuntimeError =>
+  Schema.decodeUnknownSync(SandboxPluginRuntimeErrorSchema)(error);
 
 export const isSandboxEntrypointResponse = (
   value: unknown
-): value is SandboxEntrypointResponse => {
-  if (!isRecord(value) || typeof value.type !== "string") {
-    return false;
-  }
-
-  switch (value.type) {
-    case "adminMetadata": {
-      return Array.isArray(value.surfaces);
-    }
-    case "hook": {
-      return value.decision === "continue" || value.decision === "stop";
-    }
-    case "lifecycle":
-    case "workflowStep": {
-      return true;
-    }
-    case "routeResponse": {
-      return (
-        typeof value.status === "number" &&
-        Number.isInteger(value.status) &&
-        value.status >= 100 &&
-        value.status <= 599
-      );
-    }
-    default: {
-      return false;
-    }
-  }
-};
+): value is SandboxEntrypointResponse =>
+  Schema.is(SandboxEntrypointResponseSchema)(value);
 
 export const assertSandboxBridgeCapability = (
   context: SandboxBridgeContext,
   operation: SandboxBridgeOperation
 ): SandboxAuditEvent | null => {
-  if (context.grantedCapabilities.includes(operation.capability)) {
+  const decodedContext = Schema.decodeUnknownSync(SandboxBridgeContextSchema)(
+    context
+  );
+  const decodedOperation = Schema.decodeUnknownSync(
+    SandboxBridgeOperationSchema
+  )(operation);
+
+  if (
+    decodedContext.grantedCapabilities.includes(decodedOperation.capability)
+  ) {
     return null;
   }
 
   return {
-    correlationId: context.correlationId,
+    correlationId: decodedContext.correlationId,
     decision: "deny",
-    lifecycleState: context.lifecycleState,
-    operationType: operation.type,
-    pluginId: context.pluginId,
-    reason: `Capability "${operation.capability}" is not granted.`,
-    resource: operation.resource,
-    tenantId: context.tenantId,
+    lifecycleState: decodedContext.lifecycleState,
+    operationType: decodedOperation.type,
+    pluginId: decodedContext.pluginId,
+    reason: `Capability "${decodedOperation.capability}" is not granted.`,
+    resource: decodedOperation.resource,
+    tenantId: decodedContext.tenantId,
+    traceId: decodedContext.traceId,
   };
 };
 
@@ -698,10 +814,13 @@ const assertUniqueValue = ({
   seen.set(value, ownerLabel);
 };
 
-const collectActiveContributions = <Contribution>(
-  plugins: readonly NativePluginRegistration[],
+const collectActiveContributions = <
+  const Plugins extends readonly NativePluginRegistration[],
+  Contribution,
+>(
+  plugins: Plugins,
   getContributions: (
-    plugin: NativePluginRegistration
+    plugin: Plugins[number]
   ) => readonly Contribution[] | undefined
 ): Contribution[] => {
   const contributions: Contribution[] = [];
@@ -713,12 +832,63 @@ const collectActiveContributions = <Contribution>(
   return contributions;
 };
 
+function collectExecutableContributions<
+  Plugin extends NativePluginRegistration,
+  Key extends
+    | "apiGroups"
+    | "eventHandlers"
+    | "providers"
+    | "services"
+    | "workflows",
+>(
+  plugins: readonly Plugin[],
+  key: Key
+): NativePluginContributionValue<Plugin, Key>[];
+function collectExecutableContributions(
+  plugins: readonly NativePluginRegistration[],
+  key: "apiGroups" | "eventHandlers" | "providers" | "services" | "workflows"
+): unknown[] {
+  const contributions: unknown[] = [];
+
+  for (const plugin of plugins) {
+    contributions.push(...(plugin.contributions[key] ?? []));
+  }
+
+  return contributions;
+}
+
+type NativePluginExecutableContributionKey =
+  | "apiGroups"
+  | "eventHandlers"
+  | "providers"
+  | "services"
+  | "workflows";
+
+const assertUniqueExecutableContributionKeys = (
+  plugins: readonly NativePluginRegistration[],
+  key: NativePluginExecutableContributionKey,
+  errorLabel: string
+): void => {
+  const seen = new Map<string, string>();
+
+  for (const plugin of plugins) {
+    for (const contribution of plugin.contributions[key] ?? []) {
+      assertUniqueValue({
+        errorLabel,
+        ownerLabel: plugin.manifest.id,
+        seen,
+        value: contribution.key,
+      });
+    }
+  }
+};
+
 export const composeNativePlugins = <
   const Plugins extends readonly NativePluginRegistration[],
 >(
   plugins: Plugins,
   options: NativePluginCompositionOptions = {}
-): NativePluginComposition => {
+): NativePluginComposition<Plugins> => {
   const pluginIds = new Map<string, string>();
 
   for (const plugin of plugins) {
@@ -730,7 +900,49 @@ export const composeNativePlugins = <
     });
   }
 
-  const activePlugins = plugins.filter((plugin) => plugin.state === "active");
+  const activePlugins: Plugins[number][] = plugins
+    .filter((plugin) => plugin.state === "active")
+    .toSorted((left, right) =>
+      left.manifest.id.localeCompare(right.manifest.id)
+    );
+  const availableCapabilities = new Set(options.availableCapabilities);
+
+  for (const plugin of activePlugins) {
+    for (const capability of plugin.manifest.capabilities) {
+      if (capability.required && !availableCapabilities.has(capability.key)) {
+        throw new Error(
+          `Native plugin "${plugin.manifest.id}" requires unavailable capability "${capability.key}".`
+        );
+      }
+    }
+  }
+
+  assertUniqueExecutableContributionKeys(
+    activePlugins,
+    "services",
+    "service key"
+  );
+  assertUniqueExecutableContributionKeys(
+    activePlugins,
+    "providers",
+    "provider key"
+  );
+  assertUniqueExecutableContributionKeys(
+    activePlugins,
+    "apiGroups",
+    "API group key"
+  );
+  assertUniqueExecutableContributionKeys(
+    activePlugins,
+    "workflows",
+    "workflow key"
+  );
+  assertUniqueExecutableContributionKeys(
+    activePlugins,
+    "eventHandlers",
+    "event handler key"
+  );
+
   const modules = collectActiveContributions(
     activePlugins,
     (plugin) => plugin.contributions.modules
@@ -751,6 +963,7 @@ export const composeNativePlugins = <
   const adminPermissionValidator =
     options.permissionValidator ?? composedPermissionValidator;
   const adminSurfaceKeys = new Map<string, string>();
+  const storageNamespaces = new Map<string, string>();
 
   for (const plugin of activePlugins) {
     for (const surface of plugin.contributions.adminSurfaces ?? []) {
@@ -766,6 +979,15 @@ export const composeNativePlugins = <
         value: surface.key,
       });
     }
+
+    for (const storage of plugin.contributions.storage ?? []) {
+      assertUniqueValue({
+        errorLabel: "storage namespace",
+        ownerLabel: plugin.manifest.id,
+        seen: storageNamespaces,
+        value: storage.namespace,
+      });
+    }
   }
 
   return {
@@ -774,30 +996,22 @@ export const composeNativePlugins = <
       activePlugins,
       (plugin) => plugin.contributions.adminSurfaces
     ),
-    apiFragments: collectActiveContributions(
+    apiGroups: collectExecutableContributions(activePlugins, "apiGroups"),
+    eventHandlers: collectExecutableContributions(
       activePlugins,
-      (plugin) => plugin.contributions.apiFragments
+      "eventHandlers"
     ),
     moduleGraph,
     modules,
     permissions,
     plugins,
-    providers: collectActiveContributions(
-      activePlugins,
-      (plugin) => plugin.contributions.providers
-    ),
+    providers: collectExecutableContributions(activePlugins, "providers"),
+    services: collectExecutableContributions(activePlugins, "services"),
     storage: collectActiveContributions(
       activePlugins,
       (plugin) => plugin.contributions.storage
     ),
-    workflowSteps: collectActiveContributions(
-      activePlugins,
-      (plugin) => plugin.contributions.workflowSteps
-    ),
-    workflows: collectActiveContributions(
-      activePlugins,
-      (plugin) => plugin.contributions.workflows
-    ),
+    workflows: collectExecutableContributions(activePlugins, "workflows"),
   };
 };
 
@@ -883,6 +1097,20 @@ export interface RunNativePluginLifecycleHookInput {
   readonly toVersion?: string;
 }
 
+/** Correlated host request for one validated lifecycle state transition. */
+export interface TransitionNativePluginInput {
+  readonly correlation?: CorrelationContext;
+  readonly event: NativePluginLifecycleEvent;
+  readonly fromVersion?: string;
+  readonly toVersion?: string;
+}
+
+/**
+ * Runs the hook for an already selected lifecycle transition.
+ *
+ * Hosts should normally call `transitionNativePlugin` so state changes and
+ * telemetry remain coupled to successful hook completion.
+ */
 export const runNativePluginLifecycleHook = <
   Error = never,
   Requirements = never,
@@ -911,3 +1139,73 @@ export const runNativePluginLifecycleHook = <
     toVersion: input.toVersion,
   });
 };
+
+/**
+ * Runs one validated lifecycle hook and returns a registration in its next
+ * state only after the hook succeeds.
+ */
+export const transitionNativePlugin = <
+  Contributions extends NativePluginContributions,
+  Error = never,
+  Requirements = never,
+>(
+  plugin: NativePluginRegistration<Contributions>,
+  input: TransitionNativePluginInput
+): EffectType<NativePluginRegistration<Contributions>, Error, Requirements> => {
+  const transition = getNativePluginLifecycleTransition({
+    event: input.event,
+    from: plugin.state,
+  });
+
+  return runNativePluginLifecycleHook<Error, Requirements>(plugin, {
+    event: input.event,
+    fromState: plugin.state,
+    fromVersion: input.fromVersion,
+    toVersion: input.toVersion,
+  }).pipe(
+    (effect) =>
+      withOperationTelemetry(effect, {
+        attributes: {
+          event: input.event,
+          fromState: plugin.state,
+          pluginId: plugin.manifest.id,
+          pluginVersion: plugin.manifest.version,
+          toState: transition.to,
+        },
+        correlation: input.correlation ?? {
+          requestId: `native-plugin:${plugin.manifest.id}:${input.event}`,
+        },
+        name: "plugin.lifecycle",
+      }),
+    Effect.as({
+      ...plugin,
+      state: transition.to,
+    })
+  );
+};
+
+/**
+ * Dispatches one lifecycle event sequentially in stable plugin-ID order.
+ *
+ * The returned registrations use the same order so callers can persist or
+ * compose the deterministic post-transition state directly.
+ */
+export const transitionNativePlugins = <
+  const Plugins extends readonly NativePluginRegistration[],
+  Error = never,
+  Requirements = never,
+>(
+  plugins: Plugins,
+  input: TransitionNativePluginInput
+): EffectType<readonly NativePluginRegistration[], Error, Requirements> =>
+  Effect.forEach(
+    plugins.toSorted((left, right) =>
+      left.manifest.id.localeCompare(right.manifest.id)
+    ),
+    (plugin) =>
+      transitionNativePlugin<NativePluginContributions, Error, Requirements>(
+        plugin,
+        input
+      ),
+    { concurrency: 1 }
+  );

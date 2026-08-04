@@ -61,7 +61,7 @@ describe("admin metadata composition", () => {
         ],
       },
       manifest: {
-        capabilities: ["admin:read"],
+        capabilities: [],
         id: "analytics",
         version: "1.0.0",
       },

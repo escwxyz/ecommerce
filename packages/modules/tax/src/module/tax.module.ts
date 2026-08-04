@@ -1,15 +1,7 @@
 import { defineCommerceModule } from "@ecommerce/core";
 
 import { taxAdminSurfaces } from "../admin";
-import {
-  taxCalculationPolicyTableName,
-  taxCategoryTableName,
-  taxProviderConfigTableName,
-  taxRateTableName,
-  taxRegionTableName,
-} from "../domain";
 import { taxPermissionList } from "../permissions";
-import { taxApiFragment } from "../router";
 import {
   TAX_CALCULATED_EVENT,
   TAX_CATEGORY_CREATED_EVENT,
@@ -28,7 +20,7 @@ export const taxExtensionPoints = {
 export const taxModule = defineCommerceModule({
   contributions: {
     adminSurfaces: taxAdminSurfaces,
-    apiFragments: [taxApiFragment],
+    apiFragments: [],
     eventTypes: [
       TAX_CATEGORY_CREATED_EVENT,
       TAX_PROVIDER_CONFIGURED_EVENT,
@@ -41,13 +33,4 @@ export const taxModule = defineCommerceModule({
   dependencies: [],
   key: "tax",
   providedServices: [{ key: "tax-service", service: TaxService }],
-  schema: {
-    tables: [
-      taxCategoryTableName,
-      taxProviderConfigTableName,
-      taxRegionTableName,
-      taxRateTableName,
-      taxCalculationPolicyTableName,
-    ],
-  },
 });

@@ -1,3 +1,5 @@
+import { Effect, Layer } from "effect";
+
 import type {
   RegionId,
   RegionRecord,
@@ -5,6 +7,10 @@ import type {
   SalesChannelId,
   SalesChannelRecord,
   SalesChannelRepository,
+} from "../domain";
+import {
+  RegionRepositoryService,
+  SalesChannelRepositoryService,
 } from "../domain";
 
 export interface ResettableRegionSalesChannelRepository
@@ -51,32 +57,34 @@ export class InMemoryRegionSalesChannelRepository implements ResettableRegionSal
     this.#salesChannels.clear();
   }
 
-  findRegionById(id: RegionId): Promise<RegionRecord | null> {
-    return Promise.resolve(this.#regions.get(id) ?? null);
+  findRegionById(id: RegionId) {
+    return Effect.succeed(this.#regions.get(id) ?? null);
   }
 
-  findSalesChannelById(id: SalesChannelId): Promise<SalesChannelRecord | null> {
-    return Promise.resolve(this.#salesChannels.get(id) ?? null);
+  findSalesChannelById(id: SalesChannelId) {
+    return Effect.succeed(this.#salesChannels.get(id) ?? null);
   }
 
-  listRegions(): Promise<readonly RegionRecord[]> {
-    return Promise.resolve(sortByCreatedAtDescending(this.#regions.values()));
+  readonly listRegions = Effect.sync(() =>
+    sortByCreatedAtDescending(this.#regions.values())
+  );
+
+  readonly listSalesChannels = Effect.sync(() =>
+    sortByCreatedAtDescending(this.#salesChannels.values())
+  );
+
+  saveRegion(region: RegionRecord) {
+    return Effect.sync(() => {
+      this.#regions.set(region.id, region);
+      return region;
+    });
   }
 
-  listSalesChannels(): Promise<readonly SalesChannelRecord[]> {
-    return Promise.resolve(
-      sortByCreatedAtDescending(this.#salesChannels.values())
-    );
-  }
-
-  saveRegion(region: RegionRecord): Promise<RegionRecord> {
-    this.#regions.set(region.id, region);
-    return Promise.resolve(region);
-  }
-
-  saveSalesChannel(channel: SalesChannelRecord): Promise<SalesChannelRecord> {
-    this.#salesChannels.set(channel.id, channel);
-    return Promise.resolve(channel);
+  saveSalesChannel(channel: SalesChannelRecord) {
+    return Effect.sync(() => {
+      this.#salesChannels.set(channel.id, channel);
+      return channel;
+    });
   }
 }
 
@@ -95,3 +103,23 @@ export const createInMemoryRegionSalesChannelRepository = (): RegionRepository &
 export const createResettableInMemoryRegionSalesChannelRepository =
   (): ResettableRegionSalesChannelRepository =>
     new InMemoryRegionSalesChannelRepository();
+
+export const createInMemoryRegionRepositoryLayer = () =>
+  Layer.effect(
+    RegionRepositoryService,
+    Effect.sync(() => new InMemoryRegionSalesChannelRepository())
+  );
+
+export const createInMemorySalesChannelRepositoryLayer = () =>
+  Layer.effect(
+    SalesChannelRepositoryService,
+    Effect.sync(() => new InMemoryRegionSalesChannelRepository())
+  );
+
+export const createInMemoryRegionSalesChannelRepositoryLayer = () => {
+  const repository = new InMemoryRegionSalesChannelRepository();
+  return Layer.merge(
+    Layer.succeed(RegionRepositoryService, repository),
+    Layer.succeed(SalesChannelRepositoryService, repository)
+  );
+};

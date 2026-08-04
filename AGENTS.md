@@ -16,10 +16,13 @@ Oxlint + Oxfmt (the underlying engine) provides robust linting and formatting. M
 
 Before implementing platform, module, plugin, database, API, auth, admin, or infrastructure work, agents MUST read the current blueprint first:
 
-- `openspec/changes/define-cloudflare-commerce-blueprint/proposal.md`
-- `openspec/changes/define-cloudflare-commerce-blueprint/design.md`
-- `openspec/changes/define-cloudflare-commerce-blueprint/specs/**/*.md`
-- `openspec/changes/define-cloudflare-commerce-blueprint/tasks.md`
+- `openspec/changes/adopt-effect-4-backend-architecture/proposal.md`
+- `openspec/changes/adopt-effect-4-backend-architecture/design.md`
+- `openspec/changes/adopt-effect-4-backend-architecture/specs/**/*.md`
+- `openspec/changes/adopt-effect-4-backend-architecture/tasks.md`
+- `docs/architecture-roadmap.md` for the current implementation sequence and follow-up change order
+- `docs/cloudflare-stateful-runtime.md` for Durable Object, queue, and workflow runtime guidance
+- `docs/effect-schema-conventions.md` for domain, API, PostgreSQL/Drizzle, and durable-message schema ownership
 
 Treat that blueprint as the source of truth for package boundaries until it is superseded by a newer accepted OpenSpec change. If an implementation choice conflicts with the blueprint, stop and create or update an OpenSpec proposal instead of silently drifting the architecture.
 
@@ -178,6 +181,10 @@ Write code that is **accessible, performant, type-safe, and maintainable**. Focu
 
 ## Testing
 
+- Place future test files in a nested `__tests__/` directory beside the source
+  area they cover (for example, `src/errors/__tests__/error-policy.test.ts`).
+  Do not add new `*.test.*` or `*.spec.*` files directly beside production
+  source files. Existing colocated tests may remain until their area is touched.
 - Write assertions inside `it()` or `test()` blocks
 - Avoid done callbacks in async tests - use async/await instead
 - Don't use `.only` or `.skip` in committed code
@@ -210,19 +217,32 @@ Most formatting and common issues are automatically fixed by Oxlint + Oxfmt. Run
 - Run local tests: `bun run test`
 - Run credential-gated deploy smoke tests: `bun run test:integration`
 - Deploy or destroy the selected infra stage: `bun run deploy` / `bun run destroy`
-- Generate or push D1 schema changes: `bun run db:generate` / `bun run db:push`
+- Generate, push, or seed D1 schema changes: `bun run db:generate` / `bun run db:push` / `bun run db:seed`
 - Run formatting and lint checks or fixes: `bun run check` / `bun run fix`
+- Run the workspace prepare hook: `bun run prepare`
+- For Effect 4 cohort upgrades, run the canary suite in `docs/effect-4-dependency-policy.md` (`bun test packages/core/src/effect-4-schema-canary.test.ts`, `bun test packages/core/src/effect-4-runtime-canary.test.ts`, `bun test packages/core/src/effect-4-http-api-canary.test.ts`, `bun test packages/db-postgres/src/effect-postgres-canary.test.ts`, `bun test apps/server/src/effect-worker-canary.test.ts`) and the targeted verification commands it lists (`bun run --cwd packages/core check-types`, `bun run --cwd packages/db-postgres check-types`, `bun run --cwd apps/server check-types`, `bun check-types`, `bun test`, `bun run check`, `bun run build`)
 - Add shared UI primitives: `npx shadcn@latest add accordion dialog popover sheet table -c packages/ui`
 - Add app-specific UI blocks by running the shadcn CLI from `apps/web`
 
 ### Package-local workflows
 
-- In `apps/web`, use `bun run build` to build the Vite app, `bun run dev:bare` for a plain Vite dev server, `bun run serve` to preview a built app, `bun run test` for the no-effect-imports check, and `bun run check-types` for the package typecheck.
-- In `apps/server`, use `bun run build` for the package build, `bun run check-types` for the package typecheck, `bun run compile` to emit the standalone server binary, and `bun run test` for the server test suite.
+- In `apps/web`, use `bun run build` to build the Vite app, `bun run dev` for the standard Vite dev server, `bun run dev:bare` for a plain Vite dev server, `bun run serve` to preview a built app, `bun run test` for the no-effect-imports check, and `bun run check-types` for the package typecheck.
+- In `apps/server`, use `bun run build` for the package build, `bun run check-types` for the package typecheck, `bun run compile` to emit the standalone server binary, and `bun run test` for the credential-free golden checkout smoke test and server test suite.
 - In `packages/infra`, use `bun run dev`, `bun run deploy`, `bun run destroy`, `bun run test`, `bun run test:integration`, and `bun run check-types` for the Alchemy stack package.
-- In `packages/db-d1`, use `bun run db:push` to apply local D1 migrations, `bun run db:generate` to validate migration definitions, `bun run check-types` for the package typecheck, and `bun run test` for adapter checks.
-- In `packages/auth`, use `bun run auth:gen` after Better Auth config changes to regenerate the D1 migration in `packages/db-d1/src/migrations/sql/0000_auth.sql`.
-- Leaf packages also expose package-local `test` and `check-types` scripts in their own `package.json`; use those directly when working inside that package.
+- In `packages/db-d1`, use `bun run db:push` to apply local D1 migrations, `bun run db:generate` to validate migration definitions, `bun run db:seed` to load local seed data, `bun run check-types` for the package typecheck, and `bun run test` for adapter checks.
+- In `packages/db-postgres`, use `bun run db:status`, `bun run db:migrate`, `bun run db:rollback-development`, and `bun run db:reset-development` for PostgreSQL migration workflows; all of those commands require `POSTGRES_URL`, and `db:rollback-development` plus `db:reset-development` also require `-- --confirm-development-reset`. Use `POSTGRES_URL=postgres://... bun run test:live` for the live verification suite, plus `bun run test` and `bun run check-types` for package verification.
+- In `packages/auth`, use `bun run check-types` and `bun run test` for the auth package, and `bun run --cwd packages/auth auth:gen` after Better Auth config changes to regenerate the D1 migration in `packages/db-d1/src/migrations/sql/0000_auth.sql`.
+- In `packages/api`, use `bun run test` and `bun run check-types` for the router assembly package.
+- In `packages/core`, use `bun run test` and `bun run check-types` for the commerce kernel package.
+- In `packages/db`, use `bun run test` and `bun run check-types` for the shared database contracts package.
+- In `packages/modules/checkout`, `packages/modules/order`, and `packages/modules/notification-event`, use `bun run test` and `bun run check-types` for the module packages.
+- In `packages/payment-provider`, use `bun run test` and `bun run check-types` for the provider foundation package.
+- In `packages/platform-cloudflare`, use `bun run test` and `bun run check-types` for the Cloudflare platform bridge package.
+- In `packages/db-utils`, use `bun run test` and `bun run check-types` for the shared DB utilities package.
+- In `packages/storefront-sdk`, use `bun run test` and `bun run check-types` for the storefront SDK package.
+- Most leaf packages expose package-local `test` and `check-types` scripts in their own `package.json`; use those directly when working inside that package, especially `packages/api`, `packages/core`, `packages/db`, `packages/db-utils`, `packages/payment-provider`, `packages/platform-cloudflare`, `packages/modules/notification-event`, and the `packages/modules/*` leaf packages.
+- `packages/ui`, `packages/utils`, and `packages/modules/module-contracts` currently expose `check-types` only.
+- Verified module packages with local `test` and `check-types` scripts: `store`, `customer`, `product`, `pricing`, `inventory`, `cart`, `order`, `fulfillment`, `payment`, `notification-event`, `checkout`, `tax`, `promotion`, and `region-sales-channel`.
 
 ### OpenSpec workflows
 
@@ -231,12 +251,23 @@ Most formatting and common issues are automatically fixed by Oxlint + Oxfmt. Run
 - Check change status: `openspec status --change "<name>" --json`
 - Get artifact instructions: `openspec instructions <artifact-id> --change "<name>" --json`
 - Apply a change: `openspec instructions apply --change "<name>" --json`
+- Archive a completed change: `openspec archive "<change-name>"`
 - Keep blueprint-linked specs in sync with implementation via `openspec-sync-specs`
 - Archive a completed change only after status is complete and tasks are checked off
 
 ### Issue tracker
 
-Issues and PRDs are tracked in GitHub Issues for `escwxyz/ecommerce`. See `docs/agents/issue-tracker.md`.
+Issues and PRDs are tracked in GitHub Issues for `escwxyz/ecommerce`. Use the `gh` CLI from inside this clone so the repo is inferred from `git remote -v`.
+
+- Create an issue: `gh issue create --title "..." --body "..."`
+- Use a heredoc for multi-line issue bodies.
+- Read an issue: `gh issue view <number> --comments`
+- List issues: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'`
+- Comment on an issue: `gh issue comment <number> --body "..."`
+- Apply or remove labels: `gh issue edit <number> --add-label "..."` or `gh issue edit <number> --remove-label "..."`
+- Close an issue: `gh issue close <number> --comment "..."`
+
+See `docs/agents/issue-tracker.md` for the full workflow.
 
 ### Triage labels
 

@@ -1,18 +1,48 @@
-import { createContext } from "@ecommerce/api/context";
+import {
+  cartEffectHttpApiContribution,
+  checkoutEffectHttpApiContribution,
+  customerEffectHttpApiContribution,
+  fulfillmentEffectHttpApiContribution,
+  inventoryEffectHttpApiContribution,
+  notificationEventEffectHttpApiContribution,
+  orderEffectHttpApiContribution,
+  paymentEffectHttpApiContribution,
+  pricingEffectHttpApiContribution,
+  productEffectHttpApiContribution,
+  promotionEffectHttpApiContribution,
+  regionSalesChannelEffectHttpApiContribution,
+  storeEffectHttpApiContribution,
+  taxEffectHttpApiContribution,
+  builtinPermissionStatement,
+} from "@ecommerce/api";
 import { createAuth } from "@ecommerce/auth";
 import {
-  createCustomerCartScope,
-  createD1CartRepository,
-  createSystemCartScope,
-  createVisitorCartScope,
+  createCartServiceLayer,
+  createInMemoryCartRepository,
 } from "@ecommerce/cart";
-import type { CartD1Database, CartModuleContext } from "@ecommerce/cart";
-import { createD1Database } from "@ecommerce/db-d1";
+import { createCheckoutServiceLayer } from "@ecommerce/checkout";
+import {
+  createCustomerServiceLayer,
+  defaultCustomerService,
+} from "@ecommerce/customer";
 import { env } from "@ecommerce/env/server";
+import {
+  createFulfillmentServiceLayer,
+  defaultFulfillmentService,
+} from "@ecommerce/fulfillment";
+import {
+  createInventoryServiceLayer,
+  defaultInventoryService,
+} from "@ecommerce/inventory";
+import {
+  createNotificationEventServiceLayer,
+  defaultNotificationEventService,
+} from "@ecommerce/notification-event";
+import { createOrderServiceLayer, defaultOrderService } from "@ecommerce/order";
+import { createPaymentServiceLayer } from "@ecommerce/payment";
 import {
   createCloudflareCartCacheRepository,
   createCloudflareQueuedNotificationProvider,
-  createCloudflareStatefulCoordinator,
   createNotificationEventQueuePublisher,
   createNotificationEventRealtimePublisher,
   processNotificationEventQueueBatch,
@@ -20,13 +50,37 @@ import {
 import type { NotificationEventQueueMessage } from "@ecommerce/platform-cloudflare";
 import { CartCacheDurableObject } from "@ecommerce/platform-cloudflare/cart-cache-do";
 import { NotificationEventRealtimeDurableObject } from "@ecommerce/platform-cloudflare/notification-event-realtime-do";
-import { StatefulCoordinatorDurableObject } from "@ecommerce/platform-cloudflare/stateful-do";
+import { KeyedActorDurableObject } from "@ecommerce/platform-cloudflare/stateful-do";
+import {
+  createPricingServiceLayer,
+  defaultPricingService,
+} from "@ecommerce/pricing";
+import {
+  createProductServiceLayer,
+  defaultProductService,
+} from "@ecommerce/product";
+import {
+  createPromotionServiceLayer,
+  defaultPromotionService,
+} from "@ecommerce/promotion";
+import {
+  createRegionServiceLayer,
+  createSalesChannelServiceLayer,
+  defaultRegionService,
+  defaultSalesChannelService,
+} from "@ecommerce/region-sales-channel";
+import { createStoreServiceLayer, defaultStoreService } from "@ecommerce/store";
+import { createTaxServiceLayer, defaultTaxService } from "@ecommerce/tax";
 
-import { createServerApp } from "./app";
 import {
   createDevelopmentCommerceProviderRegistries,
   createServerCommerceRuntime,
 } from "./commerce-runtime";
+import { createEffectHttpWorkerRuntime } from "./effect-http-worker-runtime";
+import {
+  isPostgresHyperdriveHealthRequest,
+  verifyPostgresHyperdriveConnection,
+} from "./postgres-hyperdrive-smoke";
 
 interface CommerceServerEnv {
   readonly BETTER_AUTH_SECRET: string;
@@ -37,6 +91,7 @@ interface CommerceServerEnv {
   readonly DB: D1Database;
   readonly NOTIFICATION_EVENT_QUEUE?: Queue<NotificationEventQueueMessage>;
   readonly NOTIFICATION_EVENT_REALTIME: DurableObjectNamespace;
+  readonly POSTGRES: Hyperdrive;
   readonly STATEFUL_COORDINATOR: DurableObjectNamespace;
 }
 
@@ -45,16 +100,13 @@ const serverEnv = env as unknown as CommerceServerEnv;
 export {
   CartCacheDurableObject,
   NotificationEventRealtimeDurableObject,
-  StatefulCoordinatorDurableObject,
+  KeyedActorDurableObject,
 };
 
-const database = createD1Database(serverEnv.DB);
 const clock = {
   now: () => new Date(),
 };
-const cartProjectionRepository = createD1CartRepository({
-  db: database.db as unknown as CartD1Database,
-});
+const cartProjectionRepository = createInMemoryCartRepository();
 const notificationEventRealtime = createNotificationEventRealtimePublisher({
   namespace: serverEnv.NOTIFICATION_EVENT_REALTIME as unknown as Parameters<
     typeof createNotificationEventRealtimePublisher
@@ -79,28 +131,6 @@ const queuedNotificationProviders = notificationEventQueue
     )
   : [];
 
-const createCartScope = (context: CartModuleContext) => {
-  const user = context.session?.user;
-
-  if (typeof user === "object" && user && "id" in user) {
-    return createCustomerCartScope(String(user.id));
-  }
-
-  if (typeof user === "object" && user && "email" in user) {
-    return createCustomerCartScope(String(user.email));
-  }
-
-  if (context.session) {
-    return createSystemCartScope();
-  }
-
-  if (!context.visitorId) {
-    throw new Error("Guest cart requests require a visitor identity.");
-  }
-
-  return createVisitorCartScope(context.visitorId);
-};
-
 const developmentProviderRegistries =
   serverEnv.COMMERCE_PROVIDER_MODE === "development"
     ? createDevelopmentCommerceProviderRegistries()
@@ -108,42 +138,84 @@ const developmentProviderRegistries =
 const runtime = createServerCommerceRuntime({
   ...developmentProviderRegistries,
   clock,
-  createCartRepositoryForContext: (context) =>
-    createCloudflareCartCacheRepository({
-      namespace: serverEnv.CART_CACHE,
-      projectionRepository: cartProjectionRepository,
-      scope: createCartScope(context),
-    }),
-  db: database.db,
-  inventoryCoordinator: createCloudflareStatefulCoordinator({
-    clock,
-    namespace: serverEnv.STATEFUL_COORDINATOR,
+  cartRepository: createCloudflareCartCacheRepository({
+    namespace: serverEnv.CART_CACHE,
+    projectionRepository: cartProjectionRepository,
   }),
   notificationProviders: queuedNotificationProviders,
   notificationRuntime: notificationEventQueuePublisher,
 });
-const { apiAssembly } = runtime;
+const checkoutContribution =
+  "checkout" in runtime.services && runtime.services.checkout
+    ? checkoutEffectHttpApiContribution.groups
+    : [];
 
 const auth = createAuth({
   baseURL: serverEnv.BETTER_AUTH_URL,
-  database: database.authDatabase,
-  permissionStatement: apiAssembly.permissions.statement,
+  database: serverEnv.DB,
+  permissionStatement: builtinPermissionStatement,
   secret: serverEnv.BETTER_AUTH_SECRET,
   trustedOrigins: [serverEnv.CORS_ORIGIN],
 });
 
-const app = createServerApp({
-  apiAssembly,
+const effectHttpRuntime = createEffectHttpWorkerRuntime({
   auth,
+  contributions: [
+    ...storeEffectHttpApiContribution.groups,
+    ...customerEffectHttpApiContribution.groups,
+    ...productEffectHttpApiContribution.groups,
+    ...pricingEffectHttpApiContribution.groups,
+    ...inventoryEffectHttpApiContribution.groups,
+    ...cartEffectHttpApiContribution.groups,
+    ...regionSalesChannelEffectHttpApiContribution.groups,
+    ...promotionEffectHttpApiContribution.groups,
+    ...taxEffectHttpApiContribution.groups,
+    ...fulfillmentEffectHttpApiContribution.groups,
+    ...paymentEffectHttpApiContribution.groups,
+    ...checkoutContribution,
+    ...orderEffectHttpApiContribution.groups,
+    ...notificationEventEffectHttpApiContribution.groups,
+  ],
   corsOrigin: serverEnv.CORS_ORIGIN,
-  createContext,
-  notificationEventRealtime: {
-    namespace: serverEnv.NOTIFICATION_EVENT_REALTIME,
-  },
+  runtimeLayers: [
+    createStoreServiceLayer(defaultStoreService),
+    createCustomerServiceLayer(defaultCustomerService),
+    createProductServiceLayer(defaultProductService),
+    createPricingServiceLayer(defaultPricingService),
+    createInventoryServiceLayer(defaultInventoryService),
+    createCartServiceLayer(runtime.services.cart),
+    createRegionServiceLayer(defaultRegionService),
+    createSalesChannelServiceLayer(defaultSalesChannelService),
+    createPromotionServiceLayer(defaultPromotionService),
+    createTaxServiceLayer(defaultTaxService),
+    createFulfillmentServiceLayer(defaultFulfillmentService),
+    createPaymentServiceLayer({}),
+    ...(runtime.services.checkout
+      ? [createCheckoutServiceLayer(runtime.services.checkout)]
+      : []),
+    createOrderServiceLayer(defaultOrderService),
+    createNotificationEventServiceLayer(defaultNotificationEventService),
+  ],
 });
 
 export default {
-  fetch: app.fetch,
+  fetch: (
+    request: Request,
+    requestEnv: CommerceServerEnv,
+    _executionContext: ExecutionContext
+  ) => {
+    if (isPostgresHyperdriveHealthRequest(request)) {
+      return verifyPostgresHyperdriveConnection(
+        requestEnv.POSTGRES ?? serverEnv.POSTGRES
+      );
+    }
+
+    if (new URL(request.url).pathname.startsWith("/api/auth/")) {
+      return auth.handler(request);
+    }
+
+    return effectHttpRuntime.fetch(request);
+  },
   queue: (batch: MessageBatch<NotificationEventQueueMessage>) =>
     processNotificationEventQueueBatch(batch, {
       clock,

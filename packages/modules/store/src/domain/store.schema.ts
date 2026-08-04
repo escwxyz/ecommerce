@@ -1,68 +1,104 @@
-import { z } from "zod";
-// expand it to enum later if needed, but for now we can just validate it as a string
-const CurrencyCodeSchema = z.string().trim().length(3).toUpperCase();
+import { Schema } from "effect";
 
-export const StoreIdentifierSchema = z.object({
-  id: z.string().min(1).startsWith("store_"),
+const currencyCodePattern = /^[A-Z]{3}$/u;
+
+const isCanonicalIsoDateTime = (value: string): boolean => {
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+};
+
+/** Stable commerce store identifier owned by the store module. */
+export const StoreIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("store_")),
+  Schema.brand("StoreId")
+);
+
+/** Serialized store identifier used by API and storage boundaries. */
+export const StoreSerializedIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("store_"))
+);
+
+/** Canonical uppercase ISO-style currency code used by store defaults. */
+export const StoreCurrencyCodeSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isPattern(currencyCodePattern))
+);
+
+export const StoreCurrencyCodeListSchema = Schema.Array(
+  StoreCurrencyCodeSchema
+).pipe(Schema.check(Schema.isMinLength(1)));
+
+/** Non-empty string that has already been trimmed at the input boundary. */
+export const StoreTrimmedStringSchema = Schema.Trimmed.pipe(
+  Schema.check(Schema.isMinLength(1))
+);
+
+/** Canonical UTC ISO datetime string emitted by store API serializers. */
+export const StoreIsoDateTimeStringSchema = StoreTrimmedStringSchema.pipe(
+  Schema.check(Schema.makeFilter(isCanonicalIsoDateTime))
+);
+
+/** JSON-like metadata bag owned by the store module. */
+export const StoreMetadataSchema = Schema.Record(Schema.String, Schema.Unknown);
+
+export const StoreIdentifierSchema = Schema.Struct({
+  id: StoreIdSchema,
 });
 
-export const StoreSettingsSchema = z.object({
-  createdAt: z.date(),
-  defaultCurrencyCode: CurrencyCodeSchema,
-  defaultLocale: z.string().trim().min(1),
-  defaultRegionId: z.string().trim().min(1).nullable(),
-  defaultSalesChannelId: z.string().trim().min(1).nullable(),
-  id: z.string().min(1).startsWith("store_"),
-  metadata: z.record(z.string(), z.unknown()).readonly(),
-  name: z.string().trim().min(1),
-  supportedCurrencyCodes: z.array(CurrencyCodeSchema).min(1).readonly(),
-  timezone: z.string().trim().min(1),
-  updatedAt: z.date(),
+export const StoreSettingsSchema = Schema.Struct({
+  createdAt: Schema.Date,
+  defaultCurrencyCode: StoreCurrencyCodeSchema,
+  defaultLocale: StoreTrimmedStringSchema,
+  defaultRegionId: Schema.NullOr(StoreTrimmedStringSchema),
+  defaultSalesChannelId: Schema.NullOr(StoreTrimmedStringSchema),
+  id: StoreIdSchema,
+  metadata: StoreMetadataSchema,
+  name: StoreTrimmedStringSchema,
+  supportedCurrencyCodes: StoreCurrencyCodeListSchema,
+  timezone: StoreTrimmedStringSchema,
+  updatedAt: Schema.Date,
 });
 
-export const UpdateStoreSettingsInputSchema = z.object({
-  defaultCurrencyCode: CurrencyCodeSchema.optional(),
-  defaultLocale: z.string().trim().min(1).optional(),
-  defaultRegionId: z.string().trim().min(1).nullable().optional(),
-  defaultSalesChannelId: z.string().trim().min(1).nullable().optional(),
-  metadata: z.record(z.string(), z.unknown()).readonly().optional(),
-  name: z.string().trim().min(1).optional(),
-  supportedCurrencyCodes: z
-    .array(CurrencyCodeSchema)
-    .min(1)
-    .readonly()
-    .optional(),
-  timezone: z.string().trim().min(1).optional(),
+export const UpdateStoreSettingsInputSchema = Schema.Struct({
+  defaultCurrencyCode: Schema.optional(StoreCurrencyCodeSchema),
+  defaultLocale: Schema.optional(StoreTrimmedStringSchema),
+  defaultRegionId: Schema.optional(Schema.NullOr(StoreTrimmedStringSchema)),
+  defaultSalesChannelId: Schema.optional(
+    Schema.NullOr(StoreTrimmedStringSchema)
+  ),
+  metadata: Schema.optional(StoreMetadataSchema),
+  name: Schema.optional(StoreTrimmedStringSchema),
+  supportedCurrencyCodes: Schema.optional(StoreCurrencyCodeListSchema),
+  timezone: Schema.optional(StoreTrimmedStringSchema),
 });
 
-export const StoreDefaultsSchema = StoreSettingsSchema.pick({
-  defaultCurrencyCode: true,
-  defaultLocale: true,
-  defaultRegionId: true,
-  defaultSalesChannelId: true,
-  supportedCurrencyCodes: true,
-  timezone: true,
+export const StoreDefaultsSchema = Schema.Struct({
+  defaultCurrencyCode: StoreCurrencyCodeSchema,
+  defaultLocale: StoreTrimmedStringSchema,
+  defaultRegionId: Schema.NullOr(StoreTrimmedStringSchema),
+  defaultSalesChannelId: Schema.NullOr(StoreTrimmedStringSchema),
+  supportedCurrencyCodes: StoreCurrencyCodeListSchema,
+  timezone: StoreTrimmedStringSchema,
 });
 
-export const StoreApiRecordSchema = z.object({
-  createdAt: z.string().min(1),
-  defaultCurrencyCode: CurrencyCodeSchema,
-  defaultLocale: z.string().min(1),
-  defaultRegionId: z.string().min(1).nullable(),
-  defaultSalesChannelId: z.string().min(1).nullable(),
-  id: z.string().min(1).startsWith("store_"),
-  metadata: z.record(z.string(), z.unknown()).readonly(),
-  name: z.string().min(1),
-  supportedCurrencyCodes: z.array(CurrencyCodeSchema).readonly(),
-  timezone: z.string().min(1),
-  updatedAt: z.string().min(1),
+export const StoreApiRecordSchema = Schema.Struct({
+  createdAt: StoreIsoDateTimeStringSchema,
+  defaultCurrencyCode: StoreCurrencyCodeSchema,
+  defaultLocale: StoreTrimmedStringSchema,
+  defaultRegionId: Schema.NullOr(StoreTrimmedStringSchema),
+  defaultSalesChannelId: Schema.NullOr(StoreTrimmedStringSchema),
+  id: StoreSerializedIdSchema,
+  metadata: StoreMetadataSchema,
+  name: StoreTrimmedStringSchema,
+  supportedCurrencyCodes: StoreCurrencyCodeListSchema,
+  timezone: StoreTrimmedStringSchema,
+  updatedAt: StoreIsoDateTimeStringSchema,
 });
 
-export const StoreDefaultsApiRecordSchema = StoreApiRecordSchema.pick({
-  defaultCurrencyCode: true,
-  defaultLocale: true,
-  defaultRegionId: true,
-  defaultSalesChannelId: true,
-  supportedCurrencyCodes: true,
-  timezone: true,
+export const StoreDefaultsApiRecordSchema = Schema.Struct({
+  defaultCurrencyCode: StoreCurrencyCodeSchema,
+  defaultLocale: StoreTrimmedStringSchema,
+  defaultRegionId: Schema.NullOr(StoreTrimmedStringSchema),
+  defaultSalesChannelId: Schema.NullOr(StoreTrimmedStringSchema),
+  supportedCurrencyCodes: StoreCurrencyCodeListSchema,
+  timezone: StoreTrimmedStringSchema,
 });

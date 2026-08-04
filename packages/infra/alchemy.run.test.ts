@@ -8,6 +8,7 @@ import Stack, {
   notificationEventQueue,
   notificationEventQueueConsumer,
   notificationEventRealtime,
+  postgresConnection,
   server,
   statefulCoordinator,
   web,
@@ -23,6 +24,18 @@ const getLocalWebOutput = (
     getLocalWebOutput?: (dev: boolean) => { url: string } | null;
   }
 ).getLocalWebOutput;
+const getPostgresHyperdriveConfig = (
+  Infrastructure as unknown as {
+    getPostgresHyperdriveConfig?: (
+      dev: boolean,
+      source: Record<string, string | undefined>
+    ) => {
+      readonly dev: { readonly database: string; readonly host: string };
+      readonly origin: { readonly database: string; readonly host: string };
+      readonly originConnectionLimit?: number;
+    };
+  }
+).getPostgresHyperdriveConfig;
 
 describe("local web development", () => {
   it("uses the standalone Vite server in local development", () => {
@@ -67,6 +80,52 @@ describe("notification event queue bindings", () => {
   });
 });
 
+describe("Hyperdrive PostgreSQL connection", () => {
+  it("uses local PostgreSQL defaults in Alchemy dev mode", () => {
+    expect(getPostgresHyperdriveConfig).toBeFunction();
+    if (!getPostgresHyperdriveConfig) {
+      return;
+    }
+
+    const config = getPostgresHyperdriveConfig(true, {});
+
+    expect(config.origin.host).toBe("127.0.0.1");
+    expect(config.origin.database).toBe("ecommerce");
+    expect(config.dev.host).toBe("127.0.0.1");
+    expect(config.dev.database).toBe("ecommerce");
+  });
+
+  it("requires an explicit PostgreSQL origin before deployed provisioning", () => {
+    expect(getPostgresHyperdriveConfig).toBeFunction();
+    if (!getPostgresHyperdriveConfig) {
+      return;
+    }
+
+    expect(() => getPostgresHyperdriveConfig(false, {})).toThrow(
+      /POSTGRES_HOST/
+    );
+  });
+
+  it("reads the deployed PostgreSQL origin and connection limit from env", () => {
+    expect(getPostgresHyperdriveConfig).toBeFunction();
+    if (!getPostgresHyperdriveConfig) {
+      return;
+    }
+
+    const config = getPostgresHyperdriveConfig(false, {
+      POSTGRES_DATABASE: "commerce",
+      POSTGRES_HOST: "db.example.com",
+      POSTGRES_ORIGIN_CONNECTION_LIMIT: "10",
+      POSTGRES_PASSWORD: "secret",
+      POSTGRES_USER: "commerce",
+    });
+
+    expect(config.origin.host).toBe("db.example.com");
+    expect(config.origin.database).toBe("commerce");
+    expect(config.originConnectionLimit).toBe(10);
+  });
+});
+
 describe("alchemy stack exports", () => {
   it("defines the stack and deployable resources without executing deploy", () => {
     expect(Stack).toBeDefined();
@@ -76,6 +135,7 @@ describe("alchemy stack exports", () => {
     expect(notificationEventQueue).toBeDefined();
     expect(notificationEventQueueConsumer).toBeDefined();
     expect(notificationEventRealtime).toBeDefined();
+    expect(postgresConnection).toBeDefined();
     expect(server).toBeDefined();
     expect(statefulCoordinator).toBeDefined();
     expect(web).toBeDefined();

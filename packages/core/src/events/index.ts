@@ -1,3 +1,5 @@
+import type { Effect } from "effect/Effect";
+
 export interface CommerceEventEnvelope<
   EventName extends string = string,
   Payload = unknown,
@@ -13,20 +15,32 @@ export interface CommerceEventEnvelope<
   };
   readonly correlationId?: string;
   readonly causationId?: string;
+  readonly traceId?: string;
   readonly workflowRunId?: string;
 }
 
 export type CommerceEventHandler<
   EventName extends string = string,
   Payload = unknown,
-> = (event: CommerceEventEnvelope<EventName, Payload>) => Promise<void> | void;
+  Error = never,
+  Requirements = never,
+> = (
+  event: CommerceEventEnvelope<EventName, Payload>
+) => Effect<void, Error, Requirements>;
 
 export interface CommerceEventSubscription<
   EventName extends string = string,
   Payload = unknown,
+  Error = never,
+  Requirements = never,
 > {
   readonly eventName: EventName;
-  readonly handler: CommerceEventHandler<EventName, Payload>;
+  readonly handler: CommerceEventHandler<
+    EventName,
+    Payload,
+    Error,
+    Requirements
+  >;
 }
 
 export interface CommerceEventPublisher {

@@ -1,3 +1,4 @@
+import { recordCommerceRuntimeMetric } from "@ecommerce/core";
 import type {
   DispatchNotificationInput,
   EventOutboxRecord,
@@ -9,6 +10,7 @@ import type {
   NotificationProviderDeliveryResult,
   NotificationTemplate,
 } from "@ecommerce/notification-event/domain";
+import { Effect } from "effect";
 
 export const notificationEventQueueName = "notification-event-work" as const;
 export const notificationEventDeadLetterQueueName =
@@ -155,6 +157,36 @@ const safePublishRealtime = async (
   }
 };
 
+const recordNotificationRuntimeMetric = async (
+  options: Parameters<typeof recordCommerceRuntimeMetric>[0]
+): Promise<void> => {
+  await Effect.runPromise(
+    recordCommerceRuntimeMetric(options).pipe(Effect.exit)
+  );
+};
+
+const failedDispatchRuntimeMetricEvent = (
+  status: NotificationDispatchRecord["status"]
+) => (status === "dead-lettered" ? "poison_message" : "retry");
+
+const realtimeTypeForFailedDispatch = (
+  status: NotificationDispatchRecord["status"]
+) =>
+  status === "dead-lettered"
+    ? "notification-dead-lettered"
+    : "notification-failed";
+
+const recordFailedDispatchMetric = (
+  failed: NotificationDispatchRecord
+): Promise<void> =>
+  recordNotificationRuntimeMetric({
+    attributes: {
+      status: failed.status,
+    },
+    boundary: "provider",
+    event: failedDispatchRuntimeMetricEvent(failed.status),
+  });
+
 const toOutboxQueueMessage = (
   result: EventPublishResult
 ): NotificationEventOutboxQueueMessage => ({
@@ -203,25 +235,27 @@ const markOutboxDispatched = async (
   outboxId: string,
   now: Date
 ): Promise<EventOutboxRecord | null> => {
-  const outbox = await repository.findOutboxById(outboxId);
+  const outbox = await Effect.runPromise(repository.findOutboxById(outboxId));
 
   if (!outbox || outbox.status === "dispatched") {
     return outbox;
   }
 
-  return repository.saveOutbox({
-    ...outbox,
-    attempts: outbox.attempts + 1,
-    status: "dispatched",
-    updatedAt: now,
-  });
+  return Effect.runPromise(
+    repository.saveOutbox({
+      ...outbox,
+      attempts: outbox.attempts + 1,
+      status: "dispatched",
+      updatedAt: now,
+    })
+  );
 };
 
 const findDispatchById = async (
   repository: NotificationEventRepository,
   dispatchId: string
 ): Promise<NotificationDispatchRecord | null> => {
-  const dispatches = await repository.listDispatches();
+  const dispatches = await Effect.runPromise(repository.listDispatches);
   return dispatches.find((dispatch) => dispatch.id === dispatchId) ?? null;
 };
 
@@ -250,13 +284,15 @@ const recordNotificationFailure = (
   const attempts = dispatch.attempts + 1;
   const exhausted = attempts >= retryPolicy.maxAttempts;
 
-  return repository.saveDispatch({
-    ...dispatch,
-    attempts,
-    lastError: reason,
-    status: exhausted ? "dead-lettered" : "failed",
-    updatedAt: now,
-  });
+  return Effect.runPromise(
+    repository.saveDispatch({
+      ...dispatch,
+      attempts,
+      lastError: reason,
+      status: exhausted ? "dead-lettered" : "failed",
+      updatedAt: now,
+    })
+  );
 };
 
 const recordNotificationDeadLetter = async (
@@ -272,13 +308,15 @@ const recordNotificationDeadLetter = async (
   );
   const dispatch = existing ?? source.payload.dispatch;
 
-  return repository.saveDispatch({
-    ...dispatch,
-    attempts,
-    lastError: reason,
-    status: "dead-lettered",
-    updatedAt: now,
-  });
+  return Effect.runPromise(
+    repository.saveDispatch({
+      ...dispatch,
+      attempts,
+      lastError: reason,
+      status: "dead-lettered",
+      updatedAt: now,
+    })
+  );
 };
 
 const recordEventDeadLetter = async (
@@ -288,28 +326,34 @@ const recordEventDeadLetter = async (
   attempts: number,
   now: Date
 ): Promise<EventOutboxRecord | null> => {
-  const outbox = await repository.findOutboxById(source.payload.outboxId);
+  const outbox = await Effect.runPromise(
+    repository.findOutboxById(source.payload.outboxId)
+  );
 
   if (!outbox) {
     return null;
   }
 
-  const deadLettered = await repository.saveOutbox({
-    ...outbox,
-    attempts,
-    lastError: reason,
-    status: "dead-lettered",
-    updatedAt: now,
-  });
+  const deadLettered = await Effect.runPromise(
+    repository.saveOutbox({
+      ...outbox,
+      attempts,
+      lastError: reason,
+      status: "dead-lettered",
+      updatedAt: now,
+    })
+  );
 
-  await repository.saveDeadLetter({
-    attempts,
-    createdAt: now,
-    eventId: outbox.eventId,
-    id: `${outbox.id}:dead-letter`,
-    outboxId: outbox.id,
-    reason,
-  });
+  await Effect.runPromise(
+    repository.saveDeadLetter({
+      attempts,
+      createdAt: now,
+      eventId: outbox.eventId,
+      id: `${outbox.id}:dead-letter`,
+      outboxId: outbox.id,
+      reason,
+    })
+  );
 
   return deadLettered;
 };
@@ -431,6 +475,13 @@ export const processNotificationEventQueueMessage = async (
   if (message.kind === "dead-letter") {
     const now = options.clock.now();
     const { source } = message.payload;
+    await recordNotificationRuntimeMetric({
+      attributes: {
+        status: "dead-lettered",
+      },
+      boundary: "queue",
+      event: "poison_message",
+    });
 
     if (source.kind === "notification-dispatch") {
       const failed = await recordNotificationDeadLetter(
@@ -502,6 +553,7 @@ export const processNotificationEventQueueMessage = async (
       options.retryPolicy,
       options.clock.now()
     );
+    await recordFailedDispatchMetric(failed);
 
     await safePublishRealtime(options.realtime, options.streamScope, {
       id: message.id,
@@ -511,10 +563,7 @@ export const processNotificationEventQueueMessage = async (
         providerKey: failed.providerKey,
         status: failed.status,
       },
-      type:
-        failed.status === "dead-lettered"
-          ? "notification-dead-lettered"
-          : "notification-failed",
+      type: realtimeTypeForFailedDispatch(failed.status),
     });
     return;
   }
@@ -527,13 +576,14 @@ export const processNotificationEventQueueMessage = async (
       template: message.payload.template,
     });
   } catch (error) {
-    await recordNotificationFailure(
+    const failed = await recordNotificationFailure(
       options.repository,
       dispatch,
       serializeError(error),
       options.retryPolicy,
       options.clock.now()
     );
+    await recordFailedDispatchMetric(failed);
     throw error;
   }
 
@@ -545,6 +595,7 @@ export const processNotificationEventQueueMessage = async (
       options.retryPolicy,
       options.clock.now()
     );
+    await recordFailedDispatchMetric(failed);
 
     await safePublishRealtime(options.realtime, options.streamScope, {
       id: message.id,
@@ -554,10 +605,7 @@ export const processNotificationEventQueueMessage = async (
         providerKey: failed.providerKey,
         status: failed.status,
       },
-      type:
-        failed.status === "dead-lettered"
-          ? "notification-dead-lettered"
-          : "notification-failed",
+      type: realtimeTypeForFailedDispatch(failed.status),
     });
 
     if (failed.status !== "dead-lettered") {
@@ -567,8 +615,10 @@ export const processNotificationEventQueueMessage = async (
     return;
   }
 
-  const saved = await options.repository.saveDispatch(
-    applyProviderResult(dispatch, result, options.clock.now())
+  const saved = await Effect.runPromise(
+    options.repository.saveDispatch(
+      applyProviderResult(dispatch, result, options.clock.now())
+    )
   );
 
   await safePublishRealtime(options.realtime, options.streamScope, {

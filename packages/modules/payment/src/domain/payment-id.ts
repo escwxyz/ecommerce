@@ -1,5 +1,16 @@
-import { brand } from "@ecommerce/core/brand";
+import { Effect } from "effect";
 
+import { PaymentInvalidIdentifier } from "./payment.errors";
+import {
+  PAYMENT_ACCOUNT_HOLDER_ID_PREFIX,
+  PAYMENT_CAPTURE_ID_PREFIX,
+  PAYMENT_COLLECTION_ID_PREFIX,
+  PAYMENT_ID_PREFIX,
+  PAYMENT_METHOD_ID_PREFIX,
+  PAYMENT_PROVIDER_RECORD_ID_PREFIX,
+  PAYMENT_REFUND_ID_PREFIX,
+  PAYMENT_SESSION_ID_PREFIX,
+} from "./payment.schema";
 import type {
   PaymentAccountHolderId,
   PaymentCaptureId,
@@ -11,15 +22,6 @@ import type {
   PaymentSessionId,
 } from "./payment.types";
 
-export const PAYMENT_COLLECTION_ID_PREFIX = "paycol_" as const;
-export const PAYMENT_SESSION_ID_PREFIX = "payses_" as const;
-export const PAYMENT_ID_PREFIX = "pay_" as const;
-export const PAYMENT_CAPTURE_ID_PREFIX = "paycap_" as const;
-export const PAYMENT_REFUND_ID_PREFIX = "payref_" as const;
-export const PAYMENT_ACCOUNT_HOLDER_ID_PREFIX = "payacct_" as const;
-export const PAYMENT_METHOD_ID_PREFIX = "paymtd_" as const;
-export const PAYMENT_PROVIDER_RECORD_ID_PREFIX = "payprov_" as const;
-
 const assertPrefixedId = (
   value: string,
   prefix: string,
@@ -30,6 +32,16 @@ const assertPrefixedId = (
   }
 };
 
+const createPrefixedIdEffect = <TId extends string>(
+  value: string,
+  prefix: string
+): Effect.Effect<TId, PaymentInvalidIdentifier> =>
+  value.startsWith(prefix)
+    ? Effect.succeed(value as TId)
+    : Effect.fail(
+        new PaymentInvalidIdentifier({ expectedPrefix: prefix, value })
+      );
+
 export const createPaymentCollectionId = (
   value: string
 ): PaymentCollectionId => {
@@ -38,28 +50,46 @@ export const createPaymentCollectionId = (
     PAYMENT_COLLECTION_ID_PREFIX,
     "Payment collection ID"
   );
-  return brand<"payment-collection", string>(value);
+  return value as PaymentCollectionId;
 };
+
+export const createPaymentCollectionIdEffect = (value: string) =>
+  createPrefixedIdEffect<PaymentCollectionId>(
+    value,
+    PAYMENT_COLLECTION_ID_PREFIX
+  );
 
 export const createPaymentSessionId = (value: string): PaymentSessionId => {
   assertPrefixedId(value, PAYMENT_SESSION_ID_PREFIX, "Payment session ID");
-  return brand<"payment-session", string>(value);
+  return value as PaymentSessionId;
 };
+
+export const createPaymentSessionIdEffect = (value: string) =>
+  createPrefixedIdEffect<PaymentSessionId>(value, PAYMENT_SESSION_ID_PREFIX);
 
 export const createPaymentId = (value: string): PaymentId => {
   assertPrefixedId(value, PAYMENT_ID_PREFIX, "Payment ID");
-  return brand<"payment", string>(value);
+  return value as PaymentId;
 };
+
+export const createPaymentIdEffect = (value: string) =>
+  createPrefixedIdEffect<PaymentId>(value, PAYMENT_ID_PREFIX);
 
 export const createPaymentCaptureId = (value: string): PaymentCaptureId => {
   assertPrefixedId(value, PAYMENT_CAPTURE_ID_PREFIX, "Payment capture ID");
-  return brand<"payment-capture", string>(value);
+  return value as PaymentCaptureId;
 };
+
+export const createPaymentCaptureIdEffect = (value: string) =>
+  createPrefixedIdEffect<PaymentCaptureId>(value, PAYMENT_CAPTURE_ID_PREFIX);
 
 export const createPaymentRefundId = (value: string): PaymentRefundId => {
   assertPrefixedId(value, PAYMENT_REFUND_ID_PREFIX, "Payment refund ID");
-  return brand<"payment-refund", string>(value);
+  return value as PaymentRefundId;
 };
+
+export const createPaymentRefundIdEffect = (value: string) =>
+  createPrefixedIdEffect<PaymentRefundId>(value, PAYMENT_REFUND_ID_PREFIX);
 
 export const createPaymentAccountHolderId = (
   value: string
@@ -69,13 +99,22 @@ export const createPaymentAccountHolderId = (
     PAYMENT_ACCOUNT_HOLDER_ID_PREFIX,
     "Payment account holder ID"
   );
-  return brand<"payment-account-holder", string>(value);
+  return value as PaymentAccountHolderId;
 };
+
+export const createPaymentAccountHolderIdEffect = (value: string) =>
+  createPrefixedIdEffect<PaymentAccountHolderId>(
+    value,
+    PAYMENT_ACCOUNT_HOLDER_ID_PREFIX
+  );
 
 export const createPaymentMethodId = (value: string): PaymentMethodId => {
   assertPrefixedId(value, PAYMENT_METHOD_ID_PREFIX, "Payment method ID");
-  return brand<"payment-method", string>(value);
+  return value as PaymentMethodId;
 };
+
+export const createPaymentMethodIdEffect = (value: string) =>
+  createPrefixedIdEffect<PaymentMethodId>(value, PAYMENT_METHOD_ID_PREFIX);
 
 export const createPaymentProviderRecordId = (
   value: string
@@ -85,8 +124,14 @@ export const createPaymentProviderRecordId = (
     PAYMENT_PROVIDER_RECORD_ID_PREFIX,
     "Payment provider record ID"
   );
-  return brand<"payment-provider-record", string>(value);
+  return value as PaymentProviderRecordId;
 };
+
+export const createPaymentProviderRecordIdEffect = (value: string) =>
+  createPrefixedIdEffect<PaymentProviderRecordId>(
+    value,
+    PAYMENT_PROVIDER_RECORD_ID_PREFIX
+  );
 
 export const serializePaymentCollectionId = (id: PaymentCollectionId): string =>
   id;

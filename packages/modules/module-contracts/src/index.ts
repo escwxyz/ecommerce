@@ -1,5 +1,3 @@
-import { oc } from "@orpc/contract";
-
 export interface DefineApiContractRouteOptions {
   readonly deprecated?: boolean;
   readonly description: string;
@@ -11,11 +9,16 @@ export interface DefineApiContractRouteOptions {
   readonly tags?: readonly string[];
 }
 
+/**
+ * Defines transport-neutral route metadata for module-owned Effect HTTP
+ * contracts. This replaces the former oRPC contract wrapper so modules can
+ * retain descriptive operation metadata without coupling to generated oRPC
+ * routers or clients.
+ */
 export const defineApiContractRoute = ({
   tags = [],
   ...options
-}: DefineApiContractRouteOptions) =>
-  oc.route({
-    ...options,
-    tags: [...tags],
-  });
+}: DefineApiContractRouteOptions) => ({
+  ...options,
+  tags: [...tags],
+});

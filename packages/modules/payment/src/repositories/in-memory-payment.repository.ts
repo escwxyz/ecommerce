@@ -1,3 +1,5 @@
+import { Effect, Layer } from "effect";
+
 import type {
   Payment,
   PaymentAccountHolder,
@@ -5,6 +7,7 @@ import type {
   PaymentCapture,
   PaymentCollection,
   PaymentCollectionId,
+  PaymentExpectedError,
   PaymentId,
   PaymentMethod,
   PaymentMethodId,
@@ -14,34 +17,40 @@ import type {
   PaymentSession,
   PaymentSessionId,
 } from "../domain";
+import { PaymentRepositoryService } from "../domain";
 
 export interface ResettablePaymentRepository extends PaymentRepository {
-  clear(): void;
+  readonly clear: Effect.Effect<void>;
 }
 
-const sortByCreatedAtDesc = <Record extends { readonly createdAt: Date }>(
-  records: Iterable<Record>
-): Record[] => {
-  const sorted: Record[] = [];
+const sortByCreatedAtDescending = <
+  TRecord extends { readonly createdAt: Date },
+>(
+  records: Iterable<TRecord>
+): TRecord[] => {
+  const sortedRecords: TRecord[] = [];
 
   for (const record of records) {
-    const timestamp = record.createdAt.getTime();
+    const recordTimestamp = record.createdAt.getTime();
     let insertAt = 0;
 
-    while (insertAt < sorted.length) {
-      const current = sorted[insertAt];
+    while (insertAt < sortedRecords.length) {
+      const currentRecord = sortedRecords[insertAt];
 
-      if (!current || current.createdAt.getTime() < timestamp) {
+      if (
+        !currentRecord ||
+        currentRecord.createdAt.getTime() < recordTimestamp
+      ) {
         break;
       }
 
       insertAt += 1;
     }
 
-    sorted.splice(insertAt, 0, record);
+    sortedRecords.splice(insertAt, 0, record);
   }
 
-  return sorted;
+  return sortedRecords;
 };
 
 export class InMemoryPaymentRepository implements ResettablePaymentRepository {
@@ -54,7 +63,7 @@ export class InMemoryPaymentRepository implements ResettablePaymentRepository {
   readonly #refunds = new Map<string, PaymentRefund>();
   readonly #sessions = new Map<string, PaymentSession>();
 
-  clear(): void {
+  readonly clear = Effect.sync(() => {
     this.#accountHolders.clear();
     this.#captures.clear();
     this.#collections.clear();
@@ -63,180 +72,209 @@ export class InMemoryPaymentRepository implements ResettablePaymentRepository {
     this.#providerRecords.clear();
     this.#refunds.clear();
     this.#sessions.clear();
-  }
+  });
 
-  findAccountHolderById(
+  readonly findAccountHolderById = (
     id: PaymentAccountHolderId
-  ): Promise<PaymentAccountHolder | null> {
-    return Promise.resolve(this.#accountHolders.get(id) ?? null);
-  }
+  ): Effect.Effect<PaymentAccountHolder | null, PaymentExpectedError> =>
+    Effect.sync(() => this.#accountHolders.get(id) ?? null);
 
-  findAccountHolderByProviderId({
+  readonly findAccountHolderByProviderId = ({
     providerAccountHolderId,
     providerKey,
   }: {
     readonly providerAccountHolderId: string;
     readonly providerKey: string;
-  }): Promise<PaymentAccountHolder | null> {
-    for (const accountHolder of this.#accountHolders.values()) {
-      if (
-        accountHolder.providerKey === providerKey &&
-        accountHolder.providerAccountHolderId === providerAccountHolderId
-      ) {
-        return Promise.resolve(accountHolder);
+  }): Effect.Effect<PaymentAccountHolder | null, PaymentExpectedError> =>
+    Effect.sync(() => {
+      for (const accountHolder of this.#accountHolders.values()) {
+        if (
+          accountHolder.providerKey === providerKey &&
+          accountHolder.providerAccountHolderId === providerAccountHolderId
+        ) {
+          return accountHolder;
+        }
       }
-    }
 
-    return Promise.resolve(null);
-  }
+      return null;
+    });
 
-  findCaptureByIdempotencyKey(
+  readonly findCaptureByIdempotencyKey = (
     idempotencyKey: string
-  ): Promise<PaymentCapture | null> {
-    for (const capture of this.#captures.values()) {
-      if (capture.idempotencyKey === idempotencyKey) {
-        return Promise.resolve(capture);
+  ): Effect.Effect<PaymentCapture | null, PaymentExpectedError> =>
+    Effect.sync(() => {
+      for (const capture of this.#captures.values()) {
+        if (capture.idempotencyKey === idempotencyKey) {
+          return capture;
+        }
       }
-    }
 
-    return Promise.resolve(null);
-  }
+      return null;
+    });
 
-  findCollectionById(
+  readonly findCollectionById = (
     id: PaymentCollectionId
-  ): Promise<PaymentCollection | null> {
-    return Promise.resolve(this.#collections.get(id) ?? null);
-  }
+  ): Effect.Effect<PaymentCollection | null, PaymentExpectedError> =>
+    Effect.sync(() => this.#collections.get(id) ?? null);
 
-  findMethodById(id: PaymentMethodId): Promise<PaymentMethod | null> {
-    return Promise.resolve(this.#methods.get(id) ?? null);
-  }
+  readonly findMethodById = (
+    id: PaymentMethodId
+  ): Effect.Effect<PaymentMethod | null, PaymentExpectedError> =>
+    Effect.sync(() => this.#methods.get(id) ?? null);
 
-  findPaymentById(id: PaymentId): Promise<Payment | null> {
-    return Promise.resolve(this.#payments.get(id) ?? null);
-  }
+  readonly findPaymentById = (
+    id: PaymentId
+  ): Effect.Effect<Payment | null, PaymentExpectedError> =>
+    Effect.sync(() => this.#payments.get(id) ?? null);
 
-  findPaymentByProviderIntent({
+  readonly findPaymentByProviderIntent = ({
     providerKey,
     providerPaymentIntentId,
   }: {
     readonly providerKey: string;
     readonly providerPaymentIntentId: string;
-  }): Promise<Payment | null> {
-    for (const payment of this.#payments.values()) {
-      if (
-        payment.providerKey === providerKey &&
-        payment.providerPaymentIntentId === providerPaymentIntentId
-      ) {
-        return Promise.resolve(payment);
+  }): Effect.Effect<Payment | null, PaymentExpectedError> =>
+    Effect.sync(() => {
+      for (const payment of this.#payments.values()) {
+        if (
+          payment.providerKey === providerKey &&
+          payment.providerPaymentIntentId === providerPaymentIntentId
+        ) {
+          return payment;
+        }
       }
-    }
 
-    return Promise.resolve(null);
-  }
+      return null;
+    });
 
-  findRefundByIdempotencyKey(
+  readonly findRefundByIdempotencyKey = (
     idempotencyKey: string
-  ): Promise<PaymentRefund | null> {
-    for (const refund of this.#refunds.values()) {
-      if (refund.idempotencyKey === idempotencyKey) {
-        return Promise.resolve(refund);
+  ): Effect.Effect<PaymentRefund | null, PaymentExpectedError> =>
+    Effect.sync(() => {
+      for (const refund of this.#refunds.values()) {
+        if (refund.idempotencyKey === idempotencyKey) {
+          return refund;
+        }
       }
-    }
 
-    return Promise.resolve(null);
-  }
+      return null;
+    });
 
-  findSessionById(id: PaymentSessionId): Promise<PaymentSession | null> {
-    return Promise.resolve(this.#sessions.get(id) ?? null);
-  }
+  readonly findSessionById = (
+    id: PaymentSessionId
+  ): Effect.Effect<PaymentSession | null, PaymentExpectedError> =>
+    Effect.sync(() => this.#sessions.get(id) ?? null);
 
-  findSessionByProviderIntent({
+  readonly findSessionByProviderIntent = ({
     providerKey,
     providerPaymentIntentId,
   }: {
     readonly providerKey: string;
     readonly providerPaymentIntentId: string;
-  }): Promise<PaymentSession | null> {
-    for (const session of this.#sessions.values()) {
-      if (
-        session.providerKey === providerKey &&
-        session.providerPaymentIntentId === providerPaymentIntentId
-      ) {
-        return Promise.resolve(session);
+  }): Effect.Effect<PaymentSession | null, PaymentExpectedError> =>
+    Effect.sync(() => {
+      for (const session of this.#sessions.values()) {
+        if (
+          session.providerKey === providerKey &&
+          session.providerPaymentIntentId === providerPaymentIntentId
+        ) {
+          return session;
+        }
       }
-    }
 
-    return Promise.resolve(null);
-  }
+      return null;
+    });
 
-  listCollections(): Promise<readonly PaymentCollection[]> {
-    return Promise.resolve(sortByCreatedAtDesc(this.#collections.values()));
-  }
+  readonly listCollections: Effect.Effect<
+    readonly PaymentCollection[],
+    PaymentExpectedError
+  > = Effect.sync(() => sortByCreatedAtDescending(this.#collections.values()));
 
-  listPaymentsForCollection(
+  readonly listPaymentsForCollection = (
     collectionId: PaymentCollectionId
-  ): Promise<readonly Payment[]> {
-    const payments = [...this.#payments.values()].filter(
-      (payment) => payment.collectionId === collectionId
+  ): Effect.Effect<readonly Payment[], PaymentExpectedError> =>
+    Effect.sync(() =>
+      sortByCreatedAtDescending(
+        [...this.#payments.values()].filter(
+          (payment) => payment.collectionId === collectionId
+        )
+      )
     );
 
-    return Promise.resolve(sortByCreatedAtDesc(payments));
-  }
-
-  listSessionsForCollection(
+  readonly listSessionsForCollection = (
     collectionId: PaymentCollectionId
-  ): Promise<readonly PaymentSession[]> {
-    const sessions = [...this.#sessions.values()].filter(
-      (session) => session.collectionId === collectionId
+  ): Effect.Effect<readonly PaymentSession[], PaymentExpectedError> =>
+    Effect.sync(() =>
+      sortByCreatedAtDescending(
+        [...this.#sessions.values()].filter(
+          (session) => session.collectionId === collectionId
+        )
+      )
     );
 
-    return Promise.resolve(sortByCreatedAtDesc(sessions));
-  }
-
-  saveAccountHolder(
+  readonly saveAccountHolder = (
     accountHolder: PaymentAccountHolder
-  ): Promise<PaymentAccountHolder> {
-    this.#accountHolders.set(accountHolder.id, accountHolder);
-    return Promise.resolve(accountHolder);
-  }
+  ): Effect.Effect<PaymentAccountHolder, PaymentExpectedError> =>
+    Effect.sync(() => {
+      this.#accountHolders.set(accountHolder.id, accountHolder);
+      return accountHolder;
+    });
 
-  saveCapture(capture: PaymentCapture): Promise<PaymentCapture> {
-    this.#captures.set(capture.id, capture);
-    return Promise.resolve(capture);
-  }
+  readonly saveCapture = (
+    capture: PaymentCapture
+  ): Effect.Effect<PaymentCapture, PaymentExpectedError> =>
+    Effect.sync(() => {
+      this.#captures.set(capture.id, capture);
+      return capture;
+    });
 
-  saveCollection(collection: PaymentCollection): Promise<PaymentCollection> {
-    this.#collections.set(collection.id, collection);
-    return Promise.resolve(collection);
-  }
+  readonly saveCollection = (
+    collection: PaymentCollection
+  ): Effect.Effect<PaymentCollection, PaymentExpectedError> =>
+    Effect.sync(() => {
+      this.#collections.set(collection.id, collection);
+      return collection;
+    });
 
-  saveMethod(method: PaymentMethod): Promise<PaymentMethod> {
-    this.#methods.set(method.id, method);
-    return Promise.resolve(method);
-  }
+  readonly saveMethod = (
+    method: PaymentMethod
+  ): Effect.Effect<PaymentMethod, PaymentExpectedError> =>
+    Effect.sync(() => {
+      this.#methods.set(method.id, method);
+      return method;
+    });
 
-  savePayment(payment: Payment): Promise<Payment> {
-    this.#payments.set(payment.id, payment);
-    return Promise.resolve(payment);
-  }
+  readonly savePayment = (
+    payment: Payment
+  ): Effect.Effect<Payment, PaymentExpectedError> =>
+    Effect.sync(() => {
+      this.#payments.set(payment.id, payment);
+      return payment;
+    });
 
-  saveProviderRecord(
+  readonly saveProviderRecord = (
     providerRecord: PaymentProviderRecord
-  ): Promise<PaymentProviderRecord> {
-    this.#providerRecords.set(providerRecord.id, providerRecord);
-    return Promise.resolve(providerRecord);
-  }
+  ): Effect.Effect<PaymentProviderRecord, PaymentExpectedError> =>
+    Effect.sync(() => {
+      this.#providerRecords.set(providerRecord.id, providerRecord);
+      return providerRecord;
+    });
 
-  saveRefund(refund: PaymentRefund): Promise<PaymentRefund> {
-    this.#refunds.set(refund.id, refund);
-    return Promise.resolve(refund);
-  }
+  readonly saveRefund = (
+    refund: PaymentRefund
+  ): Effect.Effect<PaymentRefund, PaymentExpectedError> =>
+    Effect.sync(() => {
+      this.#refunds.set(refund.id, refund);
+      return refund;
+    });
 
-  saveSession(session: PaymentSession): Promise<PaymentSession> {
-    this.#sessions.set(session.id, session);
-    return Promise.resolve(session);
-  }
+  readonly saveSession = (
+    session: PaymentSession
+  ): Effect.Effect<PaymentSession, PaymentExpectedError> =>
+    Effect.sync(() => {
+      this.#sessions.set(session.id, session);
+      return session;
+    });
 }
 
 export const defaultPaymentRepository = new InMemoryPaymentRepository();
@@ -246,3 +284,12 @@ export const createInMemoryPaymentRepository = (): PaymentRepository =>
 
 export const createResettableInMemoryPaymentRepository =
   (): ResettablePaymentRepository => new InMemoryPaymentRepository();
+
+export const InMemoryPaymentRepositoryLayer = Layer.succeed(
+  PaymentRepositoryService,
+  defaultPaymentRepository
+);
+
+export const createInMemoryPaymentRepositoryLayer = (
+  repository: PaymentRepository = createInMemoryPaymentRepository()
+) => Layer.succeed(PaymentRepositoryService, repository);

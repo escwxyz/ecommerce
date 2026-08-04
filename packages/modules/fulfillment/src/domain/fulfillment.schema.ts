@@ -1,17 +1,129 @@
-import { z } from "zod";
+import { Schema } from "effect";
 
-export const FulfillmentMetadataSchema = z.record(z.string(), z.unknown());
+const isCanonicalIsoDateTime = (value: string): boolean => {
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+};
 
-export const FulfillmentMoneySchema = z.object({
-  amount: z.number().int().nonnegative(),
-  currencyCode: z
-    .string()
-    .min(3)
-    .max(3)
-    .transform((value) => value.toUpperCase()),
+const createPrefixedIdentifierSchema = (prefix: string, brand: string) =>
+  Schema.NonEmptyString.pipe(
+    Schema.check(Schema.isStartsWith(prefix)),
+    Schema.brand(brand)
+  );
+
+const createSerializedIdentifierSchema = (prefix: string) =>
+  Schema.NonEmptyString.pipe(Schema.check(Schema.isStartsWith(prefix)));
+
+export const fulfillmentProviderTableName = "fulfillment_provider" as const;
+export const fulfillmentSetTableName = "fulfillment_set" as const;
+export const shippingProfileTableName = "shipping_profile" as const;
+export const serviceZoneTableName = "service_zone" as const;
+export const shippingOptionTableName = "shipping_option" as const;
+export const fulfillmentTableName = "fulfillment" as const;
+export const shipmentTableName = "shipment" as const;
+export const returnShipmentLinkTableName = "return_shipment_link" as const;
+
+export const FULFILLMENT_PROVIDER_RECORD_ID_PREFIX = "fulfprov_" as const;
+export const FULFILLMENT_SET_ID_PREFIX = "fset_" as const;
+export const SHIPPING_PROFILE_ID_PREFIX = "shprof_" as const;
+export const SERVICE_ZONE_ID_PREFIX = "fzone_" as const;
+export const SHIPPING_OPTION_ID_PREFIX = "shipopt_" as const;
+export const FULFILLMENT_ID_PREFIX = "fulf_" as const;
+export const SHIPMENT_RECORD_ID_PREFIX = "ship_" as const;
+export const RETURN_SHIPMENT_LINK_ID_PREFIX = "retship_" as const;
+
+export const FulfillmentTrimmedStringSchema = Schema.Trimmed.pipe(
+  Schema.check(Schema.isMinLength(1))
+);
+
+export const FulfillmentIsoDateTimeStringSchema =
+  FulfillmentTrimmedStringSchema.pipe(
+    Schema.check(Schema.makeFilter(isCanonicalIsoDateTime))
+  );
+
+export const FulfillmentMetadataSchema = Schema.Record(
+  Schema.String,
+  Schema.Unknown
+);
+
+export const FulfillmentNonNegativeIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+
+export const FulfillmentPositiveIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThan(0))
+);
+
+export const FulfillmentCurrencyCodeSchema =
+  FulfillmentTrimmedStringSchema.pipe(
+    Schema.check(Schema.isMinLength(3)),
+    Schema.check(Schema.isMaxLength(3))
+  );
+
+export const FulfillmentCountryCodeSchema = FulfillmentTrimmedStringSchema.pipe(
+  Schema.check(Schema.isMinLength(2)),
+  Schema.check(Schema.isMaxLength(2))
+);
+
+export const FulfillmentProviderRecordIdSchema = createPrefixedIdentifierSchema(
+  FULFILLMENT_PROVIDER_RECORD_ID_PREFIX,
+  "FulfillmentProviderRecordId"
+);
+export const FulfillmentProviderRecordSerializedIdSchema =
+  createSerializedIdentifierSchema(FULFILLMENT_PROVIDER_RECORD_ID_PREFIX);
+export const FulfillmentSetIdSchema = createPrefixedIdentifierSchema(
+  FULFILLMENT_SET_ID_PREFIX,
+  "FulfillmentSetId"
+);
+export const FulfillmentSetSerializedIdSchema =
+  createSerializedIdentifierSchema(FULFILLMENT_SET_ID_PREFIX);
+export const ShippingProfileIdSchema = createPrefixedIdentifierSchema(
+  SHIPPING_PROFILE_ID_PREFIX,
+  "ShippingProfileId"
+);
+export const ShippingProfileSerializedIdSchema =
+  createSerializedIdentifierSchema(SHIPPING_PROFILE_ID_PREFIX);
+export const ServiceZoneIdSchema = createPrefixedIdentifierSchema(
+  SERVICE_ZONE_ID_PREFIX,
+  "ServiceZoneId"
+);
+export const ServiceZoneSerializedIdSchema = createSerializedIdentifierSchema(
+  SERVICE_ZONE_ID_PREFIX
+);
+export const ShippingOptionIdSchema = createPrefixedIdentifierSchema(
+  SHIPPING_OPTION_ID_PREFIX,
+  "ShippingOptionId"
+);
+export const ShippingOptionSerializedIdSchema =
+  createSerializedIdentifierSchema(SHIPPING_OPTION_ID_PREFIX);
+export const FulfillmentIdSchema = createPrefixedIdentifierSchema(
+  FULFILLMENT_ID_PREFIX,
+  "FulfillmentId"
+);
+export const FulfillmentSerializedIdSchema = createSerializedIdentifierSchema(
+  FULFILLMENT_ID_PREFIX
+);
+export const ShipmentRecordIdSchema = createPrefixedIdentifierSchema(
+  SHIPMENT_RECORD_ID_PREFIX,
+  "ShipmentRecordId"
+);
+export const ShipmentRecordSerializedIdSchema =
+  createSerializedIdentifierSchema(SHIPMENT_RECORD_ID_PREFIX);
+export const ReturnShipmentLinkIdSchema = createPrefixedIdentifierSchema(
+  RETURN_SHIPMENT_LINK_ID_PREFIX,
+  "ReturnShipmentLinkId"
+);
+export const ReturnShipmentLinkSerializedIdSchema =
+  createSerializedIdentifierSchema(RETURN_SHIPMENT_LINK_ID_PREFIX);
+
+export const FulfillmentMoneySchema = Schema.Struct({
+  amount: FulfillmentNonNegativeIntegerSchema,
+  currencyCode: FulfillmentCurrencyCodeSchema,
 });
 
-export const FulfillmentStatusSchema = z.enum([
+export const FulfillmentStatusSchema = Schema.Literals([
   "pending",
   "created",
   "shipped",
@@ -20,7 +132,7 @@ export const FulfillmentStatusSchema = z.enum([
   "failed",
 ]);
 
-export const ShipmentStatusSchema = z.enum([
+export const ShipmentStatusSchema = Schema.Literals([
   "ready",
   "shipped",
   "in-transit",
@@ -29,202 +141,273 @@ export const ShipmentStatusSchema = z.enum([
   "failed",
 ]);
 
-export const FulfillmentProviderRecordSchema = z.object({
-  createdAt: z.date(),
-  id: z.string().min(1).startsWith("fulfprov_"),
-  isEnabled: z.boolean(),
-  providerKey: z.string().min(1),
-  providerRecordId: z.string().min(1),
-  updatedAt: z.date(),
+export const FulfillmentProviderRecordSchema = Schema.Struct({
+  createdAt: Schema.Date,
+  id: FulfillmentProviderRecordIdSchema,
+  isEnabled: Schema.Boolean,
+  providerKey: FulfillmentTrimmedStringSchema,
+  providerRecordId: FulfillmentTrimmedStringSchema,
+  updatedAt: Schema.Date,
 });
 
-export const FulfillmentSetSchema = z.object({
-  createdAt: z.date(),
-  id: z.string().min(1).startsWith("fset_"),
+export const FulfillmentSetSchema = Schema.Struct({
+  createdAt: Schema.Date,
+  id: FulfillmentSetIdSchema,
   metadata: FulfillmentMetadataSchema,
-  name: z.string().min(1),
-  updatedAt: z.date(),
+  name: FulfillmentTrimmedStringSchema,
+  updatedAt: Schema.Date,
 });
 
-export const ShippingProfileSchema = z.object({
-  createdAt: z.date(),
-  fulfillmentSetId: z.string().min(1).startsWith("fset_"),
-  id: z.string().min(1).startsWith("shprof_"),
+export const ShippingProfileSchema = Schema.Struct({
+  createdAt: Schema.Date,
+  fulfillmentSetId: FulfillmentSetIdSchema,
+  id: ShippingProfileIdSchema,
   metadata: FulfillmentMetadataSchema,
-  name: z.string().min(1),
-  updatedAt: z.date(),
+  name: FulfillmentTrimmedStringSchema,
+  updatedAt: Schema.Date,
 });
 
-export const ServiceZoneSchema = z.object({
-  countryCodes: z.array(z.string().min(2).max(2)).readonly(),
-  createdAt: z.date(),
-  fulfillmentSetId: z.string().min(1).startsWith("fset_"),
-  id: z.string().min(1).startsWith("fzone_"),
+export const ServiceZoneSchema = Schema.Struct({
+  countryCodes: Schema.Array(FulfillmentCountryCodeSchema),
+  createdAt: Schema.Date,
+  fulfillmentSetId: FulfillmentSetIdSchema,
+  id: ServiceZoneIdSchema,
   metadata: FulfillmentMetadataSchema,
-  name: z.string().min(1),
-  regionIds: z.array(z.string().min(1)).readonly(),
-  updatedAt: z.date(),
+  name: FulfillmentTrimmedStringSchema,
+  regionIds: Schema.Array(FulfillmentTrimmedStringSchema),
+  updatedAt: Schema.Date,
 });
 
-export const ShippingOptionSchema = z.object({
-  createdAt: z.date(),
-  currencyCode: z.string().min(3).max(3).optional(),
-  fulfillmentSetId: z.string().min(1).startsWith("fset_"),
-  id: z.string().min(1).startsWith("shipopt_"),
-  isEnabled: z.boolean(),
+export const ShippingOptionSchema = Schema.Struct({
+  createdAt: Schema.Date,
+  currencyCode: Schema.optional(FulfillmentCurrencyCodeSchema),
+  fulfillmentSetId: FulfillmentSetIdSchema,
+  id: ShippingOptionIdSchema,
+  isEnabled: Schema.Boolean,
   metadata: FulfillmentMetadataSchema,
-  name: z.string().min(1),
-  priceAmount: z.number().int().nonnegative().optional(),
-  profileId: z.string().min(1).startsWith("shprof_"),
-  providerKey: z.string().min(1),
-  providerServiceId: z.string().min(1),
-  serviceZoneId: z.string().min(1).startsWith("fzone_"),
-  updatedAt: z.date(),
+  name: FulfillmentTrimmedStringSchema,
+  priceAmount: Schema.optional(FulfillmentNonNegativeIntegerSchema),
+  profileId: ShippingProfileIdSchema,
+  providerKey: FulfillmentTrimmedStringSchema,
+  providerServiceId: FulfillmentTrimmedStringSchema,
+  serviceZoneId: ServiceZoneIdSchema,
+  updatedAt: Schema.Date,
 });
 
-export const FulfillmentLineItemSchema = z.object({
-  lineItemId: z.string().min(1),
-  quantity: z.number().int().positive(),
-  sku: z.string().min(1).optional(),
+export const FulfillmentLineItemSchema = Schema.Struct({
+  lineItemId: FulfillmentTrimmedStringSchema,
+  quantity: FulfillmentPositiveIntegerSchema,
+  sku: Schema.optional(FulfillmentTrimmedStringSchema),
 });
 
-export const FulfillmentAddressSchema = z.object({
-  city: z.string().min(1).optional(),
-  countryCode: z.string().min(2).max(2),
-  line1: z.string().min(1).optional(),
-  postalCode: z.string().min(1).optional(),
-  provinceCode: z.string().min(1).optional(),
+export const FulfillmentAddressSchema = Schema.Struct({
+  city: Schema.optional(FulfillmentTrimmedStringSchema),
+  countryCode: FulfillmentCountryCodeSchema,
+  line1: Schema.optional(FulfillmentTrimmedStringSchema),
+  postalCode: Schema.optional(FulfillmentTrimmedStringSchema),
+  provinceCode: Schema.optional(FulfillmentTrimmedStringSchema),
 });
 
-export const FulfillmentSchema = z.object({
-  address: FulfillmentAddressSchema.optional(),
-  createdAt: z.date(),
-  id: z.string().min(1).startsWith("fulf_"),
-  idempotencyKey: z.string().min(1),
-  items: z.array(FulfillmentLineItemSchema).readonly(),
+export const FulfillmentSchema = Schema.Struct({
+  address: Schema.optional(FulfillmentAddressSchema),
+  createdAt: Schema.Date,
+  id: FulfillmentIdSchema,
+  idempotencyKey: FulfillmentTrimmedStringSchema,
+  items: Schema.Array(FulfillmentLineItemSchema),
   metadata: FulfillmentMetadataSchema,
-  orderId: z.string().min(1),
-  providerFulfillmentId: z.string().min(1).optional(),
-  providerKey: z.string().min(1),
-  shippingOptionId: z.string().min(1).startsWith("shipopt_"),
+  orderId: FulfillmentTrimmedStringSchema,
+  providerFulfillmentId: Schema.optional(FulfillmentTrimmedStringSchema),
+  providerKey: FulfillmentTrimmedStringSchema,
+  shippingOptionId: ShippingOptionIdSchema,
   status: FulfillmentStatusSchema,
-  updatedAt: z.date(),
+  updatedAt: Schema.Date,
 });
 
-export const ShipmentRecordSchema = z.object({
-  carrier: z.string().min(1).optional(),
-  createdAt: z.date(),
-  fulfillmentId: z.string().min(1).startsWith("fulf_"),
-  id: z.string().min(1).startsWith("ship_"),
-  labelUrl: z.string().url().optional(),
+export const ShipmentRecordSchema = Schema.Struct({
+  carrier: Schema.optional(FulfillmentTrimmedStringSchema),
+  createdAt: Schema.Date,
+  fulfillmentId: FulfillmentIdSchema,
+  id: ShipmentRecordIdSchema,
+  labelUrl: Schema.optional(FulfillmentTrimmedStringSchema),
   metadata: FulfillmentMetadataSchema,
-  providerShipmentId: z.string().min(1),
+  providerShipmentId: FulfillmentTrimmedStringSchema,
   status: ShipmentStatusSchema,
-  trackingNumber: z.string().min(1).optional(),
-  trackingUrl: z.string().url().optional(),
-  updatedAt: z.date(),
+  trackingNumber: Schema.optional(FulfillmentTrimmedStringSchema),
+  trackingUrl: Schema.optional(FulfillmentTrimmedStringSchema),
+  updatedAt: Schema.Date,
 });
 
-export const ReturnShipmentLinkSchema = z.object({
-  createdAt: z.date(),
-  fulfillmentId: z.string().min(1).startsWith("fulf_"),
-  id: z.string().min(1).startsWith("retship_"),
-  providerReturnId: z.string().min(1).optional(),
-  returnId: z.string().min(1),
-  shipmentId: z.string().min(1).startsWith("ship_"),
-  updatedAt: z.date(),
+export const ReturnShipmentLinkSchema = Schema.Struct({
+  createdAt: Schema.Date,
+  fulfillmentId: FulfillmentIdSchema,
+  id: ReturnShipmentLinkIdSchema,
+  providerReturnId: Schema.optional(FulfillmentTrimmedStringSchema),
+  returnId: FulfillmentTrimmedStringSchema,
+  shipmentId: ShipmentRecordIdSchema,
+  updatedAt: Schema.Date,
 });
 
-export const CreateFulfillmentSetInputSchema = z.object({
-  metadata: FulfillmentMetadataSchema.optional(),
-  name: z.string().min(1),
+export const CreateFulfillmentSetInputSchema = Schema.Struct({
+  metadata: Schema.optional(FulfillmentMetadataSchema),
+  name: FulfillmentTrimmedStringSchema,
 });
 
-export const CreateShippingProfileInputSchema = z.object({
-  fulfillmentSetId: z.string().min(1).startsWith("fset_"),
-  metadata: FulfillmentMetadataSchema.optional(),
-  name: z.string().min(1),
+export const CreateShippingProfileInputSchema = Schema.Struct({
+  fulfillmentSetId: FulfillmentSetIdSchema,
+  metadata: Schema.optional(FulfillmentMetadataSchema),
+  name: FulfillmentTrimmedStringSchema,
 });
 
-export const CreateServiceZoneInputSchema = z.object({
-  countryCodes: z.array(z.string().min(2).max(2)).optional(),
-  fulfillmentSetId: z.string().min(1).startsWith("fset_"),
-  metadata: FulfillmentMetadataSchema.optional(),
-  name: z.string().min(1),
-  regionIds: z.array(z.string().min(1)).optional(),
+export const CreateServiceZoneInputSchema = Schema.Struct({
+  countryCodes: Schema.optional(Schema.Array(FulfillmentCountryCodeSchema)),
+  fulfillmentSetId: FulfillmentSetIdSchema,
+  metadata: Schema.optional(FulfillmentMetadataSchema),
+  name: FulfillmentTrimmedStringSchema,
+  regionIds: Schema.optional(Schema.Array(FulfillmentTrimmedStringSchema)),
 });
 
-export const CreateShippingOptionInputSchema = z.object({
-  currencyCode: z.string().min(3).max(3).optional(),
-  fulfillmentSetId: z.string().min(1).startsWith("fset_"),
-  metadata: FulfillmentMetadataSchema.optional(),
-  name: z.string().min(1),
-  priceAmount: z.number().int().nonnegative().optional(),
-  profileId: z.string().min(1).startsWith("shprof_"),
-  providerKey: z.string().min(1),
-  providerServiceId: z.string().min(1),
-  serviceZoneId: z.string().min(1).startsWith("fzone_"),
+export const CreateShippingOptionInputSchema = Schema.Struct({
+  currencyCode: Schema.optional(FulfillmentCurrencyCodeSchema),
+  fulfillmentSetId: FulfillmentSetIdSchema,
+  metadata: Schema.optional(FulfillmentMetadataSchema),
+  name: FulfillmentTrimmedStringSchema,
+  priceAmount: Schema.optional(FulfillmentNonNegativeIntegerSchema),
+  profileId: ShippingProfileIdSchema,
+  providerKey: FulfillmentTrimmedStringSchema,
+  providerServiceId: FulfillmentTrimmedStringSchema,
+  serviceZoneId: ServiceZoneIdSchema,
 });
 
-export const ShippingOptionLookupInputSchema = z.object({
-  countryCode: z.string().min(2).max(2).optional(),
-  fulfillmentSetId: z.string().min(1).startsWith("fset_").optional(),
-  regionId: z.string().min(1).optional(),
-  salesChannelId: z.string().min(1).optional(),
+export const ShippingOptionLookupInputSchema = Schema.Struct({
+  countryCode: Schema.optional(FulfillmentCountryCodeSchema),
+  fulfillmentSetId: Schema.optional(FulfillmentSetIdSchema),
+  regionId: Schema.optional(FulfillmentTrimmedStringSchema),
+  salesChannelId: Schema.optional(FulfillmentTrimmedStringSchema),
 });
 
-export const CreateFulfillmentInputSchema = z.object({
-  address: FulfillmentAddressSchema.optional(),
-  idempotencyKey: z.string().min(1),
-  items: z.array(FulfillmentLineItemSchema).readonly(),
-  metadata: FulfillmentMetadataSchema.optional(),
-  orderId: z.string().min(1),
-  shippingOptionId: z.string().min(1).startsWith("shipopt_"),
+export const CreateFulfillmentInputSchema = Schema.Struct({
+  address: Schema.optional(FulfillmentAddressSchema),
+  idempotencyKey: FulfillmentTrimmedStringSchema,
+  items: Schema.Array(FulfillmentLineItemSchema),
+  metadata: Schema.optional(FulfillmentMetadataSchema),
+  orderId: FulfillmentTrimmedStringSchema,
+  shippingOptionId: ShippingOptionIdSchema,
 });
 
-export const CancelFulfillmentInputSchema = z.object({
-  fulfillmentId: z.string().min(1).startsWith("fulf_"),
-  reason: z.string().min(1).optional(),
+export const CancelFulfillmentInputSchema = Schema.Struct({
+  fulfillmentId: FulfillmentIdSchema,
+  reason: Schema.optional(FulfillmentTrimmedStringSchema),
 });
 
-export const TrackShipmentInputSchema = z.object({
-  fulfillmentId: z.string().min(1).startsWith("fulf_"),
+export const TrackShipmentInputSchema = Schema.Struct({
+  fulfillmentId: FulfillmentIdSchema,
 });
 
-const ApiDateFields = {
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
-} as const;
-
-export const FulfillmentProviderApiRecordSchema =
-  FulfillmentProviderRecordSchema.extend(ApiDateFields);
-export const FulfillmentSetApiSchema =
-  FulfillmentSetSchema.extend(ApiDateFields);
-export const ShippingProfileApiSchema =
-  ShippingProfileSchema.extend(ApiDateFields);
-export const ServiceZoneApiSchema = ServiceZoneSchema.extend(ApiDateFields);
-export const ShippingOptionApiSchema =
-  ShippingOptionSchema.extend(ApiDateFields);
-export const FulfillmentApiSchema = FulfillmentSchema.extend(ApiDateFields);
-export const ShipmentRecordApiSchema =
-  ShipmentRecordSchema.extend(ApiDateFields);
-export const ReturnShipmentLinkApiSchema =
-  ReturnShipmentLinkSchema.extend(ApiDateFields);
-
-export const ShippingOptionRateApiSchema = z.object({
-  amount: z.number().int().nonnegative(),
-  currencyCode: z.string().min(3).max(3),
-  providerKey: z.string().min(1),
-  shippingOptionId: z.string().min(1).startsWith("shipopt_"),
+export const FulfillmentProviderApiRecordSchema = Schema.Struct({
+  createdAt: FulfillmentIsoDateTimeStringSchema,
+  id: FulfillmentProviderRecordSerializedIdSchema,
+  isEnabled: Schema.Boolean,
+  providerKey: FulfillmentTrimmedStringSchema,
+  providerRecordId: FulfillmentTrimmedStringSchema,
+  updatedAt: FulfillmentIsoDateTimeStringSchema,
 });
 
-export const FulfillmentDetailApiSchema = FulfillmentApiSchema.extend({
-  shipments: z.array(ShipmentRecordApiSchema).readonly(),
+export const FulfillmentSetApiSchema = Schema.Struct({
+  createdAt: FulfillmentIsoDateTimeStringSchema,
+  id: FulfillmentSetSerializedIdSchema,
+  metadata: FulfillmentMetadataSchema,
+  name: FulfillmentTrimmedStringSchema,
+  updatedAt: FulfillmentIsoDateTimeStringSchema,
 });
 
-export const ShippingOptionListApiSchema = z
-  .array(ShippingOptionApiSchema)
-  .readonly();
-export const FulfillmentListApiSchema = z
-  .array(FulfillmentApiSchema)
-  .readonly();
+export const ShippingProfileApiSchema = Schema.Struct({
+  createdAt: FulfillmentIsoDateTimeStringSchema,
+  fulfillmentSetId: FulfillmentSetSerializedIdSchema,
+  id: ShippingProfileSerializedIdSchema,
+  metadata: FulfillmentMetadataSchema,
+  name: FulfillmentTrimmedStringSchema,
+  updatedAt: FulfillmentIsoDateTimeStringSchema,
+});
+
+export const ServiceZoneApiSchema = Schema.Struct({
+  countryCodes: Schema.Array(FulfillmentCountryCodeSchema),
+  createdAt: FulfillmentIsoDateTimeStringSchema,
+  fulfillmentSetId: FulfillmentSetSerializedIdSchema,
+  id: ServiceZoneSerializedIdSchema,
+  metadata: FulfillmentMetadataSchema,
+  name: FulfillmentTrimmedStringSchema,
+  regionIds: Schema.Array(FulfillmentTrimmedStringSchema),
+  updatedAt: FulfillmentIsoDateTimeStringSchema,
+});
+
+export const ShippingOptionApiSchema = Schema.Struct({
+  createdAt: FulfillmentIsoDateTimeStringSchema,
+  currencyCode: Schema.optional(FulfillmentCurrencyCodeSchema),
+  fulfillmentSetId: FulfillmentSetSerializedIdSchema,
+  id: ShippingOptionSerializedIdSchema,
+  isEnabled: Schema.Boolean,
+  metadata: FulfillmentMetadataSchema,
+  name: FulfillmentTrimmedStringSchema,
+  priceAmount: Schema.optional(FulfillmentNonNegativeIntegerSchema),
+  profileId: ShippingProfileSerializedIdSchema,
+  providerKey: FulfillmentTrimmedStringSchema,
+  providerServiceId: FulfillmentTrimmedStringSchema,
+  serviceZoneId: ServiceZoneSerializedIdSchema,
+  updatedAt: FulfillmentIsoDateTimeStringSchema,
+});
+
+export const FulfillmentApiSchema = Schema.Struct({
+  address: Schema.optional(FulfillmentAddressSchema),
+  createdAt: FulfillmentIsoDateTimeStringSchema,
+  id: FulfillmentSerializedIdSchema,
+  idempotencyKey: FulfillmentTrimmedStringSchema,
+  items: Schema.Array(FulfillmentLineItemSchema),
+  metadata: FulfillmentMetadataSchema,
+  orderId: FulfillmentTrimmedStringSchema,
+  providerFulfillmentId: Schema.optional(FulfillmentTrimmedStringSchema),
+  providerKey: FulfillmentTrimmedStringSchema,
+  shippingOptionId: ShippingOptionSerializedIdSchema,
+  status: FulfillmentStatusSchema,
+  updatedAt: FulfillmentIsoDateTimeStringSchema,
+});
+
+export const ShipmentRecordApiSchema = Schema.Struct({
+  carrier: Schema.optional(FulfillmentTrimmedStringSchema),
+  createdAt: FulfillmentIsoDateTimeStringSchema,
+  fulfillmentId: FulfillmentSerializedIdSchema,
+  id: ShipmentRecordSerializedIdSchema,
+  labelUrl: Schema.optional(FulfillmentTrimmedStringSchema),
+  metadata: FulfillmentMetadataSchema,
+  providerShipmentId: FulfillmentTrimmedStringSchema,
+  status: ShipmentStatusSchema,
+  trackingNumber: Schema.optional(FulfillmentTrimmedStringSchema),
+  trackingUrl: Schema.optional(FulfillmentTrimmedStringSchema),
+  updatedAt: FulfillmentIsoDateTimeStringSchema,
+});
+
+export const ReturnShipmentLinkApiSchema = Schema.Struct({
+  createdAt: FulfillmentIsoDateTimeStringSchema,
+  fulfillmentId: FulfillmentSerializedIdSchema,
+  id: ReturnShipmentLinkSerializedIdSchema,
+  providerReturnId: Schema.optional(FulfillmentTrimmedStringSchema),
+  returnId: FulfillmentTrimmedStringSchema,
+  shipmentId: ShipmentRecordSerializedIdSchema,
+  updatedAt: FulfillmentIsoDateTimeStringSchema,
+});
+
+export const ShippingOptionRateApiSchema = Schema.Struct({
+  amount: FulfillmentNonNegativeIntegerSchema,
+  currencyCode: FulfillmentCurrencyCodeSchema,
+  providerKey: FulfillmentTrimmedStringSchema,
+  shippingOptionId: ShippingOptionSerializedIdSchema,
+});
+
+export const FulfillmentDetailApiSchema = Schema.Struct({
+  fulfillment: FulfillmentApiSchema,
+  shipments: Schema.Array(ShipmentRecordApiSchema),
+});
+
+export const ShippingOptionListApiSchema = Schema.Array(
+  ShippingOptionApiSchema
+);
+export const FulfillmentListApiSchema = Schema.Array(FulfillmentApiSchema);

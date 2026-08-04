@@ -9,13 +9,19 @@ import Stack from "./alchemy.run";
 const hasCloudflareCredentials = Boolean(
   process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID
 );
+const hasPostgresHyperdriveOrigin = Boolean(
+  process.env.POSTGRES_DATABASE &&
+  process.env.POSTGRES_HOST &&
+  process.env.POSTGRES_PASSWORD &&
+  process.env.POSTGRES_USER
+);
 const stage = `test-${Date.now()}`;
 const { test, deploy, destroy } = Test.make({
   providers: Cloudflare.providers(),
   state: Cloudflare.state(),
 });
 
-test.skipIf(!hasCloudflareCredentials)(
+test.skipIf(!hasCloudflareCredentials || !hasPostgresHyperdriveOrigin)(
   "deploys an isolated stack and verifies deployed endpoints",
   Effect.gen(function* () {
     const stack = yield* deploy(Stack, { stage });
@@ -27,6 +33,7 @@ test.skipIf(!hasCloudflareCredentials)(
     expect(stack.apiUrl).toBeString();
     expect(stack.adminUrl).toBeString();
     expect(stack.databaseId).toBeString();
+    expect(stack.postgresHyperdriveId).toBeString();
 
     const apiUrl = stack.apiUrl;
 
@@ -50,5 +57,16 @@ test.skipIf(!hasCloudflareCredentials)(
     );
 
     expect(rpcResponse.ok).toBe(true);
+
+    const postgresResponse = yield* Effect.tryPromise(() =>
+      fetch(`${apiUrl}/__health/postgres`)
+    );
+
+    expect(postgresResponse.status).toBe(200);
+    expect(yield* Effect.tryPromise(() => postgresResponse.json())).toEqual({
+      database: "postgres",
+      status: "ok",
+      transport: "cloudflare-hyperdrive",
+    });
   })
 );

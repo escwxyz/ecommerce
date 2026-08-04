@@ -3,17 +3,31 @@ import type {
   EventPublisherServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
+import {
+  ClockService,
+  EventPublisherService,
+  IdGeneratorService,
+} from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import { Context, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
 import type {
   StoreDefaults,
+  StoreExpectedError,
   StoreRepository,
   StoreSettings,
   UpdateStoreSettingsInput,
 } from "../domain";
-import { STORE_ID_PREFIX, createStoreId } from "../domain";
+import {
+  STORE_ID_PREFIX,
+  StoreCurrencyListEmpty,
+  StoreDefaultCurrencyUnsupported,
+  StoreEventPublishFailure,
+  StoreRepositoryService,
+  createStoreIdEffect,
+} from "../domain";
 import { defaultStoreRepository } from "../repositories";
 
 export const STORE_SETTINGS_UPDATED_EVENT = "store.settings.updated" as const;
@@ -23,10 +37,14 @@ export interface StoreSettingsUpdatedEventPayload {
   readonly updatedFields: readonly string[];
 }
 
+export type StoreServiceFailure = StoreExpectedError;
+
 export interface StoreServiceShape {
-  getStoreDefaults(): Promise<StoreDefaults>;
-  getStoreSettings(): Promise<StoreSettings>;
-  updateStoreSettings(input: UpdateStoreSettingsInput): Promise<StoreSettings>;
+  readonly getStoreDefaults: EffectValue<StoreDefaults, StoreServiceFailure>;
+  readonly getStoreSettings: EffectValue<StoreSettings, StoreServiceFailure>;
+  readonly updateStoreSettings: (
+    input: UpdateStoreSettingsInput
+  ) => EffectValue<StoreSettings, StoreServiceFailure>;
 }
 
 export const StoreService = Context.Service<StoreServiceShape>(
@@ -60,9 +78,9 @@ const defaultSupportedCurrencyCodes = ["USD"] as const;
 const normalizeCurrencyCode = (currencyCode: string): string =>
   currencyCode.trim().toUpperCase();
 
-const normalizeCurrencyCodes = (
+const normalizeCurrencyCodesEffect = (
   currencyCodes: readonly string[]
-): readonly string[] => {
+): EffectValue<readonly string[], StoreCurrencyListEmpty> => {
   const seen = new Set<string>();
   const normalized: string[] = [];
 
@@ -78,24 +96,33 @@ const normalizeCurrencyCodes = (
   }
 
   if (normalized.length === 0) {
-    throw new Error("Store must support at least one currency.");
-  }
-
-  return normalized;
-};
-
-const assertDefaultCurrencySupported = (
-  defaultCurrencyCode: string,
-  supportedCurrencyCodes: readonly string[]
-): void => {
-  if (!supportedCurrencyCodes.includes(defaultCurrencyCode)) {
-    throw new Error(
-      `Default currency "${defaultCurrencyCode}" must be included in supported currencies.`
+    return Effect.fail(
+      new StoreCurrencyListEmpty({
+        reason: "no-supported-currencies",
+      })
     );
   }
+
+  return Effect.succeed(normalized);
 };
 
-const createInitialSettings = ({
+const assertDefaultCurrencySupportedEffect = (
+  defaultCurrencyCode: string,
+  supportedCurrencyCodes: readonly string[]
+): EffectValue<void, StoreDefaultCurrencyUnsupported> => {
+  if (!supportedCurrencyCodes.includes(defaultCurrencyCode)) {
+    return Effect.fail(
+      new StoreDefaultCurrencyUnsupported({
+        defaultCurrencyCode,
+        supportedCurrencyCodes,
+      })
+    );
+  }
+
+  return Effect.void;
+};
+
+const createInitialSettingsEffect = ({
   clock,
   idGenerator,
   initialSettings,
@@ -103,27 +130,27 @@ const createInitialSettings = ({
   readonly clock: ClockServiceShape;
   readonly idGenerator: IdGeneratorServiceShape;
   readonly initialSettings?: StoreSettings;
-}): StoreSettings => {
+}): EffectValue<StoreSettings, StoreServiceFailure> => {
   if (initialSettings) {
-    return initialSettings;
+    return Effect.succeed(initialSettings);
   }
 
   const now = clock.now();
   const defaultCurrencyCode = normalizeCurrencyCode("USD");
 
-  return {
+  return Effect.map(createStoreIdEffect(idGenerator.nextId()), (id) => ({
     createdAt: now,
     defaultCurrencyCode,
     defaultLocale: "en-US",
     defaultRegionId: null,
     defaultSalesChannelId: null,
-    id: createStoreId(idGenerator.nextId()),
+    id,
     metadata: {},
     name: "Default store",
     supportedCurrencyCodes: defaultSupportedCurrencyCodes,
     timezone: "UTC",
     updatedAt: now,
-  };
+  }));
 };
 
 const getUpdatedFields = (
@@ -150,6 +177,15 @@ const getUpdatedFields = (
   return fields;
 };
 
+const toStoreEventPublishFailure = (
+  settings: StoreSettings
+): StoreEventPublishFailure =>
+  new StoreEventPublishFailure({
+    eventName: STORE_SETTINGS_UPDATED_EVENT,
+    reason: "publisher-rejected",
+    storeId: settings.id,
+  });
+
 const pickDefaults = (settings: StoreSettings): StoreDefaults => ({
   defaultCurrencyCode: settings.defaultCurrencyCode,
   defaultLocale: settings.defaultLocale,
@@ -166,40 +202,40 @@ export const createStoreService = ({
   initialSettings,
   repository = defaultStoreRepository,
 }: CreateStoreServiceOptions = {}): StoreServiceShape => {
-  const loadOrCreateSettings = async (): Promise<StoreSettings> => {
-    const existing = await repository.getStoreSettings();
+  const loadOrCreateSettings = Effect.fn("StoreService.loadOrCreateSettings")(
+    function* loadOrCreateSettingsEffect() {
+      const existing = yield* repository.getStoreSettings;
 
-    if (existing) {
-      return existing;
+      if (existing) {
+        return existing;
+      }
+
+      const created = yield* createInitialSettingsEffect({
+        clock,
+        idGenerator,
+        initialSettings,
+      });
+
+      yield* assertDefaultCurrencySupportedEffect(
+        created.defaultCurrencyCode,
+        created.supportedCurrencyCodes
+      );
+
+      return yield* repository.saveStoreSettings(created);
     }
+  );
 
-    const created = createInitialSettings({
-      clock,
-      idGenerator,
-      initialSettings,
-    });
-
-    assertDefaultCurrencySupported(
-      created.defaultCurrencyCode,
-      created.supportedCurrencyCodes
-    );
-
-    return repository.saveStoreSettings(created);
-  };
-
-  return {
-    getStoreDefaults: async () => pickDefaults(await loadOrCreateSettings()),
-    getStoreSettings: loadOrCreateSettings,
-    updateStoreSettings: async (input) => {
-      const current = await loadOrCreateSettings();
-      const supportedCurrencyCodes = normalizeCurrencyCodes(
+  const updateStoreSettings = Effect.fn("StoreService.updateStoreSettings")(
+    function* updateStoreSettingsEffect(input: UpdateStoreSettingsInput) {
+      const current = yield* loadOrCreateSettings();
+      const supportedCurrencyCodes = yield* normalizeCurrencyCodesEffect(
         input.supportedCurrencyCodes ?? current.supportedCurrencyCodes
       );
       const defaultCurrencyCode = normalizeCurrencyCode(
         input.defaultCurrencyCode ?? current.defaultCurrencyCode
       );
 
-      assertDefaultCurrencySupported(
+      yield* assertDefaultCurrencySupportedEffect(
         defaultCurrencyCode,
         supportedCurrencyCodes
       );
@@ -223,34 +259,67 @@ export const createStoreService = ({
         updatedAt: clock.now(),
       };
 
-      const saved = await repository.saveStoreSettings(updated);
+      const saved = yield* repository.saveStoreSettings(updated);
       const updatedFields = getUpdatedFields(current, saved);
 
       if (updatedFields.length > 0) {
-        await eventPublisher.publish(
-          createEventEnvelope({
-            id: idGenerator.nextId(),
-            name: STORE_SETTINGS_UPDATED_EVENT,
-            payload: {
-              id: saved.id,
-              updatedFields,
-            } satisfies StoreSettingsUpdatedEventPayload,
-            sourceModule: "store",
-            subject: {
-              id: saved.id,
-              type: "store",
-            },
-          })
-        );
+        const event = createEventEnvelope({
+          id: idGenerator.nextId(),
+          name: STORE_SETTINGS_UPDATED_EVENT,
+          payload: {
+            id: saved.id,
+            updatedFields,
+          } satisfies StoreSettingsUpdatedEventPayload,
+          sourceModule: "store",
+          subject: {
+            id: saved.id,
+            type: "store",
+          },
+        });
+
+        yield* Effect.tryPromise({
+          catch: () => toStoreEventPublishFailure(saved),
+          try: () => Promise.resolve(eventPublisher.publish(event)),
+        });
       }
 
       return saved;
-    },
+    }
+  );
+
+  return {
+    getStoreDefaults: Effect.map(loadOrCreateSettings(), pickDefaults),
+    getStoreSettings: loadOrCreateSettings(),
+    updateStoreSettings,
   };
 };
 
 export const createStoreServiceLayer = (service: StoreServiceShape) =>
   Layer.succeed(StoreService, service);
+
+export const createStoreRepositoryLayer = (repository: StoreRepository) =>
+  Layer.succeed(StoreRepositoryService, repository);
+
+export const createStoreServiceFromDependenciesLayer = (
+  options: Pick<CreateStoreServiceOptions, "initialSettings"> = {}
+) =>
+  Layer.effect(
+    StoreService,
+    Effect.gen(function* createStoreServiceFromDependenciesEffect() {
+      const clock = yield* ClockService;
+      const eventPublisher = yield* EventPublisherService;
+      const idGenerator = yield* IdGeneratorService;
+      const repository = yield* StoreRepositoryService;
+
+      return createStoreService({
+        clock,
+        eventPublisher,
+        idGenerator,
+        initialSettings: options.initialSettings,
+        repository,
+      });
+    })
+  );
 
 export const defaultStoreService = createStoreService({
   repository: defaultStoreRepository,

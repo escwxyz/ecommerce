@@ -7,6 +7,11 @@ export {
 } from "./cart-cache";
 export {
   createCloudflareQueuePublisher,
+  createCloudflareQueuePublisherLayer,
+  publishCloudflareQueueMessageEffect,
+  CloudflareQueuePublishFailure,
+  type CloudflareQueueTelemetryEvent,
+  type CloudflareQueueTelemetrySink,
   type CloudflareQueuePublisherOptions,
 } from "./queue";
 export {
@@ -66,11 +71,41 @@ export {
   type SandboxStoragePort,
 } from "./sandbox";
 export {
-  createCloudflareStatefulCoordinator,
-  type CloudflareStatefulCoordinatorOptions,
+  createCloudflareKeyedActorLayer,
+  createKeyedActorDurableObjectHandler,
+  CloudflareKeyedActorDispatchResponseSchema,
+  CloudflareKeyedActorFailureResponseSchema,
+  CloudflareKeyedActorRequestSchema,
+  CloudflareKeyedActorStateLookupResponseSchema,
+  CloudflareKeyedActorStatePutResponseSchema,
+  CloudflareKeyedActorTimerCancelResponseSchema,
+  CloudflareKeyedActorTimerLookupResponseSchema,
+  CloudflareKeyedActorTimerResponseSchema,
+  type CloudflareKeyedActorCommandHandler,
+  type CloudflareKeyedActorDurableObjectHandler,
+  type CloudflareKeyedActorDurableObjectHandlerOptions,
+  type CloudflareKeyedActorLayerOptions,
+  type CloudflareKeyedActorNamespace,
+  type CloudflareKeyedActorRequest,
+  type CloudflareKeyedActorStorage,
+  type CloudflareKeyedActorStub,
 } from "./stateful";
 export {
+  createCloudflareTelemetryLayer,
+  withCloudflareTelemetry,
+  type CloudflareTelemetryConsole,
+  type CloudflareTelemetryLayerOptions,
+  type CloudflareTelemetryLogRecord,
+  type CloudflareTelemetryMessage,
+  type CloudflareTelemetryRecord,
+  type CloudflareTelemetrySpanRecord,
+} from "./telemetry";
+export {
   createCloudflareWorkflowRuntime,
+  createCloudflareWorkflowRuntimeLayer,
+  CloudflareWorkflowRuntimeFailure,
+  type CloudflareWorkflowTelemetryEvent,
+  type CloudflareWorkflowTelemetrySink,
   type CloudflareWorkflowDispatchMessage,
   type CloudflareWorkflowPayload,
   type CloudflareWorkflowRuntimeBindings,

@@ -11,9 +11,6 @@
   "scripts": {
     "check-types": "tsc --noEmit"
   },
-  "dependencies": {
-    "@orpc/contract": "catalog:"
-  },
   "devDependencies": {
     "@ecommerce/config": "workspace:*",
     "typescript": "catalog:"

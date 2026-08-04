@@ -1,30 +1,29 @@
 import { describe, expect, it } from "bun:test";
 
 import { createAdminMetadataModel } from "./admin-metadata";
+import { adminHttpApi, createEffectHttpApiAssembly } from "./index";
 import { authorizationEvaluator } from "./permissions";
-import { createBuiltinRouteFragments } from "./routers";
+import { taxEffectHttpApiContribution } from "./tax-effect-http-api";
 
 describe("tax API and admin assembly", () => {
-  it("includes tax route fragments in builtin API composition", () => {
-    expect(
-      createBuiltinRouteFragments().map((fragment) => fragment.key)
-    ).toEqual([
-      "builtin:core",
-      "module:store",
-      "module:customer",
-      "module:product",
-      "module:region-sales-channel",
-      "module:inventory",
-      "module:notification-event",
-      "module:pricing",
-      "module:promotion",
-      "module:tax",
-      "module:payment",
-      "module:fulfillment",
-      "module:cart",
-      "module:order",
-      "module:checkout",
+  it("includes tax Effect HTTP operations in canonical admin composition", () => {
+    const assembly = createEffectHttpApiAssembly({
+      contributions: taxEffectHttpApiContribution.groups,
+      root: adminHttpApi,
+      surface: "admin",
+    });
+
+    expect(assembly.contributions.map((group) => group.key)).toEqual([
+      "module:tax.admin",
     ]);
+    expect(assembly.routes.map((route) => route.routeKey)).toEqual([
+      "POST /admin/taxes/calculate",
+      "POST /admin/taxes/categories",
+      "POST /admin/taxes/providers",
+      "POST /admin/taxes/rates",
+      "POST /admin/taxes/regions",
+    ]);
+    expect(taxEffectHttpApiContribution.moduleName).toBe("tax");
   });
 
   it("exposes tax admin metadata through shared module contracts", () => {

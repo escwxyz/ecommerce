@@ -1,0 +1,105 @@
+import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { Schema } from "effect";
+
+import {
+  StoreApiRecordSchema,
+  StoreDefaultsApiRecordSchema,
+  StoreSettingsSchema,
+  UpdateStoreSettingsInputSchema,
+  createStoreId,
+} from "../domain";
+
+const currentDirectory = dirname(fileURLToPath(import.meta.url));
+const domainDirectory = join(currentDirectory, "..", "domain");
+
+const readDomainSource = (fileName: string): string =>
+  readFileSync(join(domainDirectory, fileName), "utf8");
+
+describe("store Effect schemas", () => {
+  it("decodes store domain settings without Zod inferred types", () => {
+    const decoded = Schema.decodeUnknownSync(StoreSettingsSchema)({
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      defaultCurrencyCode: "USD",
+      defaultLocale: "en-US",
+      defaultRegionId: null,
+      defaultSalesChannelId: "sc_web",
+      id: "store_effect",
+      metadata: { organizationHint: "org_demo" },
+      name: "Effect Store",
+      supportedCurrencyCodes: ["USD", "EUR"],
+      timezone: "UTC",
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
+
+    expect(decoded.id).toBe(createStoreId("store_effect"));
+    expect(decoded.supportedCurrencyCodes).toEqual(["USD", "EUR"]);
+    expect(decoded.metadata).toEqual({ organizationHint: "org_demo" });
+  });
+
+  it("keeps API and update schemas strict about serialized store invariants", () => {
+    const validApiRecord = {
+      createdAt: "2026-01-01T00:00:00.000Z",
+      defaultCurrencyCode: "USD",
+      defaultLocale: "en-US",
+      defaultRegionId: null,
+      defaultSalesChannelId: null,
+      id: "store_api",
+      metadata: {},
+      name: "API Store",
+      supportedCurrencyCodes: ["USD"],
+      timezone: "UTC",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    };
+
+    expect(
+      Schema.decodeUnknownSync(StoreApiRecordSchema)(validApiRecord)
+    ).toEqual(validApiRecord);
+
+    expect(() =>
+      Schema.decodeUnknownSync(StoreApiRecordSchema)({
+        ...validApiRecord,
+        defaultCurrencyCode: "usd",
+      })
+    ).toThrow();
+
+    expect(() =>
+      Schema.decodeUnknownSync(StoreApiRecordSchema)({
+        ...validApiRecord,
+        createdAt: "not-a-date",
+      })
+    ).toThrow();
+
+    expect(() =>
+      Schema.decodeUnknownSync(StoreApiRecordSchema)({
+        ...validApiRecord,
+        supportedCurrencyCodes: [],
+      })
+    ).toThrow();
+
+    expect(() =>
+      Schema.decodeUnknownSync(StoreDefaultsApiRecordSchema)({
+        defaultCurrencyCode: "USD",
+        defaultLocale: "en-US",
+        defaultRegionId: null,
+        defaultSalesChannelId: null,
+        supportedCurrencyCodes: [],
+        timezone: "UTC",
+      })
+    ).toThrow();
+
+    expect(() =>
+      Schema.decodeUnknownSync(UpdateStoreSettingsInputSchema)({
+        supportedCurrencyCodes: [],
+      })
+    ).toThrow();
+  });
+
+  it("keeps domain schemas free of legacy Zod inference", () => {
+    expect(readDomainSource("store.schema.ts")).not.toContain("zod");
+    expect(readDomainSource("store.types.ts")).not.toContain("z.infer");
+  });
+});

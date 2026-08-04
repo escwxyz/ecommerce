@@ -1,3 +1,12 @@
+export {
+  deliverOutboxBatch,
+  outboxRecordToQueueMessage,
+  OutboxQueuePublishFailure,
+  type OutboxDeliveryBatchOptions,
+  type OutboxDeliveryBatchReport,
+  type OutboxDeliveryRecordResult,
+} from "./outbox-delivery";
+
 export interface CommerceQueueSubject {
   readonly type: string;
   readonly id: string;
@@ -8,6 +17,7 @@ export interface CommerceQueueMessageMetadata {
   readonly idempotencyKey: string;
   readonly causationId?: string;
   readonly subject?: CommerceQueueSubject;
+  readonly traceId?: string;
   readonly workflowRunId?: string;
 }
 

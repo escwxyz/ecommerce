@@ -1,0 +1,55 @@
+{
+  "name": "@ecommerce/db-postgres",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./outbox": {
+      "default": "./src/outbox.ts"
+    },
+    "./schema": {
+      "default": "./src/schema/index.ts"
+    },
+    "./testing": {
+      "default": "./src/repository-contract-harness.ts"
+    }
+  },
+  "scripts": {
+    "db:migrate": "bun ./src/cli.ts migrate",
+    "db:reset-and-seed-development": "bun ./src/cli.ts reset-and-seed-development",
+    "db:reset-development": "bun ./src/cli.ts reset-development",
+    "db:rollback-development": "bun ./src/cli.ts rollback-development",
+    "db:seed-development": "bun ./src/cli.ts seed-development",
+    "db:status": "bun ./src/cli.ts status",
+    "check-types": "tsc --noEmit",
+    "test": "bun test ./src",
+    "test:live": "bun test ./src/__tests__/postgres-live-verification.test.ts"
+  },
+  "dependencies": {
+    "@ecommerce/cart": "workspace:*",
+    "@ecommerce/core": "workspace:*",
+    "@ecommerce/customer": "workspace:*",
+    "@ecommerce/fulfillment": "workspace:*",
+    "@ecommerce/inventory": "workspace:*",
+    "@ecommerce/notification-event": "workspace:*",
+    "@ecommerce/order": "workspace:*",
+    "@ecommerce/payment": "workspace:*",
+    "@ecommerce/pricing": "workspace:*",
+    "@ecommerce/product": "workspace:*",
+    "@ecommerce/promotion": "workspace:*",
+    "@ecommerce/region-sales-channel": "workspace:*",
+    "@ecommerce/store": "workspace:*",
+    "@ecommerce/tax": "workspace:*",
+    "@effect/sql-pg": "catalog:",
+    "drizzle-orm": "catalog:",
+    "effect": "catalog:",
+    "pg": "catalog:"
+  },
+  "devDependencies": {
+    "@ecommerce/config": "workspace:*",
+    "@types/pg": "catalog:",
+    "bun-types": "catalog:",
+    "typescript": "catalog:"
+  }
+}

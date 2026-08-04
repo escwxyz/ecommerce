@@ -2,27 +2,40 @@ import { describe, expect, it } from "bun:test";
 
 import { createAdminMetadataModel } from "./admin-metadata";
 import {
+  adminHttpApi,
+  createEffectHttpApiAssembly,
+  customerEffectHttpApiContribution,
+} from "./index";
+import {
   builtinPermissionStatement,
   authorizationEvaluator,
 } from "./permissions";
-import { createBuiltinRouteFragments } from "./routers";
 
 describe("customer API and admin assembly", () => {
   it("includes customer permissions in builtin permission composition", () => {
     expect(builtinPermissionStatement.customer).toEqual(["read", "write"]);
   });
 
-  it("includes customer route operations in builtin API composition", () => {
-    const customerFragment = createBuiltinRouteFragments().find(
-      (fragment) => fragment.key === "module:customer"
-    );
+  it("includes customer Effect HTTP operations in canonical admin composition", () => {
+    const admin = createEffectHttpApiAssembly({
+      contributions: customerEffectHttpApiContribution.groups,
+      root: adminHttpApi,
+      surface: "admin",
+    });
 
-    expect(Object.keys(customerFragment?.router ?? {})).toContain(
-      "customerResolveFromAuth"
-    );
-    expect(Object.keys(customerFragment?.router ?? {})).toContain(
-      "customerPaymentIdentityGet"
-    );
+    expect(admin.routes.map((route) => route.routeKey)).toEqual([
+      "POST /admin/customer-addresses",
+      "POST /admin/customers/auth-link",
+      "POST /admin/customers",
+      "POST /admin/customers/get",
+      "POST /admin/customer-groups/assign",
+      "POST /admin/customer-groups",
+      "GET /admin/customers",
+      "POST /admin/customers/payment-identity",
+      "PATCH /admin/customers",
+      "POST /admin/customers/resolve-auth",
+    ]);
+    expect(customerEffectHttpApiContribution.moduleName).toBe("customer");
   });
 
   it("exposes customer admin metadata through shared module contracts", () => {

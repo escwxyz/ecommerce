@@ -8,13 +8,13 @@ export {
   createVisitorCartScope,
   isCartCacheOwnershipError,
   serializeCartOwnershipScope,
-  CartCacheOwnershipError,
   type CartActiveCache,
   type CartOwnershipScope,
   type CartProjectionSyncFailure,
   type CartProjectionSyncPort,
   type CartScopedCacheInput,
 } from "./cart-cache.types";
+export { CartCacheOwnershipError } from "../domain";
 export {
   syncCartProjection,
   type SyncCartProjectionInput,

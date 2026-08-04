@@ -1,169 +1,308 @@
-import { z } from "zod";
+import { Schema } from "effect";
 
-const MetadataSchema = z.record(z.string(), z.unknown());
-const RuleAttributesSchema = z.record(z.string(), z.string());
+export const promotionCampaignTableName = "promotion_campaign" as const;
+export const promotionTableName = "promotion_promotion" as const;
+export const promotionRuleTableName = "promotion_rule" as const;
+export const promotionUsageLimitTableName = "promotion_usage_limit" as const;
+export const promotionRedemptionTableName = "promotion_redemption" as const;
 
-export const PromotionStatusSchema = z.enum(["draft", "active", "disabled"]);
+const isCanonicalIsoDateTime = (value: string): boolean => {
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+};
 
-export const PromotionApplicationMethodSchema = z.object({
-  allocation: z.enum(["cart", "line-item"]),
-  target: z.enum(["subtotal", "line-item"]),
-  type: z.enum(["fixed", "percentage"]),
-  value: z.number().int().min(1).max(100),
+const createPrefixedIdentifierSchema = (prefix: string, brand: string) =>
+  Schema.NonEmptyString.pipe(
+    Schema.check(Schema.isStartsWith(prefix)),
+    Schema.brand(brand)
+  );
+
+const createSerializedIdentifierSchema = (prefix: string) =>
+  Schema.NonEmptyString.pipe(Schema.check(Schema.isStartsWith(prefix)));
+
+export const PromotionTrimmedStringSchema = Schema.Trimmed.pipe(
+  Schema.check(Schema.isMinLength(1))
+);
+export const PromotionIsoDateTimeStringSchema =
+  PromotionTrimmedStringSchema.pipe(
+    Schema.check(Schema.makeFilter(isCanonicalIsoDateTime))
+  );
+export const PromotionMetadataSchema = Schema.Record(
+  Schema.String,
+  Schema.Unknown
+);
+export const PromotionRuleAttributesSchema = Schema.Record(
+  Schema.String,
+  PromotionTrimmedStringSchema
+);
+export const PromotionCurrencyCodeSchema = PromotionTrimmedStringSchema.pipe(
+  Schema.check(Schema.isMinLength(3)),
+  Schema.check(Schema.isMaxLength(3))
+);
+export const PromotionNonNegativeIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+export const PromotionPositiveIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThan(0))
+);
+export const PromotionDiscountAmountSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isLessThanOrEqualTo(0))
+);
+
+export const CampaignIdSchema = createPrefixedIdentifierSchema(
+  "pcamp_",
+  "CampaignId"
+);
+export const CampaignSerializedIdSchema =
+  createSerializedIdentifierSchema("pcamp_");
+export const PromotionIdSchema = createPrefixedIdentifierSchema(
+  "promo_",
+  "PromotionId"
+);
+export const PromotionSerializedIdSchema =
+  createSerializedIdentifierSchema("promo_");
+export const PromotionRuleIdSchema = createPrefixedIdentifierSchema(
+  "prule_",
+  "PromotionRuleId"
+);
+export const PromotionRuleSerializedIdSchema =
+  createSerializedIdentifierSchema("prule_");
+export const PromotionUsageLimitIdSchema = createPrefixedIdentifierSchema(
+  "plimit_",
+  "PromotionUsageLimitId"
+);
+export const PromotionUsageLimitSerializedIdSchema =
+  createSerializedIdentifierSchema("plimit_");
+export const PromotionAdjustmentIdSchema = createPrefixedIdentifierSchema(
+  "padj_",
+  "PromotionAdjustmentId"
+);
+export const PromotionAdjustmentSerializedIdSchema =
+  createSerializedIdentifierSchema("padj_");
+export const PromotionRedemptionIdSchema = createPrefixedIdentifierSchema(
+  "pred_",
+  "PromotionRedemptionId"
+);
+export const PromotionRedemptionSerializedIdSchema =
+  createSerializedIdentifierSchema("pred_");
+
+export const PromotionStatusSchema = Schema.Literals([
+  "draft",
+  "active",
+  "disabled",
+]);
+
+export const PromotionApplicationMethodSchema = Schema.Struct({
+  allocation: Schema.Literals(["cart", "line-item"]),
+  target: Schema.Literals(["subtotal", "line-item"]),
+  type: Schema.Literals(["fixed", "percentage"]),
+  value: PromotionPositiveIntegerSchema.pipe(
+    Schema.check(Schema.isLessThanOrEqualTo(100))
+  ),
 });
 
-export const CampaignRecordSchema = z.object({
-  createdAt: z.date(),
-  description: z.string().nullable(),
-  id: z.string().min(1).startsWith("pcamp_"),
-  metadata: MetadataSchema,
-  name: z.string().min(1),
-  updatedAt: z.date(),
+export const CampaignRecordSchema = Schema.Struct({
+  createdAt: Schema.Date,
+  description: Schema.NullOr(PromotionTrimmedStringSchema),
+  id: CampaignIdSchema,
+  metadata: PromotionMetadataSchema,
+  name: PromotionTrimmedStringSchema,
+  updatedAt: Schema.Date,
 });
 
-export const CreateCampaignInputSchema = z.object({
-  description: z.string().optional(),
-  metadata: MetadataSchema.optional(),
-  name: z.string().min(1),
+export const CreateCampaignInputSchema = Schema.Struct({
+  description: Schema.optional(PromotionTrimmedStringSchema),
+  metadata: Schema.optional(PromotionMetadataSchema),
+  name: PromotionTrimmedStringSchema,
 });
 
-export const PromotionRecordSchema = z.object({
+export const PromotionRecordSchema = Schema.Struct({
   applicationMethod: PromotionApplicationMethodSchema,
-  campaignId: z.string().min(1).startsWith("pcamp_").nullable(),
-  code: z.string().min(1).nullable(),
-  createdAt: z.date(),
-  endsAt: z.date().nullable(),
-  id: z.string().min(1).startsWith("promo_"),
-  metadata: MetadataSchema,
-  startsAt: z.date().nullable(),
+  campaignId: Schema.NullOr(CampaignIdSchema),
+  code: Schema.NullOr(PromotionTrimmedStringSchema),
+  createdAt: Schema.Date,
+  endsAt: Schema.NullOr(Schema.Date),
+  id: PromotionIdSchema,
+  metadata: PromotionMetadataSchema,
+  startsAt: Schema.NullOr(Schema.Date),
   status: PromotionStatusSchema,
-  title: z.string().min(1),
-  updatedAt: z.date(),
+  title: PromotionTrimmedStringSchema,
+  updatedAt: Schema.Date,
 });
 
-export const CreatePromotionInputSchema = z.object({
+export const CreatePromotionInputSchema = Schema.Struct({
   applicationMethod: PromotionApplicationMethodSchema,
-  campaignId: z.string().min(1).startsWith("pcamp_").optional(),
-  code: z.string().min(1).optional(),
-  endsAt: z.date().optional(),
-  metadata: MetadataSchema.optional(),
-  startsAt: z.date().optional(),
-  status: PromotionStatusSchema.optional(),
-  title: z.string().min(1),
+  campaignId: Schema.optional(CampaignIdSchema),
+  code: Schema.optional(PromotionTrimmedStringSchema),
+  endsAt: Schema.optional(Schema.Date),
+  metadata: Schema.optional(PromotionMetadataSchema),
+  startsAt: Schema.optional(Schema.Date),
+  status: Schema.optional(PromotionStatusSchema),
+  title: PromotionTrimmedStringSchema,
 });
 
-export const PromotionRuleRecordSchema = z.object({
-  attribute: z.string().min(1),
-  createdAt: z.date(),
-  id: z.string().min(1).startsWith("prule_"),
-  promotionId: z.string().min(1).startsWith("promo_"),
-  updatedAt: z.date(),
-  value: z.string().min(1),
+export const PromotionRuleRecordSchema = Schema.Struct({
+  attribute: PromotionTrimmedStringSchema,
+  createdAt: Schema.Date,
+  id: PromotionRuleIdSchema,
+  promotionId: PromotionIdSchema,
+  updatedAt: Schema.Date,
+  value: PromotionTrimmedStringSchema,
 });
 
-export const CreatePromotionRuleInputSchema = z.object({
-  attribute: z.string().min(1),
-  promotionId: z.string().min(1).startsWith("promo_"),
-  value: z.string().min(1),
+export const CreatePromotionRuleInputSchema = Schema.Struct({
+  attribute: PromotionTrimmedStringSchema,
+  promotionId: PromotionIdSchema,
+  value: PromotionTrimmedStringSchema,
 });
 
-export const PromotionUsageLimitRecordSchema = z.object({
-  createdAt: z.date(),
-  id: z.string().min(1).startsWith("plimit_"),
-  limit: z.number().int().positive(),
-  promotionId: z.string().min(1).startsWith("promo_"),
-  scope: z.enum(["total", "customer"]),
-  updatedAt: z.date(),
+export const PromotionUsageLimitScopeSchema = Schema.Literals([
+  "total",
+  "customer",
+]);
+
+export const PromotionUsageLimitRecordSchema = Schema.Struct({
+  createdAt: Schema.Date,
+  id: PromotionUsageLimitIdSchema,
+  limit: PromotionPositiveIntegerSchema,
+  promotionId: PromotionIdSchema,
+  scope: PromotionUsageLimitScopeSchema,
+  updatedAt: Schema.Date,
 });
 
-export const CreatePromotionUsageLimitInputSchema = z.object({
-  limit: z.number().int().positive(),
-  promotionId: z.string().min(1).startsWith("promo_"),
-  scope: z.enum(["total", "customer"]),
+export const CreatePromotionUsageLimitInputSchema = Schema.Struct({
+  limit: PromotionPositiveIntegerSchema,
+  promotionId: PromotionIdSchema,
+  scope: PromotionUsageLimitScopeSchema,
 });
 
-export const PromotionRedemptionRecordSchema = z.object({
-  adjustmentIds: z.array(z.string().min(1).startsWith("padj_")),
-  cartId: z.string().min(1),
-  createdAt: z.date(),
-  id: z.string().min(1).startsWith("pred_"),
-  promotionId: z.string().min(1).startsWith("promo_"),
+export const PromotionRedemptionRecordSchema = Schema.Struct({
+  adjustmentIds: Schema.Array(PromotionAdjustmentIdSchema),
+  cartId: PromotionTrimmedStringSchema,
+  createdAt: Schema.Date,
+  id: PromotionRedemptionIdSchema,
+  promotionId: PromotionIdSchema,
 });
 
-export const RecordPromotionRedemptionInputSchema = z.object({
-  adjustmentIds: z.array(z.string().min(1).startsWith("padj_")),
-  cartId: z.string().min(1),
-  promotionId: z.string().min(1).startsWith("promo_"),
+export const RecordPromotionRedemptionInputSchema = Schema.Struct({
+  adjustmentIds: Schema.Array(PromotionAdjustmentIdSchema),
+  cartId: PromotionTrimmedStringSchema,
+  promotionId: PromotionIdSchema,
 });
 
-export const PromotionCartInputSchema = z.object({
-  currencyCode: z.string().min(3).max(3),
-  id: z.string().min(1),
-  lines: z
-    .array(
-      z.object({
-        id: z.string().min(1),
-        quantity: z.number().int().positive(),
-        subtotal: z.number().int().nonnegative(),
+export const PromotionCartInputSchema = Schema.Struct({
+  currencyCode: PromotionCurrencyCodeSchema,
+  id: PromotionTrimmedStringSchema,
+  lines: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        id: PromotionTrimmedStringSchema,
+        quantity: PromotionPositiveIntegerSchema,
+        subtotal: PromotionNonNegativeIntegerSchema,
       })
     )
-    .optional(),
-  subtotal: z.number().int().nonnegative(),
+  ),
+  subtotal: PromotionNonNegativeIntegerSchema,
 });
 
-export const CalculatePromotionAdjustmentsInputSchema = z.object({
+export const CalculatePromotionAdjustmentsInputSchema = Schema.Struct({
   cart: PromotionCartInputSchema,
-  context: RuleAttributesSchema.optional(),
-  promotionCodes: z.array(z.string().min(1)).optional(),
+  context: Schema.optional(PromotionRuleAttributesSchema),
+  promotionCodes: Schema.optional(Schema.Array(PromotionTrimmedStringSchema)),
 });
 
-export const PromotionAdjustmentTraceSchema = z.object({
-  promotionCode: z.string().nullable(),
-  ruleMatches: z.array(z.string()),
-  source: z.enum(["automatic", "discount-code"]),
+export const PromotionAdjustmentTraceSchema = Schema.Struct({
+  promotionCode: Schema.NullOr(PromotionTrimmedStringSchema),
+  ruleMatches: Schema.Array(PromotionTrimmedStringSchema),
+  source: Schema.Literals(["automatic", "discount-code"]),
 });
 
-export const PromotionAdjustmentSchema = z.object({
-  amount: z.number().int().nonpositive(),
-  currencyCode: z.string().min(3).max(3),
-  id: z.string().min(1).startsWith("padj_"),
-  promotionId: z.string().min(1).startsWith("promo_"),
-  target: z.enum(["subtotal", "line-item"]),
+export const PromotionAdjustmentSchema = Schema.Struct({
+  amount: PromotionDiscountAmountSchema,
+  currencyCode: PromotionCurrencyCodeSchema,
+  id: PromotionAdjustmentIdSchema,
+  promotionId: PromotionIdSchema,
+  target: Schema.Literals(["subtotal", "line-item"]),
   trace: PromotionAdjustmentTraceSchema,
 });
 
-export const PromotionAdjustmentResultSchema = z.object({
-  adjustments: z.array(PromotionAdjustmentSchema),
-  cartId: z.string().min(1),
-  currencyCode: z.string().min(3).max(3),
-  subtotal: z.number().int().nonnegative(),
-  totalDiscount: z.number().int().nonpositive(),
+export const PromotionAdjustmentResultSchema = Schema.Struct({
+  adjustments: Schema.Array(PromotionAdjustmentSchema),
+  cartId: PromotionTrimmedStringSchema,
+  currencyCode: PromotionCurrencyCodeSchema,
+  subtotal: PromotionNonNegativeIntegerSchema,
+  totalDiscount: PromotionDiscountAmountSchema,
 });
 
-export const CampaignApiRecordSchema = CampaignRecordSchema.extend({
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
+export const PromotionAdjustmentApiSchema = Schema.Struct({
+  amount: PromotionDiscountAmountSchema,
+  currencyCode: PromotionCurrencyCodeSchema,
+  id: PromotionAdjustmentSerializedIdSchema,
+  promotionId: PromotionSerializedIdSchema,
+  target: Schema.Literals(["subtotal", "line-item"]),
+  trace: PromotionAdjustmentTraceSchema,
 });
 
-export const PromotionApiRecordSchema = PromotionRecordSchema.extend({
-  createdAt: z.string().min(1),
-  endsAt: z.string().min(1).nullable(),
-  startsAt: z.string().min(1).nullable(),
-  updatedAt: z.string().min(1),
+export const PromotionAdjustmentResultApiSchema = Schema.Struct({
+  adjustments: Schema.Array(PromotionAdjustmentApiSchema),
+  cartId: PromotionTrimmedStringSchema,
+  currencyCode: PromotionCurrencyCodeSchema,
+  subtotal: PromotionNonNegativeIntegerSchema,
+  totalDiscount: PromotionDiscountAmountSchema,
 });
 
-export const PromotionRuleApiRecordSchema = PromotionRuleRecordSchema.extend({
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
+export const PromotionIdentifierSchema = Schema.Struct({
+  id: PromotionIdSchema,
 });
 
-export const PromotionUsageLimitApiRecordSchema =
-  PromotionUsageLimitRecordSchema.extend({
-    createdAt: z.string().min(1),
-    updatedAt: z.string().min(1),
-  });
+export const CampaignApiRecordSchema = Schema.Struct({
+  createdAt: PromotionIsoDateTimeStringSchema,
+  description: Schema.NullOr(PromotionTrimmedStringSchema),
+  id: CampaignSerializedIdSchema,
+  metadata: PromotionMetadataSchema,
+  name: PromotionTrimmedStringSchema,
+  updatedAt: PromotionIsoDateTimeStringSchema,
+});
 
-export const PromotionRedemptionApiRecordSchema =
-  PromotionRedemptionRecordSchema.extend({
-    createdAt: z.string().min(1),
-  });
+export const PromotionApiRecordSchema = Schema.Struct({
+  applicationMethod: PromotionApplicationMethodSchema,
+  campaignId: Schema.NullOr(CampaignSerializedIdSchema),
+  code: Schema.NullOr(PromotionTrimmedStringSchema),
+  createdAt: PromotionIsoDateTimeStringSchema,
+  endsAt: Schema.NullOr(PromotionIsoDateTimeStringSchema),
+  id: PromotionSerializedIdSchema,
+  metadata: PromotionMetadataSchema,
+  startsAt: Schema.NullOr(PromotionIsoDateTimeStringSchema),
+  status: PromotionStatusSchema,
+  title: PromotionTrimmedStringSchema,
+  updatedAt: PromotionIsoDateTimeStringSchema,
+});
+
+export const PromotionRuleApiRecordSchema = Schema.Struct({
+  attribute: PromotionTrimmedStringSchema,
+  createdAt: PromotionIsoDateTimeStringSchema,
+  id: PromotionRuleSerializedIdSchema,
+  promotionId: PromotionSerializedIdSchema,
+  updatedAt: PromotionIsoDateTimeStringSchema,
+  value: PromotionTrimmedStringSchema,
+});
+
+export const PromotionUsageLimitApiRecordSchema = Schema.Struct({
+  createdAt: PromotionIsoDateTimeStringSchema,
+  id: PromotionUsageLimitSerializedIdSchema,
+  limit: PromotionPositiveIntegerSchema,
+  promotionId: PromotionSerializedIdSchema,
+  scope: PromotionUsageLimitScopeSchema,
+  updatedAt: PromotionIsoDateTimeStringSchema,
+});
+
+export const PromotionRedemptionApiRecordSchema = Schema.Struct({
+  adjustmentIds: Schema.Array(PromotionAdjustmentSerializedIdSchema),
+  cartId: PromotionTrimmedStringSchema,
+  createdAt: PromotionIsoDateTimeStringSchema,
+  id: PromotionRedemptionSerializedIdSchema,
+  promotionId: PromotionSerializedIdSchema,
+});

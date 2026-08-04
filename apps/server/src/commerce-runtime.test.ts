@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 
-import type { CommerceKyselyDatabase } from "@ecommerce/db";
 import { createFulfillmentProviderRegistry } from "@ecommerce/fulfillment";
 
 import {
@@ -8,32 +7,30 @@ import {
   createServerCommerceRuntime,
 } from "./commerce-runtime";
 
-const unusedDatabase = {} as CommerceKyselyDatabase;
+const unusedDatabase = {};
 
 describe("server commerce runtime", () => {
   it("registers persistent module routes but omits checkout without providers", () => {
     const runtime = createServerCommerceRuntime({ db: unusedDatabase });
-    const routeKeys = Object.keys(runtime.apiAssembly.router);
 
     expect(runtime.checkoutConfigured).toBe(false);
-    expect(routeKeys).toContain("customerGet");
-    expect(routeKeys).toContain("taxCalculate");
-    expect(routeKeys).toContain("paymentCollectionCreate");
-    expect(routeKeys).toContain("fulfillmentCreate");
-    expect(routeKeys).toContain("orderCreateFromCheckout");
-    expect(routeKeys).not.toContain("checkoutComplete");
+    expect(runtime.services.customer).toBeDefined();
+    expect(runtime.services.tax).toBeDefined();
+    expect(runtime.services.payment).toBeDefined();
+    expect(runtime.services.fulfillment).toBeDefined();
+    expect(runtime.services.order).toBeDefined();
+    expect(runtime.services.checkout).toBeUndefined();
   });
 
-  it("registers checkout when explicit development providers are supplied", () => {
+  it("composes the checkout service without restoring legacy route assembly", () => {
     const runtime = createServerCommerceRuntime({
       ...createDevelopmentCommerceProviderRegistries(),
       db: unusedDatabase,
     });
 
     expect(runtime.checkoutConfigured).toBe(true);
-    expect(Object.keys(runtime.apiAssembly.router)).toContain(
-      "checkoutComplete"
-    );
+    expect(runtime.services.checkout).toBeDefined();
+    expect("apiAssembly" in runtime).toBe(false);
   });
 
   it("rejects incomplete checkout provider composition", () => {

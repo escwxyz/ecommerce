@@ -1,82 +1,127 @@
-import { z } from "zod";
+import { Schema } from "effect";
 
-const MetadataSchema = z.record(z.string(), z.unknown());
-const NullableStringSchema = z.string().min(1).nullable();
-const CoordinationMetadataSchema = z.object({
-  causationId: z.string().min(1).optional(),
-  correlationId: z.string().min(1),
-  idempotencyKey: z.string().min(1),
-  workflowRunId: z.string().min(1).optional(),
+const isCanonicalIsoDateTime = (value: string): boolean => {
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+};
+
+const createPrefixedIdentifierSchema = (prefix: string, brand: string) =>
+  Schema.NonEmptyString.pipe(
+    Schema.check(Schema.isStartsWith(prefix)),
+    Schema.brand(brand)
+  );
+
+const createSerializedIdentifierSchema = (prefix: string) =>
+  Schema.NonEmptyString.pipe(Schema.check(Schema.isStartsWith(prefix)));
+
+export const CartTrimmedStringSchema = Schema.Trimmed.pipe(
+  Schema.check(Schema.isMinLength(1))
+);
+export const CartIsoDateTimeStringSchema = CartTrimmedStringSchema.pipe(
+  Schema.check(Schema.makeFilter(isCanonicalIsoDateTime))
+);
+export const CartMetadataSchema = Schema.Record(Schema.String, Schema.Unknown);
+export const CartNullableStringSchema = Schema.NullOr(CartTrimmedStringSchema);
+
+export const CartIdSchema = createPrefixedIdentifierSchema("cart_", "CartId");
+export const CartSerializedIdSchema = createSerializedIdentifierSchema("cart_");
+export const CartLineItemIdSchema = createPrefixedIdentifierSchema(
+  "clitem_",
+  "CartLineItemId"
+);
+export const CartLineItemSerializedIdSchema =
+  createSerializedIdentifierSchema("clitem_");
+export const CartAdjustmentIdSchema = createPrefixedIdentifierSchema(
+  "cadj_",
+  "CartAdjustmentId"
+);
+export const CartAdjustmentSerializedIdSchema =
+  createSerializedIdentifierSchema("cadj_");
+
+export const CartCountryCodeSchema = CartTrimmedStringSchema.pipe(
+  Schema.check(Schema.isMinLength(2)),
+  Schema.check(Schema.isMaxLength(2))
+);
+export const CartCurrencyCodeSchema = CartTrimmedStringSchema.pipe(
+  Schema.check(Schema.isMinLength(3)),
+  Schema.check(Schema.isMaxLength(3))
+);
+export const CartNonNegativeIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+export const CartPositiveIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThan(0))
+);
+export const CartAdjustmentAmountSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt())
+);
+
+export const CartAddressSchema = Schema.Struct({
+  address1: CartTrimmedStringSchema,
+  address2: Schema.optional(CartTrimmedStringSchema),
+  city: CartTrimmedStringSchema,
+  company: Schema.optional(CartTrimmedStringSchema),
+  countryCode: CartCountryCodeSchema,
+  firstName: Schema.optional(CartTrimmedStringSchema),
+  lastName: Schema.optional(CartTrimmedStringSchema),
+  phone: Schema.optional(CartTrimmedStringSchema),
+  postalCode: CartTrimmedStringSchema,
+  province: Schema.optional(CartTrimmedStringSchema),
 });
 
-export const CartAddressSchema = z.object({
-  address1: z.string().min(1),
-  address2: z.string().min(1).optional(),
-  city: z.string().min(1),
-  company: z.string().min(1).optional(),
-  countryCode: z
-    .string()
-    .min(2)
-    .max(2)
-    .transform((value) => value.toUpperCase()),
-  firstName: z.string().min(1).optional(),
-  lastName: z.string().min(1).optional(),
-  phone: z.string().min(1).optional(),
-  postalCode: z.string().min(1),
-  province: z.string().min(1).optional(),
+export const CartTotalsSnapshotSchema = Schema.Struct({
+  adjustmentTotal: CartAdjustmentAmountSchema,
+  currencyCode: CartCurrencyCodeSchema,
+  discountTotal: CartNonNegativeIntegerSchema,
+  giftCardTotal: CartNonNegativeIntegerSchema,
+  itemSubtotal: CartNonNegativeIntegerSchema,
+  shippingTotal: CartNonNegativeIntegerSchema,
+  subtotal: CartNonNegativeIntegerSchema,
+  taxTotal: CartNonNegativeIntegerSchema,
+  total: CartNonNegativeIntegerSchema,
 });
 
-export const CartTotalsSnapshotSchema = z.object({
-  adjustmentTotal: z.number().int(),
-  currencyCode: z
-    .string()
-    .min(3)
-    .max(3)
-    .transform((value) => value.toUpperCase()),
-  discountTotal: z.number().int().nonnegative(),
-  giftCardTotal: z.number().int().nonnegative(),
-  itemSubtotal: z.number().int().nonnegative(),
-  shippingTotal: z.number().int().nonnegative(),
-  subtotal: z.number().int().nonnegative(),
-  taxTotal: z.number().int().nonnegative(),
-  total: z.number().int().nonnegative(),
-});
+export const CartStatusSchema = Schema.Literals([
+  "active",
+  "completed",
+  "canceled",
+]);
 
-export const CartStatusSchema = z.enum(["active", "completed", "canceled"]);
-
-export const CartRecordSchema = z.object({
-  billingAddress: CartAddressSchema.nullable(),
-  completedAt: z.date().nullable(),
-  createdAt: z.date(),
-  currencyCode: z.string().min(3).max(3),
-  customerId: NullableStringSchema,
-  email: z.string().email().nullable(),
-  id: z.string().min(1).startsWith("cart_"),
-  metadata: MetadataSchema,
-  paymentCollectionId: NullableStringSchema,
-  regionId: NullableStringSchema,
-  salesChannelId: NullableStringSchema,
-  shippingAddress: CartAddressSchema.nullable(),
-  shippingOptionId: NullableStringSchema,
+export const CartRecordSchema = Schema.Struct({
+  billingAddress: Schema.NullOr(CartAddressSchema),
+  completedAt: Schema.NullOr(Schema.Date),
+  createdAt: Schema.Date,
+  currencyCode: CartCurrencyCodeSchema,
+  customerId: CartNullableStringSchema,
+  email: Schema.NullOr(CartTrimmedStringSchema),
+  id: CartIdSchema,
+  metadata: CartMetadataSchema,
+  paymentCollectionId: CartNullableStringSchema,
+  regionId: CartNullableStringSchema,
+  salesChannelId: CartNullableStringSchema,
+  shippingAddress: Schema.NullOr(CartAddressSchema),
+  shippingOptionId: CartNullableStringSchema,
   status: CartStatusSchema,
   totals: CartTotalsSnapshotSchema,
-  updatedAt: z.date(),
+  updatedAt: Schema.Date,
 });
 
-export const CartLineItemRecordSchema = z.object({
-  cartId: z.string().min(1).startsWith("cart_"),
-  createdAt: z.date(),
-  id: z.string().min(1).startsWith("clitem_"),
-  metadata: MetadataSchema,
-  productId: z.string().min(1),
-  quantity: z.number().int().positive(),
-  title: z.string().min(1),
-  unitPrice: z.number().int().nonnegative(),
-  updatedAt: z.date(),
-  variantId: z.string().min(1),
+export const CartLineItemRecordSchema = Schema.Struct({
+  cartId: CartIdSchema,
+  createdAt: Schema.Date,
+  id: CartLineItemIdSchema,
+  metadata: CartMetadataSchema,
+  productId: CartTrimmedStringSchema,
+  quantity: CartPositiveIntegerSchema,
+  title: CartTrimmedStringSchema,
+  unitPrice: CartNonNegativeIntegerSchema,
+  updatedAt: Schema.Date,
+  variantId: CartTrimmedStringSchema,
 });
 
-export const CartAdjustmentTypeSchema = z.enum([
+export const CartAdjustmentTypeSchema = Schema.Literals([
   "discount",
   "promotion",
   "shipping",
@@ -84,114 +129,153 @@ export const CartAdjustmentTypeSchema = z.enum([
   "manual",
 ]);
 
-export const CartAdjustmentRecordSchema = z.object({
-  amount: z.number().int(),
-  cartId: z.string().min(1).startsWith("cart_"),
-  createdAt: z.date(),
-  id: z.string().min(1).startsWith("cadj_"),
-  lineItemId: z.string().min(1).startsWith("clitem_").nullable(),
-  metadata: MetadataSchema,
-  source: z.string().min(1),
+export const CartAdjustmentRecordSchema = Schema.Struct({
+  amount: CartAdjustmentAmountSchema,
+  cartId: CartIdSchema,
+  createdAt: Schema.Date,
+  id: CartAdjustmentIdSchema,
+  lineItemId: Schema.NullOr(CartLineItemIdSchema),
+  metadata: CartMetadataSchema,
+  source: CartTrimmedStringSchema,
   type: CartAdjustmentTypeSchema,
-  updatedAt: z.date(),
+  updatedAt: Schema.Date,
 });
 
-export const CartAggregateSchema = z.object({
-  adjustments: z.array(CartAdjustmentRecordSchema).readonly(),
+export const CartAggregateSchema = Schema.Struct({
+  adjustments: Schema.Array(CartAdjustmentRecordSchema),
   cart: CartRecordSchema,
-  lineItems: z.array(CartLineItemRecordSchema).readonly(),
+  lineItems: Schema.Array(CartLineItemRecordSchema),
 });
 
-export const CreateCartInputSchema = z.object({
-  currencyCode: z.string().min(3).max(3),
-  customerId: z.string().min(1).optional(),
-  email: z.string().email().optional(),
-  metadata: MetadataSchema.optional(),
-  regionId: z.string().min(1).optional(),
-  salesChannelId: z.string().min(1).optional(),
+export const CartCoordinationMetadataSchema = Schema.Struct({
+  causationId: Schema.optional(CartTrimmedStringSchema),
+  correlationId: CartTrimmedStringSchema,
+  idempotencyKey: CartTrimmedStringSchema,
+  workflowRunId: Schema.optional(CartTrimmedStringSchema),
 });
 
-export const AddCartLineItemInputSchema = CoordinationMetadataSchema.extend({
-  cartId: z.string().min(1).startsWith("cart_"),
-  metadata: MetadataSchema.optional(),
-  productId: z.string().min(1),
-  quantity: z.number().int().positive(),
-  title: z.string().min(1),
-  unitPrice: z.number().int().nonnegative(),
-  variantId: z.string().min(1),
+export const CreateCartInputSchema = Schema.Struct({
+  currencyCode: CartCurrencyCodeSchema,
+  customerId: Schema.optional(CartTrimmedStringSchema),
+  email: Schema.optional(CartTrimmedStringSchema),
+  metadata: Schema.optional(CartMetadataSchema),
+  regionId: Schema.optional(CartTrimmedStringSchema),
+  salesChannelId: Schema.optional(CartTrimmedStringSchema),
 });
 
-export const UpdateCartLineItemInputSchema = CoordinationMetadataSchema.extend({
-  cartId: z.string().min(1).startsWith("cart_"),
-  lineItemId: z.string().min(1).startsWith("clitem_"),
-  quantity: z.number().int().nonnegative(),
+export const AddCartLineItemInputSchema = Schema.Struct({
+  ...CartCoordinationMetadataSchema.fields,
+  cartId: CartIdSchema,
+  metadata: Schema.optional(CartMetadataSchema),
+  productId: CartTrimmedStringSchema,
+  quantity: CartPositiveIntegerSchema,
+  title: CartTrimmedStringSchema,
+  unitPrice: CartNonNegativeIntegerSchema,
+  variantId: CartTrimmedStringSchema,
 });
 
-export const AssociateCartCustomerInputSchema =
-  CoordinationMetadataSchema.extend({
-    cartId: z.string().min(1).startsWith("cart_"),
-    customerId: z.string().min(1).optional(),
-    email: z.string().email().optional(),
-  });
-
-export const SetCartAddressesInputSchema = CoordinationMetadataSchema.extend({
-  billingAddress: CartAddressSchema.optional(),
-  cartId: z.string().min(1).startsWith("cart_"),
-  shippingAddress: CartAddressSchema.optional(),
+export const UpdateCartLineItemInputSchema = Schema.Struct({
+  ...CartCoordinationMetadataSchema.fields,
+  cartId: CartIdSchema,
+  lineItemId: CartLineItemIdSchema,
+  quantity: CartNonNegativeIntegerSchema,
 });
 
-export const SetCartRegionChannelInputSchema =
-  CoordinationMetadataSchema.extend({
-    cartId: z.string().min(1).startsWith("cart_"),
-    currencyCode: z.string().min(3).max(3).optional(),
-    regionId: z.string().min(1).optional(),
-    salesChannelId: z.string().min(1).optional(),
-  });
+export const AssociateCartCustomerInputSchema = Schema.Struct({
+  ...CartCoordinationMetadataSchema.fields,
+  cartId: CartIdSchema,
+  customerId: Schema.optional(CartTrimmedStringSchema),
+  email: Schema.optional(CartTrimmedStringSchema),
+});
 
-export const SetCartCheckoutReferencesInputSchema =
-  CoordinationMetadataSchema.extend({
-    cartId: z.string().min(1).startsWith("cart_"),
-    paymentCollectionId: z.string().min(1).optional(),
-    shippingOptionId: z.string().min(1).optional(),
-  });
+export const SetCartAddressesInputSchema = Schema.Struct({
+  ...CartCoordinationMetadataSchema.fields,
+  billingAddress: Schema.optional(CartAddressSchema),
+  cartId: CartIdSchema,
+  shippingAddress: Schema.optional(CartAddressSchema),
+});
 
-export const ApplyCartAdjustmentInputSchema = CoordinationMetadataSchema.extend(
-  {
-    amount: z.number().int(),
-    cartId: z.string().min(1).startsWith("cart_"),
-    lineItemId: z.string().min(1).startsWith("clitem_").optional(),
-    metadata: MetadataSchema.optional(),
-    source: z.string().min(1),
-    type: CartAdjustmentTypeSchema,
-  }
-);
+export const SetCartRegionChannelInputSchema = Schema.Struct({
+  ...CartCoordinationMetadataSchema.fields,
+  cartId: CartIdSchema,
+  currencyCode: Schema.optional(CartCurrencyCodeSchema),
+  regionId: Schema.optional(CartTrimmedStringSchema),
+  salesChannelId: Schema.optional(CartTrimmedStringSchema),
+});
 
-export const UpdateCartTotalsInputSchema = CoordinationMetadataSchema.extend({
-  cartId: z.string().min(1).startsWith("cart_"),
+export const SetCartCheckoutReferencesInputSchema = Schema.Struct({
+  ...CartCoordinationMetadataSchema.fields,
+  cartId: CartIdSchema,
+  paymentCollectionId: Schema.optional(CartTrimmedStringSchema),
+  shippingOptionId: Schema.optional(CartTrimmedStringSchema),
+});
+
+export const ApplyCartAdjustmentInputSchema = Schema.Struct({
+  ...CartCoordinationMetadataSchema.fields,
+  amount: CartAdjustmentAmountSchema,
+  cartId: CartIdSchema,
+  lineItemId: Schema.optional(CartLineItemIdSchema),
+  metadata: Schema.optional(CartMetadataSchema),
+  source: CartTrimmedStringSchema,
+  type: CartAdjustmentTypeSchema,
+});
+
+export const UpdateCartTotalsInputSchema = Schema.Struct({
+  ...CartCoordinationMetadataSchema.fields,
+  cartId: CartIdSchema,
   totals: CartTotalsSnapshotSchema,
 });
 
-export const CartIdentifierSchema = z.object({
-  id: z.string().min(1).startsWith("cart_"),
+export const CartIdentifierSchema = Schema.Struct({
+  id: CartIdSchema,
 });
 
-const ApiDateFields = {
-  completedAt: z.string().min(1).nullable(),
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
-} as const;
+export const CartApiRecordSchema = Schema.Struct({
+  billingAddress: Schema.NullOr(CartAddressSchema),
+  completedAt: Schema.NullOr(CartIsoDateTimeStringSchema),
+  createdAt: CartIsoDateTimeStringSchema,
+  currencyCode: CartCurrencyCodeSchema,
+  customerId: CartNullableStringSchema,
+  email: Schema.NullOr(CartTrimmedStringSchema),
+  id: CartSerializedIdSchema,
+  metadata: CartMetadataSchema,
+  paymentCollectionId: CartNullableStringSchema,
+  regionId: CartNullableStringSchema,
+  salesChannelId: CartNullableStringSchema,
+  shippingAddress: Schema.NullOr(CartAddressSchema),
+  shippingOptionId: CartNullableStringSchema,
+  status: CartStatusSchema,
+  totals: CartTotalsSnapshotSchema,
+  updatedAt: CartIsoDateTimeStringSchema,
+});
 
-export const CartApiRecordSchema = CartRecordSchema.extend(ApiDateFields);
-export const CartLineItemApiRecordSchema = CartLineItemRecordSchema.extend({
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
+export const CartLineItemApiRecordSchema = Schema.Struct({
+  cartId: CartSerializedIdSchema,
+  createdAt: CartIsoDateTimeStringSchema,
+  id: CartLineItemSerializedIdSchema,
+  metadata: CartMetadataSchema,
+  productId: CartTrimmedStringSchema,
+  quantity: CartPositiveIntegerSchema,
+  title: CartTrimmedStringSchema,
+  unitPrice: CartNonNegativeIntegerSchema,
+  updatedAt: CartIsoDateTimeStringSchema,
+  variantId: CartTrimmedStringSchema,
 });
-export const CartAdjustmentApiRecordSchema = CartAdjustmentRecordSchema.extend({
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
+
+export const CartAdjustmentApiRecordSchema = Schema.Struct({
+  amount: CartAdjustmentAmountSchema,
+  cartId: CartSerializedIdSchema,
+  createdAt: CartIsoDateTimeStringSchema,
+  id: CartAdjustmentSerializedIdSchema,
+  lineItemId: Schema.NullOr(CartLineItemSerializedIdSchema),
+  metadata: CartMetadataSchema,
+  source: CartTrimmedStringSchema,
+  type: CartAdjustmentTypeSchema,
+  updatedAt: CartIsoDateTimeStringSchema,
 });
-export const CartAggregateApiSchema = CartAggregateSchema.extend({
-  adjustments: z.array(CartAdjustmentApiRecordSchema).readonly(),
+
+export const CartAggregateApiSchema = Schema.Struct({
+  adjustments: Schema.Array(CartAdjustmentApiRecordSchema),
   cart: CartApiRecordSchema,
-  lineItems: z.array(CartLineItemApiRecordSchema).readonly(),
+  lineItems: Schema.Array(CartLineItemApiRecordSchema),
 });

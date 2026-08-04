@@ -21,7 +21,12 @@ describe("native plugin contracts", () => {
     const analyticsModule = defineCommerceModule({ key: "analytics" });
     const plugin = defineNativePlugin({
       manifest: {
-        capabilities: ["admin:read"],
+        capabilities: [
+          {
+            key: "commerce:admin-metadata",
+            required: true,
+          },
+        ],
         id: "analytics",
         version: "1.0.0",
       },
@@ -36,23 +41,7 @@ describe("native plugin contracts", () => {
             routeKey: "analyticsSummary",
           },
         ],
-        apiFragments: [
-          {
-            key: "plugin:analytics",
-            router: {
-              analyticsSummary: {},
-            },
-          },
-        ],
         modules: [analyticsModule],
-        providers: [
-          {
-            contractKey: "provider:search",
-            key: "analytics-search",
-            kind: "search",
-            label: "Analytics Search",
-          },
-        ],
         permissions: [
           createCommercePermission({
             action: "read",
@@ -69,22 +58,20 @@ describe("native plugin contracts", () => {
     });
 
     expect(plugin.manifest).toMatchObject({
-      capabilities: ["admin:read"],
+      capabilities: [
+        {
+          key: "commerce:admin-metadata",
+          required: true,
+        },
+      ],
       id: "analytics",
       tier: "native",
       version: "1.0.0",
     });
     expect(plugin.contributions.modules).toEqual([analyticsModule]);
-    expect(plugin.contributions.apiFragments?.[0]?.key).toBe(
-      "plugin:analytics"
-    );
     expect(plugin.contributions.adminSurfaces?.[0]?.permission).toBe(
       "analytics:read"
     );
-    expect(plugin.contributions.providers?.[0]).toMatchObject({
-      contractKey: "provider:search",
-      kind: "search",
-    });
     expect(plugin.contributions.permissions?.[0]?.key).toBe("analytics:read");
     expect(plugin.contributions.storage?.[0]?.namespace).toBe(
       "analytics-cache"
@@ -151,7 +138,7 @@ describe("native plugin contracts", () => {
     const composition = composeNativePlugins([activePlugin, inactivePlugin]);
 
     expect(
-      composition.activePlugins.map((plugin) => plugin.manifest.id)
+      composition.activePlugins.map((plugin) => String(plugin.manifest.id))
     ).toEqual(["active-plugin"]);
     expect(composition.adminSurfaces.map((surface) => surface.key)).toEqual([
       "active:navigation",

@@ -1,23 +1,28 @@
+import { Effect, Layer, Ref } from "effect";
+
 import type { StoreRepository, StoreSettings } from "../domain";
+import { StoreRepositoryService } from "../domain";
 
 export interface ResettableStoreRepository extends StoreRepository {
+  readonly reset: Effect.Effect<void>;
+  readonly snapshot: Effect.Effect<StoreSettings | null>;
   clear(): void;
 }
 
 export class InMemoryStoreRepository implements ResettableStoreRepository {
-  #settings: StoreSettings | null = null;
+  readonly #settings = Ref.makeUnsafe<StoreSettings | null>(null);
+
+  readonly getStoreSettings = Ref.get(this.#settings);
+
+  readonly reset = Ref.set(this.#settings, null);
+
+  readonly saveStoreSettings = (settings: StoreSettings) =>
+    Ref.set(this.#settings, settings).pipe(Effect.as(settings));
+
+  readonly snapshot = Ref.get(this.#settings);
 
   clear(): void {
-    this.#settings = null;
-  }
-
-  getStoreSettings(): Promise<StoreSettings | null> {
-    return Promise.resolve(this.#settings);
-  }
-
-  saveStoreSettings(settings: StoreSettings): Promise<StoreSettings> {
-    this.#settings = settings;
-    return Promise.resolve(settings);
+    Effect.runSync(this.reset);
   }
 }
 
@@ -28,3 +33,6 @@ export const createInMemoryStoreRepository = (): StoreRepository =>
 
 export const createResettableInMemoryStoreRepository =
   (): ResettableStoreRepository => new InMemoryStoreRepository();
+
+export const createInMemoryStoreRepositoryLayer = () =>
+  Layer.succeed(StoreRepositoryService, createInMemoryStoreRepository());

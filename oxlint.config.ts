@@ -7,7 +7,6 @@ export default defineConfig({
   ignorePatterns: core.ignorePatterns
     ? [
         ...core.ignorePatterns,
-        "packages/db/src/schema/auth-schema.ts",
         "packages/env/env.d.ts",
         "apps/start/src/routeTree.gen.ts",
         ".agents/**",

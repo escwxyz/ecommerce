@@ -1,38 +1,52 @@
-import { z } from "zod";
+import { Schema } from "effect";
 
-const MetadataSchema = z.record(z.string(), z.unknown());
+export const CheckoutTrimmedStringSchema = Schema.Trimmed.pipe(
+  Schema.check(Schema.isMinLength(1))
+);
 
-const CheckoutPaymentInputSchema = z.object({
-  capture: z.boolean().optional(),
-  paymentMethodId: z.string().min(1).optional(),
-  providerKey: z.string().min(1),
+export const CheckoutMetadataSchema = Schema.Record(
+  Schema.String,
+  Schema.Unknown
+);
+
+export const CheckoutCartIdSchema = CheckoutTrimmedStringSchema.pipe(
+  Schema.check(Schema.isStartsWith("cart_"))
+);
+
+export const CheckoutShippingOptionIdSchema = CheckoutTrimmedStringSchema.pipe(
+  Schema.check(Schema.isStartsWith("shipopt_"))
+);
+
+export const CheckoutPaymentInputSchema = Schema.Struct({
+  capture: Schema.optional(Schema.Boolean),
+  paymentMethodId: Schema.optional(CheckoutTrimmedStringSchema),
+  providerKey: CheckoutTrimmedStringSchema,
 });
 
-export const CompleteCheckoutInputSchema = z.object({
-  cartId: z.string().min(1).startsWith("cart_"),
-  causationId: z.string().min(1).optional(),
-  correlationId: z.string().min(1),
-  idempotencyKey: z.string().min(1),
-  metadata: MetadataSchema.optional(),
+export const CompleteCheckoutInputSchema = Schema.Struct({
+  cartId: CheckoutCartIdSchema,
+  causationId: Schema.optional(CheckoutTrimmedStringSchema),
+  correlationId: CheckoutTrimmedStringSchema,
+  idempotencyKey: CheckoutTrimmedStringSchema,
+  metadata: Schema.optional(CheckoutMetadataSchema),
   payment: CheckoutPaymentInputSchema,
-  shippingOptionId: z.string().min(1).startsWith("shipopt_"),
+  shippingOptionId: CheckoutShippingOptionIdSchema,
 });
 
-export const CheckoutCompletionStatusSchema = z.enum([
+export const CheckoutCompletionStatusSchema = Schema.Literals([
   "completed",
   "duplicate",
 ]);
 
-export const CheckoutCompletionResultSchema = z.object({
-  cartId: z.string().min(1),
-  fulfillmentIds: z.array(z.string().min(1)).readonly(),
-  orderId: z.string().min(1),
-  paymentId: z.string().min(1),
+export const CheckoutCompletionResultSchema = Schema.Struct({
+  cartId: CheckoutTrimmedStringSchema,
+  fulfillmentIds: Schema.Array(CheckoutTrimmedStringSchema),
+  orderId: CheckoutTrimmedStringSchema,
+  paymentId: CheckoutTrimmedStringSchema,
   status: CheckoutCompletionStatusSchema,
-  workflowRunId: z.string().min(1),
+  workflowRunId: CheckoutTrimmedStringSchema,
 });
 
-export type CompleteCheckoutInput = z.infer<typeof CompleteCheckoutInputSchema>;
-export type CheckoutCompletionResult = z.infer<
-  typeof CheckoutCompletionResultSchema
->;
+export type CompleteCheckoutInput = typeof CompleteCheckoutInputSchema.Type;
+export type CheckoutCompletionResult =
+  typeof CheckoutCompletionResultSchema.Type;

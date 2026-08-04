@@ -11,6 +11,15 @@
     "./authorization": {
       "default": "./src/authorization.ts"
     },
+    "./auth-contracts": {
+      "default": "./src/auth-contracts.ts"
+    },
+    "./better-auth-effect-adapter": {
+      "default": "./src/better-auth-effect-adapter.ts"
+    },
+    "./effect-auth-service": {
+      "default": "./src/effect-auth-service.ts"
+    },
     "./factory": {
       "default": "./src/factory.ts"
     },
@@ -25,14 +34,14 @@
     }
   },
   "scripts": {
-    "auth:gen": "bunx @better-auth/cli@latest generate --config ./src/cli-auth.ts --output ../db-d1/src/migrations/sql/0000_auth.sql --yes",
+    "auth:gen": "bunx @better-auth/cli@latest generate --config ./src/cli-auth.ts --output ./src/migrations/sql/0000_auth.sql --yes",
     "check-types": "tsc -b",
-    "test": "bun test ./src/*.test.ts"
+    "test": "bun test ./src/*.test.ts ./src/__tests__/*.test.ts"
   },
   "dependencies": {
     "better-auth": "catalog:",
     "dotenv": "catalog:",
-    "zod": "catalog:"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@ecommerce/config": "workspace:*",

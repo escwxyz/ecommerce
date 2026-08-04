@@ -1,6 +1,7 @@
-import type { Brand } from "@ecommerce/core/brand";
-import type { z } from "zod";
+import { Context } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 
+import type { FulfillmentExpectedError } from "./fulfillment.errors";
 import type {
   CancelFulfillmentInputSchema,
   CreateFulfillmentInputSchema,
@@ -8,145 +9,97 @@ import type {
   CreateServiceZoneInputSchema,
   CreateShippingOptionInputSchema,
   CreateShippingProfileInputSchema,
+  FulfillmentAddressSchema,
   FulfillmentApiSchema,
   FulfillmentDetailApiSchema,
+  FulfillmentIdSchema,
+  FulfillmentLineItemSchema,
   FulfillmentListApiSchema,
+  FulfillmentMoneySchema,
   FulfillmentProviderApiRecordSchema,
+  FulfillmentProviderRecordIdSchema,
   FulfillmentProviderRecordSchema,
   FulfillmentSchema,
   FulfillmentSetApiSchema,
+  FulfillmentSetIdSchema,
   FulfillmentSetSchema,
   FulfillmentStatusSchema,
   ReturnShipmentLinkApiSchema,
+  ReturnShipmentLinkIdSchema,
   ReturnShipmentLinkSchema,
   ServiceZoneApiSchema,
+  ServiceZoneIdSchema,
   ServiceZoneSchema,
   ShipmentRecordApiSchema,
+  ShipmentRecordIdSchema,
   ShipmentRecordSchema,
   ShipmentStatusSchema,
   ShippingOptionApiSchema,
+  ShippingOptionIdSchema,
   ShippingOptionListApiSchema,
   ShippingOptionLookupInputSchema,
   ShippingOptionRateApiSchema,
   ShippingOptionSchema,
   ShippingProfileApiSchema,
+  ShippingProfileIdSchema,
   ShippingProfileSchema,
   TrackShipmentInputSchema,
 } from "./fulfillment.schema";
 
-export type FulfillmentProviderRecordId = Brand<
-  string,
-  "fulfillment-provider-record"
->;
-export type FulfillmentSetId = Brand<string, "fulfillment-set">;
-export type ShippingProfileId = Brand<string, "shipping-profile">;
-export type ServiceZoneId = Brand<string, "service-zone">;
-export type ShippingOptionId = Brand<string, "shipping-option">;
-export type FulfillmentId = Brand<string, "fulfillment">;
-export type ShipmentRecordId = Brand<string, "shipment-record">;
-export type ReturnShipmentLinkId = Brand<string, "return-shipment-link">;
+export type FulfillmentProviderRecordId =
+  typeof FulfillmentProviderRecordIdSchema.Type;
+export type FulfillmentSetId = typeof FulfillmentSetIdSchema.Type;
+export type ShippingProfileId = typeof ShippingProfileIdSchema.Type;
+export type ServiceZoneId = typeof ServiceZoneIdSchema.Type;
+export type ShippingOptionId = typeof ShippingOptionIdSchema.Type;
+export type FulfillmentId = typeof FulfillmentIdSchema.Type;
+export type ShipmentRecordId = typeof ShipmentRecordIdSchema.Type;
+export type ReturnShipmentLinkId = typeof ReturnShipmentLinkIdSchema.Type;
 
-export type FulfillmentStatus = z.infer<typeof FulfillmentStatusSchema>;
-export type ShipmentStatus = z.infer<typeof ShipmentStatusSchema>;
-export type CreateFulfillmentSetInput = z.infer<
-  typeof CreateFulfillmentSetInputSchema
->;
-export type CreateShippingProfileInput = z.infer<
-  typeof CreateShippingProfileInputSchema
->;
-export type CreateServiceZoneInput = z.infer<
-  typeof CreateServiceZoneInputSchema
->;
-export type CreateShippingOptionInput = z.infer<
-  typeof CreateShippingOptionInputSchema
->;
-export type ShippingOptionLookupInput = z.infer<
-  typeof ShippingOptionLookupInputSchema
->;
-export type CreateFulfillmentInput = z.infer<
-  typeof CreateFulfillmentInputSchema
->;
-export type CancelFulfillmentInput = z.infer<
-  typeof CancelFulfillmentInputSchema
->;
-export type TrackShipmentInput = z.infer<typeof TrackShipmentInputSchema>;
+export type FulfillmentProviderMoney = typeof FulfillmentMoneySchema.Type;
+export type FulfillmentAddress = typeof FulfillmentAddressSchema.Type;
+export type FulfillmentLineItem = typeof FulfillmentLineItemSchema.Type;
+export type FulfillmentStatus = typeof FulfillmentStatusSchema.Type;
+export type ShipmentStatus = typeof ShipmentStatusSchema.Type;
+export type CreateFulfillmentSetInput =
+  typeof CreateFulfillmentSetInputSchema.Type;
+export type CreateShippingProfileInput =
+  typeof CreateShippingProfileInputSchema.Type;
+export type CreateServiceZoneInput = typeof CreateServiceZoneInputSchema.Type;
+export type CreateShippingOptionInput =
+  typeof CreateShippingOptionInputSchema.Type;
+export type ShippingOptionLookupInput =
+  typeof ShippingOptionLookupInputSchema.Type;
+export type CreateFulfillmentInput = typeof CreateFulfillmentInputSchema.Type;
+export type CancelFulfillmentInput = typeof CancelFulfillmentInputSchema.Type;
+export type TrackShipmentInput = typeof TrackShipmentInputSchema.Type;
 
-export type FulfillmentProviderRecord = Omit<
-  z.infer<typeof FulfillmentProviderRecordSchema>,
-  "id"
-> & { readonly id: FulfillmentProviderRecordId };
-export type FulfillmentSet = Omit<
-  z.infer<typeof FulfillmentSetSchema>,
-  "id"
-> & { readonly id: FulfillmentSetId };
-export type ShippingProfile = Omit<
-  z.infer<typeof ShippingProfileSchema>,
-  "fulfillmentSetId" | "id"
-> & {
-  readonly fulfillmentSetId: FulfillmentSetId;
-  readonly id: ShippingProfileId;
-};
-export type ServiceZone = Omit<
-  z.infer<typeof ServiceZoneSchema>,
-  "fulfillmentSetId" | "id"
-> & {
-  readonly fulfillmentSetId: FulfillmentSetId;
-  readonly id: ServiceZoneId;
-};
-export type ShippingOption = Omit<
-  z.infer<typeof ShippingOptionSchema>,
-  "fulfillmentSetId" | "id" | "profileId" | "serviceZoneId"
-> & {
-  readonly fulfillmentSetId: FulfillmentSetId;
-  readonly id: ShippingOptionId;
-  readonly profileId: ShippingProfileId;
-  readonly serviceZoneId: ServiceZoneId;
-};
-export type Fulfillment = Omit<
-  z.infer<typeof FulfillmentSchema>,
-  "id" | "shippingOptionId"
-> & {
-  readonly id: FulfillmentId;
-  readonly shippingOptionId: ShippingOptionId;
-};
-export type ShipmentRecord = Omit<
-  z.infer<typeof ShipmentRecordSchema>,
-  "fulfillmentId" | "id"
-> & {
-  readonly fulfillmentId: FulfillmentId;
-  readonly id: ShipmentRecordId;
-};
-export type ReturnShipmentLink = Omit<
-  z.infer<typeof ReturnShipmentLinkSchema>,
-  "fulfillmentId" | "id" | "shipmentId"
-> & {
-  readonly fulfillmentId: FulfillmentId;
-  readonly id: ReturnShipmentLinkId;
-  readonly shipmentId: ShipmentRecordId;
-};
+export type FulfillmentProviderRecord =
+  typeof FulfillmentProviderRecordSchema.Type;
+export type FulfillmentSet = typeof FulfillmentSetSchema.Type;
+export type ShippingProfile = typeof ShippingProfileSchema.Type;
+export type ServiceZone = typeof ServiceZoneSchema.Type;
+export type ShippingOption = typeof ShippingOptionSchema.Type;
+export type Fulfillment = typeof FulfillmentSchema.Type;
+export type ShipmentRecord = typeof ShipmentRecordSchema.Type;
+export type ReturnShipmentLink = typeof ReturnShipmentLinkSchema.Type;
 
-export type FulfillmentProviderApiRecord = z.infer<
-  typeof FulfillmentProviderApiRecordSchema
->;
-export type FulfillmentSetApiRecord = z.infer<typeof FulfillmentSetApiSchema>;
-export type ShippingProfileApiRecord = z.infer<typeof ShippingProfileApiSchema>;
-export type ServiceZoneApiRecord = z.infer<typeof ServiceZoneApiSchema>;
-export type ShippingOptionApiRecord = z.infer<typeof ShippingOptionApiSchema>;
-export type FulfillmentApiRecord = z.infer<typeof FulfillmentApiSchema>;
-export type ShipmentRecordApiRecord = z.infer<typeof ShipmentRecordApiSchema>;
-export type ReturnShipmentLinkApiRecord = z.infer<
-  typeof ReturnShipmentLinkApiSchema
->;
-export type ShippingOptionRateApiRecord = z.infer<
-  typeof ShippingOptionRateApiSchema
->;
-export type FulfillmentDetailApiRecord = z.infer<
-  typeof FulfillmentDetailApiSchema
->;
-export type ShippingOptionListApiRecord = z.infer<
-  typeof ShippingOptionListApiSchema
->;
-export type FulfillmentListApiRecord = z.infer<typeof FulfillmentListApiSchema>;
+export type FulfillmentProviderApiRecord =
+  typeof FulfillmentProviderApiRecordSchema.Type;
+export type FulfillmentSetApiRecord = typeof FulfillmentSetApiSchema.Type;
+export type ShippingProfileApiRecord = typeof ShippingProfileApiSchema.Type;
+export type ServiceZoneApiRecord = typeof ServiceZoneApiSchema.Type;
+export type ShippingOptionApiRecord = typeof ShippingOptionApiSchema.Type;
+export type FulfillmentApiRecord = typeof FulfillmentApiSchema.Type;
+export type ShipmentRecordApiRecord = typeof ShipmentRecordApiSchema.Type;
+export type ReturnShipmentLinkApiRecord =
+  typeof ReturnShipmentLinkApiSchema.Type;
+export type ShippingOptionRateApiRecord =
+  typeof ShippingOptionRateApiSchema.Type;
+export type FulfillmentDetailApiRecord = typeof FulfillmentDetailApiSchema.Type;
+export type ShippingOptionListApiRecord =
+  typeof ShippingOptionListApiSchema.Type;
+export type FulfillmentListApiRecord = typeof FulfillmentListApiSchema.Type;
 
 export interface FulfillmentDetail {
   readonly fulfillment: Fulfillment;
@@ -154,39 +107,68 @@ export interface FulfillmentDetail {
 }
 
 export interface FulfillmentRepository {
-  findFulfillmentById(id: FulfillmentId): Promise<Fulfillment | null>;
-  findFulfillmentByIdempotencyKey(
+  readonly findFulfillmentById: (
+    id: FulfillmentId
+  ) => EffectValue<Fulfillment | null, FulfillmentExpectedError>;
+  readonly findFulfillmentByIdempotencyKey: (
     idempotencyKey: string
-  ): Promise<Fulfillment | null>;
-  findFulfillmentSetById(id: FulfillmentSetId): Promise<FulfillmentSet | null>;
-  findServiceZoneById(id: ServiceZoneId): Promise<ServiceZone | null>;
-  findShipmentByFulfillmentId(
+  ) => EffectValue<Fulfillment | null, FulfillmentExpectedError>;
+  readonly findFulfillmentSetById: (
+    id: FulfillmentSetId
+  ) => EffectValue<FulfillmentSet | null, FulfillmentExpectedError>;
+  readonly findServiceZoneById: (
+    id: ServiceZoneId
+  ) => EffectValue<ServiceZone | null, FulfillmentExpectedError>;
+  readonly findShipmentByFulfillmentId: (
     fulfillmentId: FulfillmentId
-  ): Promise<ShipmentRecord | null>;
-  findShippingOptionById(id: ShippingOptionId): Promise<ShippingOption | null>;
-  findShippingProfileById(
+  ) => EffectValue<ShipmentRecord | null, FulfillmentExpectedError>;
+  readonly findShippingOptionById: (
+    id: ShippingOptionId
+  ) => EffectValue<ShippingOption | null, FulfillmentExpectedError>;
+  readonly findShippingProfileById: (
     id: ShippingProfileId
-  ): Promise<ShippingProfile | null>;
-  listFulfillments(): Promise<readonly Fulfillment[]>;
-  listServiceZonesForSet(
+  ) => EffectValue<ShippingProfile | null, FulfillmentExpectedError>;
+  readonly listFulfillments: EffectValue<
+    readonly Fulfillment[],
+    FulfillmentExpectedError
+  >;
+  readonly listServiceZonesForSet: (
     fulfillmentSetId: FulfillmentSetId
-  ): Promise<readonly ServiceZone[]>;
-  listShipmentsForFulfillment(
+  ) => EffectValue<readonly ServiceZone[], FulfillmentExpectedError>;
+  readonly listShipmentsForFulfillment: (
     fulfillmentId: FulfillmentId
-  ): Promise<readonly ShipmentRecord[]>;
-  listShippingOptions(
+  ) => EffectValue<readonly ShipmentRecord[], FulfillmentExpectedError>;
+  readonly listShippingOptions: (
     input?: ShippingOptionLookupInput
-  ): Promise<readonly ShippingOption[]>;
-  saveFulfillment(fulfillment: Fulfillment): Promise<Fulfillment>;
-  saveFulfillmentSet(fulfillmentSet: FulfillmentSet): Promise<FulfillmentSet>;
-  saveProviderRecord(
+  ) => EffectValue<readonly ShippingOption[], FulfillmentExpectedError>;
+  readonly saveFulfillment: (
+    fulfillment: Fulfillment
+  ) => EffectValue<Fulfillment, FulfillmentExpectedError>;
+  readonly saveFulfillmentSet: (
+    fulfillmentSet: FulfillmentSet
+  ) => EffectValue<FulfillmentSet, FulfillmentExpectedError>;
+  readonly saveProviderRecord: (
     providerRecord: FulfillmentProviderRecord
-  ): Promise<FulfillmentProviderRecord>;
-  saveReturnShipmentLink(link: ReturnShipmentLink): Promise<ReturnShipmentLink>;
-  saveServiceZone(serviceZone: ServiceZone): Promise<ServiceZone>;
-  saveShipment(shipment: ShipmentRecord): Promise<ShipmentRecord>;
-  saveShippingOption(shippingOption: ShippingOption): Promise<ShippingOption>;
-  saveShippingProfile(
+  ) => EffectValue<FulfillmentProviderRecord, FulfillmentExpectedError>;
+  readonly saveReturnShipmentLink: (
+    link: ReturnShipmentLink
+  ) => EffectValue<ReturnShipmentLink, FulfillmentExpectedError>;
+  readonly saveServiceZone: (
+    serviceZone: ServiceZone
+  ) => EffectValue<ServiceZone, FulfillmentExpectedError>;
+  readonly saveShipment: (
+    shipment: ShipmentRecord
+  ) => EffectValue<ShipmentRecord, FulfillmentExpectedError>;
+  readonly saveShippingOption: (
+    shippingOption: ShippingOption
+  ) => EffectValue<ShippingOption, FulfillmentExpectedError>;
+  readonly saveShippingProfile: (
     shippingProfile: ShippingProfile
-  ): Promise<ShippingProfile>;
+  ) => EffectValue<ShippingProfile, FulfillmentExpectedError>;
 }
+
+/** Effect-native fulfillment repository contract consumed by fulfillment services. */
+export const FulfillmentRepositoryService =
+  Context.Service<FulfillmentRepository>(
+    "@ecommerce/fulfillment/FulfillmentRepositoryService"
+  );

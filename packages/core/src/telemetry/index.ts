@@ -1,0 +1,545 @@
+import type { Cause } from "effect";
+import { Clock, Context, Effect, Exit, Metric, Redacted } from "effect";
+
+import { classifyCause } from "../errors/effect-error-policy";
+import type { AuditPersistenceUnavailable } from "./audit-persistence-unavailable";
+
+export { AuditPersistenceUnavailable } from "./audit-persistence-unavailable";
+
+const REDACTED_VALUE = "<redacted>";
+const UNSUPPORTED_VALUE = "<unsupported>";
+const MAX_ATTRIBUTE_STRING_LENGTH = 256;
+const MAX_ATTRIBUTE_NAME_LENGTH = 96;
+const MAX_TELEMETRY_ATTRIBUTE_COUNT = 32;
+
+export const commerceOperationNames = [
+  "plugin.lifecycle",
+  "plugin.sandbox.bridge",
+  "store.read",
+  "unknown",
+] as const;
+
+export type CommerceOperationName = (typeof commerceOperationNames)[number];
+
+const exactProtectedAttributeNames = new Set([
+  "apikey",
+  "authorization",
+  "connectionstring",
+  "cookie",
+  "databaseurl",
+  "password",
+  "privatekey",
+  "secret",
+  "setcookie",
+  "token",
+]);
+
+const compoundProtectedAttributeFragments = [
+  "apikey",
+  "authorization",
+  "connectionstring",
+  "cookie",
+  "databaseurl",
+  "password",
+  "privatekey",
+  "secret",
+  "setcookie",
+  "token",
+] as const;
+
+export const telemetryRedactionPolicy = {
+  protectedNameFragments: compoundProtectedAttributeFragments,
+  redactedValue: REDACTED_VALUE,
+  unsupportedValue: UNSUPPORTED_VALUE,
+} as const;
+
+export const telemetryAttributeCardinalityPolicy = {
+  maxAttributeCount: MAX_TELEMETRY_ATTRIBUTE_COUNT,
+  maxAttributeNameLength: MAX_ATTRIBUTE_NAME_LENGTH,
+  maxStringLength: MAX_ATTRIBUTE_STRING_LENGTH,
+  metricLabelNames: [
+    "boundary",
+    "event",
+    "operation",
+    "outcome",
+    "phase",
+    "retryDisposition",
+    "status",
+  ],
+} as const;
+
+export type TelemetryAttributeValue = boolean | number | string;
+
+export type TelemetryAttributes = Readonly<
+  Record<string, TelemetryAttributeValue>
+>;
+
+export type OperationOutcome =
+  | "defect"
+  | "interrupted"
+  | "mixed"
+  | "success"
+  | "typed_rejection";
+
+export type CommerceRuntimeMetricEvent =
+  | "compensation"
+  | "defect"
+  | "interruption"
+  | "poison_message"
+  | "retry"
+  | "typed_rejection";
+
+export type CommerceRuntimeMetricBoundary =
+  | "operation"
+  | "outbox"
+  | "plugin"
+  | "provider"
+  | "queue"
+  | "workflow"
+  | "unknown";
+
+export interface CommerceRuntimeMetricOptions {
+  readonly attributes?: Readonly<Record<string, unknown>>;
+  readonly boundary: CommerceRuntimeMetricBoundary;
+  readonly event: CommerceRuntimeMetricEvent;
+}
+
+export interface CorrelationContext {
+  readonly causationId?: string;
+  readonly operationId?: string;
+  readonly parentSpanId?: string;
+  readonly requestId: string;
+  readonly sampled?: boolean;
+  readonly traceId?: string;
+}
+
+export interface CorrelationHeaderCarrier {
+  readonly traceparent?: string;
+  readonly "x-correlation-id"?: string;
+  readonly "x-request-id"?: string;
+  readonly "x-trace-id"?: string;
+}
+
+export interface CreateCorrelationContextOptions {
+  readonly causationId?: string;
+  readonly correlationId?: string;
+  readonly operationId?: string;
+  readonly parentSpanId?: string;
+  readonly requestId: string;
+  readonly sampled?: boolean;
+  readonly traceId?: string;
+}
+
+const TRACEPARENT_VERSION = "00";
+const TRACEPARENT_FLAGS_SAMPLED = "01";
+const TRACEPARENT_FLAGS_UNSAMPLED = "00";
+
+const getCarrierHeader = (
+  headers: Readonly<Record<string, string | undefined>>,
+  name: keyof CorrelationHeaderCarrier
+): string | undefined => {
+  const value = headers[name] ?? headers[name.toLowerCase()];
+  return value && value.trim().length > 0 ? value.trim() : undefined;
+};
+
+const parseTraceparent = (
+  value: string | undefined
+):
+  | {
+      readonly parentSpanId: string;
+      readonly sampled: boolean;
+      readonly traceId: string;
+    }
+  | undefined => {
+  const parts = value?.split("-");
+  if (!parts || parts.length < 4) {
+    return undefined;
+  }
+
+  const [, traceId, parentSpanId, flags] = parts;
+  if (!traceId || !parentSpanId || !flags) {
+    return undefined;
+  }
+
+  return {
+    parentSpanId,
+    sampled: Number.parseInt(flags, 16) % 2 === 1,
+    traceId,
+  };
+};
+
+/** Normalizes correlation into the portable context used by runtime boundaries. */
+export const createCorrelationContext = ({
+  causationId,
+  correlationId,
+  operationId,
+  parentSpanId,
+  requestId,
+  sampled,
+  traceId,
+}: CreateCorrelationContextOptions): CorrelationContext => ({
+  causationId,
+  operationId: operationId ?? correlationId,
+  parentSpanId,
+  requestId,
+  sampled,
+  traceId,
+});
+
+/** Reads request, correlation, and W3C trace context from a header carrier. */
+export const correlationContextFromHeaders = (
+  headers: Readonly<Record<string, string | undefined>>,
+  fallbackRequestId: string
+): CorrelationContext => {
+  const traceparent = parseTraceparent(
+    getCarrierHeader(headers, "traceparent")
+  );
+
+  return createCorrelationContext({
+    correlationId: getCarrierHeader(headers, "x-correlation-id"),
+    parentSpanId: traceparent?.parentSpanId,
+    requestId: getCarrierHeader(headers, "x-request-id") ?? fallbackRequestId,
+    sampled: traceparent?.sampled,
+    traceId: getCarrierHeader(headers, "x-trace-id") ?? traceparent?.traceId,
+  });
+};
+
+/** Serializes portable correlation into headers for HTTP-like boundaries. */
+export const correlationContextToHeaders = (
+  context: CorrelationContext
+): CorrelationHeaderCarrier => {
+  const headers: Record<string, string> = {
+    "x-correlation-id": context.operationId ?? context.requestId,
+    "x-request-id": context.requestId,
+  };
+
+  if (context.traceId) {
+    headers["x-trace-id"] = context.traceId;
+  }
+  if (context.traceId && context.parentSpanId) {
+    headers.traceparent = [
+      TRACEPARENT_VERSION,
+      context.traceId,
+      context.parentSpanId,
+      context.sampled ? TRACEPARENT_FLAGS_SAMPLED : TRACEPARENT_FLAGS_UNSAMPLED,
+    ].join("-");
+  }
+
+  return headers;
+};
+
+/** Converts correlation context to safe telemetry attributes. */
+export const correlationContextToTelemetryAttributes = (
+  context: CorrelationContext
+): TelemetryAttributes =>
+  sanitizeTelemetryAttributes({
+    causationId: context.causationId,
+    operationId: context.operationId,
+    parentSpanId: context.parentSpanId,
+    requestId: context.requestId,
+    sampled: context.sampled,
+    traceId: context.traceId,
+  });
+
+export interface OperationTelemetryOptions {
+  readonly attributes?: Readonly<Record<string, unknown>>;
+  readonly correlation: CorrelationContext;
+  readonly name: string;
+}
+
+export const commerceOperationCounter = Metric.counter(
+  "commerce_operation_total",
+  {
+    description:
+      "Completed commerce operations by stable operation and outcome",
+  }
+);
+
+export const commerceRuntimeEventCounter = Metric.counter(
+  "commerce_runtime_event_total",
+  {
+    description:
+      "Runtime telemetry events by bounded category and backend boundary",
+  }
+);
+
+const normalizeAttributeName = (name: string): string =>
+  name.replaceAll(/[^a-zA-Z0-9]/gu, "").toLowerCase();
+
+const isProtectedAttributeName = (name: string): boolean => {
+  const normalized = normalizeAttributeName(name);
+
+  return (
+    exactProtectedAttributeNames.has(normalized) ||
+    compoundProtectedAttributeFragments.some((fragment) =>
+      normalized.includes(fragment)
+    )
+  );
+};
+
+const sanitizeTelemetryValue = (value: unknown): TelemetryAttributeValue => {
+  if (Redacted.isRedacted(value)) {
+    return REDACTED_VALUE;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : UNSUPPORTED_VALUE;
+  }
+  if (typeof value === "string") {
+    return value.length <= MAX_ATTRIBUTE_STRING_LENGTH
+      ? value
+      : UNSUPPORTED_VALUE;
+  }
+  return UNSUPPORTED_VALUE;
+};
+
+const isMetricLabelName = (
+  name: string
+): name is (typeof telemetryAttributeCardinalityPolicy.metricLabelNames)[number] =>
+  telemetryAttributeCardinalityPolicy.metricLabelNames.some(
+    (labelName) => labelName === name
+  );
+
+/** Guards runtime values before they become metric labels or span names. */
+export const isCommerceOperationName = (
+  value: string
+): value is CommerceOperationName =>
+  commerceOperationNames.some((name) => name === value);
+
+const normalizeCommerceOperationName = (value: string): CommerceOperationName =>
+  isCommerceOperationName(value) ? value : "unknown";
+
+/** Removes protected and unbounded values before telemetry export. */
+export const sanitizeTelemetryAttributes = (
+  attributes: Readonly<Record<string, unknown>>
+): TelemetryAttributes => {
+  const sanitized: Record<string, TelemetryAttributeValue> = {};
+  for (const [name, value] of Object.entries(attributes)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (
+      Object.keys(sanitized).length >=
+        telemetryAttributeCardinalityPolicy.maxAttributeCount ||
+      name.length > telemetryAttributeCardinalityPolicy.maxAttributeNameLength
+    ) {
+      continue;
+    }
+    sanitized[name] = isProtectedAttributeName(name)
+      ? REDACTED_VALUE
+      : sanitizeTelemetryValue(value);
+  }
+  return sanitized;
+};
+
+/** Applies the stricter low-cardinality policy required for metric labels. */
+export const sanitizeMetricAttributes = (
+  attributes: Readonly<Record<string, unknown>>
+): TelemetryAttributes => {
+  const sanitized: Record<string, TelemetryAttributeValue> = {};
+  for (const [name, value] of Object.entries(attributes)) {
+    if (!isMetricLabelName(name) || value === undefined) {
+      continue;
+    }
+    sanitized[name] = isProtectedAttributeName(name)
+      ? REDACTED_VALUE
+      : sanitizeTelemetryValue(value);
+  }
+  return sanitized;
+};
+
+const toMetricAttributeTuples = (
+  attributes: Readonly<Record<string, unknown>>
+): [string, string][] =>
+  Object.entries(sanitizeMetricAttributes(attributes)).map(([name, value]) => [
+    name,
+    String(value),
+  ]);
+
+/** Maps a complete Cause to a bounded metric outcome vocabulary. */
+export const operationOutcomeFromCause = <E>(
+  cause: Cause.Cause<E>
+): Exclude<OperationOutcome, "success"> => {
+  const classification = classifyCause(cause);
+  const categoryCount = [
+    classification.hasDefect,
+    classification.hasExpectedFailure,
+    classification.hasInterruption,
+  ].filter(Boolean).length;
+
+  if (categoryCount > 1) {
+    return "mixed";
+  }
+  if (classification.hasDefect) {
+    return "defect";
+  }
+  if (classification.hasInterruption) {
+    return "interrupted";
+  }
+  return "typed_rejection";
+};
+
+/** Returns every bounded runtime metric category present in a Cause. */
+export const runtimeMetricEventsFromCause = <E>(
+  cause: Cause.Cause<E>
+): readonly CommerceRuntimeMetricEvent[] => {
+  const classification = classifyCause(cause);
+  const events: CommerceRuntimeMetricEvent[] = [];
+
+  if (classification.hasExpectedFailure) {
+    events.push("typed_rejection");
+  }
+  if (classification.hasDefect) {
+    events.push("defect");
+  }
+  if (classification.hasInterruption) {
+    events.push("interruption");
+  }
+
+  return events;
+};
+
+const recordOperationOutcome = (
+  name: CommerceOperationName,
+  outcome: OperationOutcome
+): Effect.Effect<void> =>
+  Metric.update(
+    Metric.withAttributes(
+      commerceOperationCounter,
+      toMetricAttributeTuples({ operation: name, outcome })
+    ),
+    1
+  );
+
+/** Records a bounded runtime event metric without dynamic identifiers. */
+export const recordCommerceRuntimeMetric = ({
+  attributes,
+  boundary,
+  event,
+}: CommerceRuntimeMetricOptions): Effect.Effect<void> =>
+  Metric.update(
+    Metric.withAttributes(
+      commerceRuntimeEventCounter,
+      toMetricAttributeTuples({
+        ...attributes,
+        boundary,
+        event,
+      })
+    ),
+    1
+  );
+
+const runWithIsolatedSpan = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  name: CommerceOperationName,
+  attributes: TelemetryAttributes
+): Effect.Effect<A, E, R> =>
+  Effect.gen(function* executeWithIsolatedSpan() {
+    const spanExit = yield* Effect.exit(Effect.makeSpan(name, { attributes }));
+    if (Exit.isFailure(spanExit)) {
+      return yield* effect;
+    }
+
+    const span = spanExit.value;
+    const operationExit = yield* Effect.exit(
+      effect.pipe(Effect.withParentSpan(span))
+    );
+    yield* Effect.exit(
+      Effect.gen(function* finalizeIsolatedSpan() {
+        const endTime = yield* Clock.currentTimeNanos;
+        span.end(endTime, operationExit);
+      })
+    );
+
+    return Exit.isSuccess(operationExit)
+      ? operationExit.value
+      : yield* Effect.failCause(operationExit.cause);
+  });
+
+/**
+ * Adds safe correlation to logs and spans and records a bounded operation
+ * outcome without changing the operation's success or Cause.
+ */
+export const withOperationTelemetry = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  options: OperationTelemetryOptions
+): Effect.Effect<A, E, R> => {
+  const operationName = normalizeCommerceOperationName(options.name);
+  const annotations = sanitizeTelemetryAttributes({
+    ...options.attributes,
+    operation: operationName,
+    causationId: options.correlation.causationId,
+    operationId: options.correlation.operationId,
+    parentSpanId: options.correlation.parentSpanId,
+    requestId: options.correlation.requestId,
+    sampled: options.correlation.sampled,
+    traceId: options.correlation.traceId,
+  });
+
+  const observeExit = (exit: Exit.Exit<A, E>): Effect.Effect<void> => {
+    let telemetry: Effect.Effect<unknown>;
+    if (Exit.isSuccess(exit)) {
+      telemetry = Effect.all([
+        recordOperationOutcome(operationName, "success"),
+        Effect.logInfo("commerce.operation.succeeded"),
+      ]);
+    } else {
+      const outcome = operationOutcomeFromCause(exit.cause);
+      telemetry = Effect.all([
+        recordOperationOutcome(operationName, outcome),
+        Effect.all(
+          runtimeMetricEventsFromCause(exit.cause).map((event) =>
+            recordCommerceRuntimeMetric({
+              attributes: {
+                operation: operationName,
+                outcome,
+              },
+              boundary: "operation",
+              event,
+            })
+          )
+        ),
+        Effect.logError("commerce.operation.failed", { outcome }),
+      ]);
+    }
+
+    // Exporters are observational. Capturing their complete Exit prevents a
+    // logger or metric defect/interruption from contaminating commerce logic.
+    return telemetry.pipe(
+      Effect.annotateLogs(annotations),
+      Effect.exit,
+      Effect.asVoid
+    );
+  };
+
+  return runWithIsolatedSpan(effect, operationName, annotations).pipe(
+    Effect.onExit(observeExit)
+  );
+};
+
+export class DurableAudit extends Context.Service<
+  DurableAudit,
+  {
+    readonly record: (
+      event: DurableAuditEvent
+    ) => Effect.Effect<void, AuditPersistenceUnavailable>;
+  }
+>()("@ecommerce/core/DurableAudit") {}
+
+/** Security or commerce evidence that must be durably persisted. */
+export interface DurableAuditEvent {
+  readonly actorId?: string;
+  readonly attributes: TelemetryAttributes;
+  readonly correlation: CorrelationContext;
+  readonly eventId: string;
+  readonly eventType: string;
+  readonly subjectId?: string;
+}
+
+/** Records required audit evidence through its explicit durable service. */
+export const recordDurableAudit = (
+  event: DurableAuditEvent
+): Effect.Effect<void, AuditPersistenceUnavailable, DurableAudit> =>
+  DurableAudit.use((audit) => audit.record(event));

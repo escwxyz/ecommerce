@@ -2,27 +2,36 @@ import { describe, expect, it } from "bun:test";
 
 import { createAdminMetadataModel } from "./admin-metadata";
 import {
+  adminHttpApi,
+  createEffectHttpApiAssembly,
+  inventoryEffectHttpApiContribution,
+} from "./index";
+import {
   builtinPermissionStatement,
   authorizationEvaluator,
 } from "./permissions";
-import { createBuiltinRouteFragments } from "./routers";
 
 describe("inventory API and admin assembly", () => {
   it("includes inventory permissions in builtin permission composition", () => {
     expect(builtinPermissionStatement.inventory).toEqual(["read", "write"]);
   });
 
-  it("includes inventory route fragments in builtin API composition", () => {
-    const inventoryFragment = createBuiltinRouteFragments().find(
-      (fragment) => fragment.key === "module:inventory"
-    );
+  it("includes inventory Effect HTTP operations in canonical admin composition", () => {
+    const admin = createEffectHttpApiAssembly({
+      contributions: inventoryEffectHttpApiContribution.groups,
+      root: adminHttpApi,
+      surface: "admin",
+    });
 
-    expect(Object.keys(inventoryFragment?.router ?? {})).toContain(
-      "inventoryReserve"
-    );
-    expect(Object.keys(inventoryFragment?.router ?? {})).toContain(
-      "inventoryAvailabilityCheck"
-    );
+    expect(admin.routes.map((route) => route.routeKey)).toEqual([
+      "POST /admin/inventory/adjustments",
+      "POST /admin/inventory/availability",
+      "POST /admin/inventory/items",
+      "PUT /admin/inventory/levels",
+      "POST /admin/inventory/reservations",
+      "POST /admin/inventory/stock-locations",
+    ]);
+    expect(inventoryEffectHttpApiContribution.moduleName).toBe("inventory");
   });
 
   it("exposes inventory admin metadata through shared module contracts", () => {

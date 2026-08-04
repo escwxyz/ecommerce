@@ -3,13 +3,19 @@ import type {
   EventPublisherServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
+import {
+  ClockService,
+  EventPublisherService,
+  IdGeneratorService,
+} from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import type { StatefulCoordinator } from "@ecommerce/core/stateful";
-import { defineStatefulCoordinationRequest } from "@ecommerce/core/stateful";
-import { Context, Layer } from "effect";
+import type { KeyedActorService } from "@ecommerce/core/stateful";
+import { KeyedActorCommandSchema } from "@ecommerce/core/stateful";
+import { Context, Effect, Layer, Schema } from "effect";
+import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
-import { createInMemoryInventoryCoordinator } from "../coordination";
+import { createInMemoryInventoryActorService } from "../coordination";
 import type {
   AdjustInventoryInput,
   CreateInventoryItemInput,
@@ -17,6 +23,7 @@ import type {
   InventoryAdjustmentEventRecord,
   InventoryAvailability,
   InventoryAvailabilityInput,
+  InventoryExpectedError,
   InventoryItemRecord,
   InventoryLevelRecord,
   InventoryRepository,
@@ -33,11 +40,17 @@ import {
   INVENTORY_LEVEL_ID_PREFIX,
   INVENTORY_RESERVATION_ID_PREFIX,
   STOCK_LOCATION_ID_PREFIX,
-  createInventoryAdjustmentEventId,
-  createInventoryItemId,
-  createInventoryLevelId,
-  createInventoryReservationId,
-  createStockLocationId,
+  InventoryInsufficientStock,
+  InventoryItemNotFound,
+  InventoryLevelNotFound,
+  InventoryRepositoryService,
+  InventoryValidationFailure,
+  StockLocationNotFound,
+  createInventoryAdjustmentEventIdEffect,
+  createInventoryItemIdEffect,
+  createInventoryLevelIdEffect,
+  createInventoryReservationIdEffect,
+  createStockLocationIdEffect,
 } from "../domain";
 import { defaultInventoryRepository } from "../repositories";
 
@@ -58,23 +71,27 @@ export interface InventoryAdjustedEventPayload {
   readonly updatedStockedQuantity: number;
 }
 
+export type InventoryServiceFailure = InventoryExpectedError;
+
 export interface InventoryServiceShape {
-  adjustInventory(
+  readonly adjustInventory: (
     input: AdjustInventoryInput
-  ): Promise<InventoryAdjustmentEventRecord>;
-  checkAvailability(
+  ) => EffectValue<InventoryAdjustmentEventRecord, InventoryServiceFailure>;
+  readonly checkAvailability: (
     input: InventoryAvailabilityInput
-  ): Promise<InventoryAvailability>;
-  createInventoryItem(
+  ) => EffectValue<InventoryAvailability, InventoryServiceFailure>;
+  readonly createInventoryItem: (
     input: CreateInventoryItemInput
-  ): Promise<InventoryItemRecord>;
-  createStockLocation(
+  ) => EffectValue<InventoryItemRecord, InventoryServiceFailure>;
+  readonly createStockLocation: (
     input: CreateStockLocationInput
-  ): Promise<StockLocationRecord>;
-  reserveInventory(input: ReserveInventoryInput): Promise<ReservationResult>;
-  setInventoryLevel(
+  ) => EffectValue<StockLocationRecord, InventoryServiceFailure>;
+  readonly reserveInventory: (
+    input: ReserveInventoryInput
+  ) => EffectValue<ReservationResult, InventoryServiceFailure>;
+  readonly setInventoryLevel: (
     input: SetInventoryLevelInput
-  ): Promise<InventoryLevelRecord>;
+  ) => EffectValue<InventoryLevelRecord, InventoryServiceFailure>;
 }
 
 export const InventoryService = Context.Service<InventoryServiceShape>(
@@ -82,8 +99,8 @@ export const InventoryService = Context.Service<InventoryServiceShape>(
 );
 
 export interface CreateInventoryServiceOptions {
+  readonly actorService?: KeyedActorService;
   readonly clock?: ClockServiceShape;
-  readonly coordinator?: StatefulCoordinator;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
   readonly repository?: InventoryRepository;
@@ -99,7 +116,7 @@ const createDefaultIdGenerator = (): IdGeneratorServiceShape => ({
 
 const createNoopEventPublisher = (): EventPublisherServiceShape => ({
   publish: () => {
-    // Inventory events are emitted when a runtime event bus is composed.
+    // Inventory events are optional until a runtime event bus is composed.
   },
 });
 
@@ -110,65 +127,64 @@ const createId = (prefix: string, idGenerator: IdGeneratorServiceShape) => {
   return rawId.startsWith(prefix) ? rawId : `${prefix}${rawId}`;
 };
 
+const publishEvent = (
+  eventPublisher: EventPublisherServiceShape,
+  envelope: Parameters<EventPublisherServiceShape["publish"]>[0]
+) =>
+  Effect.tryPromise({
+    catch: () =>
+      new InventoryValidationFailure({
+        message: "Inventory event publication failed.",
+      }),
+    try: () => Promise.resolve(eventPublisher.publish(envelope)),
+  }).pipe(Effect.asVoid);
+
+const coordinateInventory = (
+  actorService: KeyedActorService,
+  input: AdjustInventoryInput | ReserveInventoryInput,
+  operationName: "adjustInventory" | "reserveInventory",
+  actorType: "inventory-adjustment" | "inventory-reservation"
+): EffectValue<{ readonly duplicate: boolean }, InventoryValidationFailure> =>
+  Effect.gen(function* coordinateInventoryThroughActor() {
+    const command = yield* Schema.decodeUnknownEffect(KeyedActorCommandSchema)({
+      actor: {
+        key: input.inventoryItemId,
+        type: actorType,
+      },
+      causationId: input.causationId,
+      commandId: input.idempotencyKey,
+      commandName: operationName,
+      correlationId: input.correlationId,
+      idempotencyKey: input.idempotencyKey,
+      issuedAt: new Date().toISOString(),
+      payload: input,
+      schemaVersion: 1,
+      subject: {
+        id: input.inventoryItemId,
+        type: "inventory-item",
+      },
+      workflowRunId: input.workflowRunId,
+    }).pipe(
+      Effect.mapError(
+        () =>
+          new InventoryValidationFailure({
+            message: "Inventory coordination failed.",
+          })
+      )
+    );
+
+    return yield* actorService.dispatch(command).pipe(
+      Effect.mapError(
+        () =>
+          new InventoryValidationFailure({
+            message: "Inventory coordination failed.",
+          })
+      )
+    );
+  });
+
 const getReservedQuantity = (level: InventoryLevelRecord): number =>
   level.reservedQuantity;
-
-const DUPLICATE_RESERVATION_REPLAY_ATTEMPTS = 20;
-const DUPLICATE_RESERVATION_REPLAY_DELAY_MS = 5;
-
-const waitForDuplicateReservationReplay = async (
-  repository: InventoryRepository,
-  idempotencyKey: string
-): Promise<InventoryReservationRecord | null> => {
-  for (
-    let attempt = 0;
-    attempt < DUPLICATE_RESERVATION_REPLAY_ATTEMPTS;
-    attempt += 1
-  ) {
-    const reservation =
-      await repository.findReservationByIdempotencyKey(idempotencyKey);
-
-    if (reservation) {
-      return reservation;
-    }
-
-    if (attempt < DUPLICATE_RESERVATION_REPLAY_ATTEMPTS - 1) {
-      // oxlint-disable-next-line promise/avoid-new
-      await new Promise((resolve) => {
-        setTimeout(resolve, DUPLICATE_RESERVATION_REPLAY_DELAY_MS);
-      });
-    }
-  }
-
-  return null;
-};
-
-const waitForDuplicateAdjustmentReplay = async (
-  repository: InventoryRepository,
-  idempotencyKey: string
-): Promise<InventoryAdjustmentEventRecord | null> => {
-  for (
-    let attempt = 0;
-    attempt < DUPLICATE_RESERVATION_REPLAY_ATTEMPTS;
-    attempt += 1
-  ) {
-    const event =
-      await repository.findAdjustmentEventByIdempotencyKey(idempotencyKey);
-
-    if (event) {
-      return event;
-    }
-
-    if (attempt < DUPLICATE_RESERVATION_REPLAY_ATTEMPTS - 1) {
-      // oxlint-disable-next-line promise/avoid-new
-      await new Promise((resolve) => {
-        setTimeout(resolve, DUPLICATE_RESERVATION_REPLAY_DELAY_MS);
-      });
-    }
-  }
-
-  return null;
-};
 
 const createAvailability = ({
   level,
@@ -204,417 +220,480 @@ const createAggregateScopedBy = ({
     : {}),
 });
 
+const waitForDuplicateReservationReplay = (
+  repository: InventoryRepository,
+  idempotencyKey: string
+): EffectValue<InventoryReservationRecord | null, InventoryServiceFailure> =>
+  repository.findReservationByIdempotencyKey(idempotencyKey);
+
+const waitForDuplicateAdjustmentReplay = (
+  repository: InventoryRepository,
+  idempotencyKey: string
+): EffectValue<
+  InventoryAdjustmentEventRecord | null,
+  InventoryServiceFailure
+> => repository.findAdjustmentEventByIdempotencyKey(idempotencyKey);
+
 export const createInventoryService = ({
+  actorService = createInMemoryInventoryActorService(),
   clock = createDefaultClock(),
-  coordinator = createInMemoryInventoryCoordinator(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
   repository = defaultInventoryRepository,
 }: CreateInventoryServiceOptions = {}): InventoryServiceShape => {
   const service: InventoryServiceShape = {
-    adjustInventory: async (input) => {
-      const inventoryItemId = createInventoryItemId(input.inventoryItemId);
-      const stockLocationId = createStockLocationId(input.stockLocationId);
-      const duplicateEvent =
-        await repository.findAdjustmentEventByIdempotencyKey(
-          input.idempotencyKey
+    adjustInventory: (input) =>
+      Effect.gen(function* adjustInventoryEffect() {
+        const inventoryItemId = yield* createInventoryItemIdEffect(
+          input.inventoryItemId
         );
-
-      if (duplicateEvent) {
-        return duplicateEvent;
-      }
-
-      const coordination = await coordinator.coordinate(
-        defineStatefulCoordinationRequest({
-          causationId: input.causationId,
-          coordinatorKey: "inventory.adjustment",
-          correlationId: input.correlationId,
-          idempotencyKey: input.idempotencyKey,
-          operationName: "adjustInventory",
-          payload: input,
-          subject: {
-            id: inventoryItemId,
-            type: "inventory-item",
-          },
-          workflowRunId: input.workflowRunId,
-        })
-      );
-
-      if (coordination.duplicate) {
-        const coordinatedEvent = await waitForDuplicateAdjustmentReplay(
-          repository,
-          input.idempotencyKey
+        const stockLocationId = yield* createStockLocationIdEffect(
+          input.stockLocationId
         );
+        const duplicateEvent =
+          yield* repository.findAdjustmentEventByIdempotencyKey(
+            input.idempotencyKey
+          );
 
-        if (coordinatedEvent) {
-          return coordinatedEvent;
+        if (duplicateEvent) {
+          return duplicateEvent;
         }
 
-        throw new Error("Duplicate adjustment is still being coordinated.");
-      }
+        const coordination = yield* coordinateInventory(
+          actorService,
+          input,
+          "adjustInventory",
+          "inventory-adjustment"
+        );
 
-      const level = await repository.findLevel(
-        inventoryItemId,
-        stockLocationId
-      );
-
-      if (!level) {
-        throw new Error("Inventory level was not found.");
-      }
-
-      const updatedStockedQuantity = level.stockedQuantity + input.adjustment;
-
-      if (updatedStockedQuantity < 0) {
-        throw new Error("Inventory adjustment cannot reduce stock below zero.");
-      }
-
-      const now = clock.now();
-      await repository.saveLevel({
-        ...level,
-        stockedQuantity: updatedStockedQuantity,
-        updatedAt: now,
-      });
-
-      const eventRecord: InventoryAdjustmentEventRecord = {
-        adjustment: input.adjustment,
-        causationId: input.causationId ?? null,
-        correlationId: input.correlationId,
-        createdAt: now,
-        id: createInventoryAdjustmentEventId(
-          createId(INVENTORY_ADJUSTMENT_EVENT_ID_PREFIX, idGenerator)
-        ),
-        idempotencyKey: input.idempotencyKey,
-        inventoryItemId,
-        reason: input.reason ?? "correction",
-        stockLocationId,
-        updatedStockedQuantity,
-        workflowRunId: input.workflowRunId ?? null,
-      };
-      const saved = await repository.saveAdjustmentEvent(eventRecord);
-
-      await eventPublisher.publish(
-        createEventEnvelope({
-          causationId: input.causationId,
-          correlationId: input.correlationId,
-          id: createId("evt_", idGenerator),
-          name: INVENTORY_ADJUSTED_EVENT,
-          payload: {
-            adjustment: saved.adjustment,
-            inventoryItemId: saved.inventoryItemId,
-            stockLocationId: saved.stockLocationId,
-            updatedStockedQuantity: saved.updatedStockedQuantity,
-          } satisfies InventoryAdjustedEventPayload,
-          sourceModule: "inventory",
-          subject: {
-            id: saved.inventoryItemId,
-            type: "inventory-item",
-          },
-          workflowRunId: input.workflowRunId,
-        })
-      );
-
-      return saved;
-    },
-    checkAvailability: async (input) => {
-      const inventoryItemId = createInventoryItemId(input.inventoryItemId);
-      const explicitStockLocationId = input.stockLocationId
-        ? createStockLocationId(input.stockLocationId)
-        : null;
-      const aggregateScopedBy = createAggregateScopedBy({
-        explicitStockLocationId,
-        salesChannelId: input.salesChannelId,
-      });
-      let candidateLocations: readonly StockLocationRecord["id"][] = [];
-
-      if (explicitStockLocationId) {
-        candidateLocations = [explicitStockLocationId];
-      } else if (input.salesChannelId) {
-        const scopedLocations =
-          await repository.listStockLocationsForSalesChannel(
-            input.salesChannelId
+        if (coordination.duplicate) {
+          const coordinatedEvent = yield* waitForDuplicateAdjustmentReplay(
+            repository,
+            input.idempotencyKey
           );
-        candidateLocations = scopedLocations.map((location) => location.id);
-      }
 
-      if (candidateLocations.length === 0) {
-        return {
-          availableQuantity: 0,
-          inventoryItemId,
-          reservedQuantity: 0,
-          scopedBy: aggregateScopedBy,
-          stockedQuantity: 0,
-        };
-      }
+          if (coordinatedEvent) {
+            return coordinatedEvent;
+          }
 
-      let availability: InventoryAvailability | null = null;
+          return yield* new InventoryValidationFailure({
+            message: "Duplicate adjustment is still being coordinated.",
+          });
+        }
 
-      for (const stockLocationId of candidateLocations) {
-        const level = await repository.findLevel(
+        const level = yield* repository.findLevel(
           inventoryItemId,
           stockLocationId
         );
 
         if (!level) {
-          continue;
+          return yield* new InventoryLevelNotFound({
+            inventoryItemId,
+            stockLocationId,
+          });
         }
 
-        const levelAvailability = createAvailability({
-          level,
-          salesChannelId: input.salesChannelId,
-        });
+        const updatedStockedQuantity = level.stockedQuantity + input.adjustment;
 
-        availability = availability
-          ? {
-              availableQuantity:
-                availability.availableQuantity +
-                levelAvailability.availableQuantity,
-              inventoryItemId: availability.inventoryItemId,
-              reservedQuantity:
-                availability.reservedQuantity +
-                levelAvailability.reservedQuantity,
-              scopedBy: aggregateScopedBy,
-              stockedQuantity:
-                availability.stockedQuantity +
-                levelAvailability.stockedQuantity,
-            }
-          : levelAvailability;
-      }
-
-      return (
-        availability ?? {
-          availableQuantity: 0,
-          inventoryItemId,
-          reservedQuantity: 0,
-          scopedBy: aggregateScopedBy,
-          stockedQuantity: 0,
+        if (updatedStockedQuantity < 0) {
+          return yield* new InventoryValidationFailure({
+            message: "Inventory adjustment cannot reduce stock below zero.",
+          });
         }
-      );
-    },
-    createInventoryItem: (input) => {
-      const sku = normalizeText(input.sku);
-      const title = normalizeText(input.title);
 
-      if (!sku || !title) {
-        throw new Error("Inventory item SKU and title are required.");
-      }
-
-      const now = clock.now();
-      const item: InventoryItemRecord = {
-        createdAt: now,
-        id: createInventoryItemId(
-          createId(INVENTORY_ITEM_ID_PREFIX, idGenerator)
-        ),
-        metadata: input.metadata ?? {},
-        sku,
-        title,
-        updatedAt: now,
-      };
-
-      return repository.saveInventoryItem(item);
-    },
-    createStockLocation: (input) => {
-      const name = normalizeText(input.name);
-
-      if (!name) {
-        throw new Error("Stock location name is required.");
-      }
-
-      const now = clock.now();
-      const location: StockLocationRecord = {
-        createdAt: now,
-        id: createStockLocationId(
-          createId(STOCK_LOCATION_ID_PREFIX, idGenerator)
-        ),
-        metadata: input.metadata ?? {},
-        name,
-        salesChannelIds: input.salesChannelIds ?? [],
-        updatedAt: now,
-      };
-
-      return repository.saveStockLocation(location);
-    },
-    reserveInventory: async (input) => {
-      const inventoryItemId = createInventoryItemId(input.inventoryItemId);
-      const stockLocationId = createStockLocationId(input.stockLocationId);
-      const duplicateReservation =
-        await repository.findReservationByIdempotencyKey(input.idempotencyKey);
-
-      if (duplicateReservation) {
-        const duplicateAvailability = await service.checkAvailability({
-          inventoryItemId,
-          salesChannelId: input.salesChannelId,
-          stockLocationId,
+        const now = clock.now();
+        yield* repository.saveLevel({
+          ...level,
+          stockedQuantity: updatedStockedQuantity,
+          updatedAt: now,
         });
 
-        return {
-          availability: duplicateAvailability,
-          duplicate: true,
-          reservation: duplicateReservation,
-        };
-      }
-
-      const coordination = await coordinator.coordinate(
-        defineStatefulCoordinationRequest({
-          causationId: input.causationId,
-          coordinatorKey: "inventory.reservation",
+        const eventRecord: InventoryAdjustmentEventRecord = {
+          adjustment: input.adjustment,
+          causationId: input.causationId ?? null,
           correlationId: input.correlationId,
+          createdAt: now,
+          id: yield* createInventoryAdjustmentEventIdEffect(
+            createId(INVENTORY_ADJUSTMENT_EVENT_ID_PREFIX, idGenerator)
+          ),
           idempotencyKey: input.idempotencyKey,
-          operationName: "reserveInventory",
-          payload: input,
-          subject: {
-            id: inventoryItemId,
-            type: "inventory-item",
-          },
-          workflowRunId: input.workflowRunId,
-        })
-      );
+          inventoryItemId,
+          reason: input.reason ?? "correction",
+          stockLocationId,
+          updatedStockedQuantity,
+          workflowRunId: input.workflowRunId ?? null,
+        };
+        const saved = yield* repository.saveAdjustmentEvent(eventRecord);
 
-      if (coordination.duplicate) {
-        const coordinatedReservation = await waitForDuplicateReservationReplay(
-          repository,
-          input.idempotencyKey
+        yield* publishEvent(
+          eventPublisher,
+          createEventEnvelope({
+            causationId: input.causationId,
+            correlationId: input.correlationId,
+            id: createId("evt_", idGenerator),
+            name: INVENTORY_ADJUSTED_EVENT,
+            payload: {
+              adjustment: saved.adjustment,
+              inventoryItemId: saved.inventoryItemId,
+              stockLocationId: saved.stockLocationId,
+              updatedStockedQuantity: saved.updatedStockedQuantity,
+            } satisfies InventoryAdjustedEventPayload,
+            sourceModule: "inventory",
+            subject: {
+              id: saved.inventoryItemId,
+              type: "inventory-item",
+            },
+            workflowRunId: input.workflowRunId,
+          })
         );
 
-        if (coordinatedReservation) {
-          const coordinatedAvailability = await service.checkAvailability({
+        return saved;
+      }),
+    checkAvailability: (input) =>
+      Effect.gen(function* checkAvailabilityEffect() {
+        const inventoryItemId = yield* createInventoryItemIdEffect(
+          input.inventoryItemId
+        );
+        const explicitStockLocationId = input.stockLocationId
+          ? yield* createStockLocationIdEffect(input.stockLocationId)
+          : null;
+        const aggregateScopedBy = createAggregateScopedBy({
+          explicitStockLocationId,
+          salesChannelId: input.salesChannelId,
+        });
+        let candidateLocations: readonly StockLocationRecord["id"][] = [];
+
+        if (explicitStockLocationId) {
+          candidateLocations = [explicitStockLocationId];
+        } else if (input.salesChannelId) {
+          const scopedLocations =
+            yield* repository.listStockLocationsForSalesChannel(
+              input.salesChannelId
+            );
+          candidateLocations = scopedLocations.map((location) => location.id);
+        }
+
+        if (candidateLocations.length === 0) {
+          return {
+            availableQuantity: 0,
+            inventoryItemId,
+            reservedQuantity: 0,
+            scopedBy: aggregateScopedBy,
+            stockedQuantity: 0,
+          };
+        }
+
+        let availability: InventoryAvailability | null = null;
+
+        for (const stockLocationId of candidateLocations) {
+          const level = yield* repository.findLevel(
+            inventoryItemId,
+            stockLocationId
+          );
+
+          if (!level) {
+            continue;
+          }
+
+          const levelAvailability = createAvailability({
+            level,
+            salesChannelId: input.salesChannelId,
+          });
+
+          availability = availability
+            ? {
+                availableQuantity:
+                  availability.availableQuantity +
+                  levelAvailability.availableQuantity,
+                inventoryItemId: availability.inventoryItemId,
+                reservedQuantity:
+                  availability.reservedQuantity +
+                  levelAvailability.reservedQuantity,
+                scopedBy: aggregateScopedBy,
+                stockedQuantity:
+                  availability.stockedQuantity +
+                  levelAvailability.stockedQuantity,
+              }
+            : levelAvailability;
+        }
+
+        return (
+          availability ?? {
+            availableQuantity: 0,
+            inventoryItemId,
+            reservedQuantity: 0,
+            scopedBy: aggregateScopedBy,
+            stockedQuantity: 0,
+          }
+        );
+      }),
+    createInventoryItem: (input) =>
+      Effect.gen(function* createInventoryItemEffect() {
+        const sku = normalizeText(input.sku);
+        const title = normalizeText(input.title);
+
+        if (!sku || !title) {
+          return yield* new InventoryValidationFailure({
+            message: "Inventory item SKU and title are required.",
+          });
+        }
+
+        const now = clock.now();
+        const item: InventoryItemRecord = {
+          createdAt: now,
+          id: yield* createInventoryItemIdEffect(
+            createId(INVENTORY_ITEM_ID_PREFIX, idGenerator)
+          ),
+          metadata: input.metadata ?? {},
+          sku,
+          title,
+          updatedAt: now,
+        };
+
+        return yield* repository.saveInventoryItem(item);
+      }),
+    createStockLocation: (input) =>
+      Effect.gen(function* createStockLocationEffect() {
+        const name = normalizeText(input.name);
+
+        if (!name) {
+          return yield* new InventoryValidationFailure({
+            message: "Stock location name is required.",
+          });
+        }
+
+        const now = clock.now();
+        const location: StockLocationRecord = {
+          createdAt: now,
+          id: yield* createStockLocationIdEffect(
+            createId(STOCK_LOCATION_ID_PREFIX, idGenerator)
+          ),
+          metadata: input.metadata ?? {},
+          name,
+          salesChannelIds: input.salesChannelIds ?? [],
+          updatedAt: now,
+        };
+
+        return yield* repository.saveStockLocation(location);
+      }),
+    reserveInventory: (input) =>
+      Effect.gen(function* reserveInventoryEffect() {
+        const inventoryItemId = yield* createInventoryItemIdEffect(
+          input.inventoryItemId
+        );
+        const stockLocationId = yield* createStockLocationIdEffect(
+          input.stockLocationId
+        );
+        const duplicateReservation =
+          yield* repository.findReservationByIdempotencyKey(
+            input.idempotencyKey
+          );
+
+        if (duplicateReservation) {
+          const duplicateAvailability = yield* service.checkAvailability({
             inventoryItemId,
             salesChannelId: input.salesChannelId,
             stockLocationId,
           });
 
           return {
-            availability: coordinatedAvailability,
+            availability: duplicateAvailability,
             duplicate: true,
-            reservation: coordinatedReservation,
+            reservation: duplicateReservation,
           };
         }
 
-        throw new Error(
-          "Duplicate reservation was not persisted before replay timeout."
+        const coordination = yield* coordinateInventory(
+          actorService,
+          input,
+          "reserveInventory",
+          "inventory-reservation"
         );
-      }
 
-      const level = await repository.findLevel(
-        inventoryItemId,
-        stockLocationId
-      );
+        if (coordination.duplicate) {
+          const coordinatedReservation =
+            yield* waitForDuplicateReservationReplay(
+              repository,
+              input.idempotencyKey
+            );
 
-      if (!level) {
-        throw new Error("Inventory level was not found.");
-      }
+          if (coordinatedReservation) {
+            const coordinatedAvailability = yield* service.checkAvailability({
+              inventoryItemId,
+              salesChannelId: input.salesChannelId,
+              stockLocationId,
+            });
 
-      const now = clock.now();
-      const reservation: InventoryReservationRecord = {
-        causationId: input.causationId ?? null,
-        correlationId: input.correlationId,
-        createdAt: now,
-        id: createInventoryReservationId(
-          createId(INVENTORY_RESERVATION_ID_PREFIX, idGenerator)
-        ),
-        idempotencyKey: input.idempotencyKey,
-        inventoryItemId,
-        quantity: input.quantity,
-        releasedAt: null,
-        salesChannelId: input.salesChannelId ?? null,
-        status: "active",
-        stockLocationId,
-        updatedAt: now,
-        workflowRunId: input.workflowRunId ?? null,
-      };
-      const saveResult =
-        await repository.saveReservationIfAvailable(reservation);
+            return {
+              availability: coordinatedAvailability,
+              duplicate: true,
+              reservation: coordinatedReservation,
+            };
+          }
 
-      if (saveResult.status === "insufficient-stock") {
-        throw new Error("Insufficient inventory availability.");
-      }
+          return yield* new InventoryValidationFailure({
+            message:
+              "Duplicate reservation was not persisted before replay timeout.",
+          });
+        }
 
-      const saved = saveResult.reservation;
-      const remainingAvailability = await service.checkAvailability({
-        inventoryItemId,
-        salesChannelId: input.salesChannelId,
-        stockLocationId,
-      });
+        const level = yield* repository.findLevel(
+          inventoryItemId,
+          stockLocationId
+        );
 
-      if (saveResult.status === "duplicate") {
+        if (!level) {
+          return yield* new InventoryLevelNotFound({
+            inventoryItemId,
+            stockLocationId,
+          });
+        }
+
+        const now = clock.now();
+        const reservation: InventoryReservationRecord = {
+          causationId: input.causationId ?? null,
+          correlationId: input.correlationId,
+          createdAt: now,
+          id: yield* createInventoryReservationIdEffect(
+            createId(INVENTORY_RESERVATION_ID_PREFIX, idGenerator)
+          ),
+          idempotencyKey: input.idempotencyKey,
+          inventoryItemId,
+          quantity: input.quantity,
+          releasedAt: null,
+          salesChannelId: input.salesChannelId ?? null,
+          status: "active",
+          stockLocationId,
+          updatedAt: now,
+          workflowRunId: input.workflowRunId ?? null,
+        };
+        const saveResult =
+          yield* repository.saveReservationIfAvailable(reservation);
+
+        if (saveResult.status === "insufficient-stock") {
+          return yield* new InventoryInsufficientStock({
+            inventoryItemId,
+            stockLocationId,
+          });
+        }
+
+        const saved = saveResult.reservation;
+        const remainingAvailability = yield* service.checkAvailability({
+          inventoryItemId,
+          salesChannelId: input.salesChannelId,
+          stockLocationId,
+        });
+
+        if (saveResult.status === "duplicate") {
+          return {
+            availability: remainingAvailability,
+            duplicate: true,
+            reservation: saved,
+          };
+        }
+
+        yield* publishEvent(
+          eventPublisher,
+          createEventEnvelope({
+            causationId: input.causationId,
+            correlationId: input.correlationId,
+            id: createId("evt_", idGenerator),
+            name: INVENTORY_RESERVED_EVENT,
+            payload: {
+              inventoryItemId: saved.inventoryItemId,
+              quantity: saved.quantity,
+              reservationId: saved.id,
+              stockLocationId: saved.stockLocationId,
+            } satisfies InventoryReservedEventPayload,
+            sourceModule: "inventory",
+            subject: {
+              id: saved.inventoryItemId,
+              type: "inventory-item",
+            },
+            workflowRunId: input.workflowRunId,
+          })
+        );
+
         return {
           availability: remainingAvailability,
-          duplicate: true,
+          duplicate: false,
           reservation: saved,
         };
-      }
-
-      await eventPublisher.publish(
-        createEventEnvelope({
-          causationId: input.causationId,
-          correlationId: input.correlationId,
-          id: createId("evt_", idGenerator),
-          name: INVENTORY_RESERVED_EVENT,
-          payload: {
-            inventoryItemId: saved.inventoryItemId,
-            quantity: saved.quantity,
-            reservationId: saved.id,
-            stockLocationId: saved.stockLocationId,
-          } satisfies InventoryReservedEventPayload,
-          sourceModule: "inventory",
-          subject: {
-            id: saved.inventoryItemId,
-            type: "inventory-item",
-          },
-          workflowRunId: input.workflowRunId,
-        })
-      );
-
-      return {
-        availability: remainingAvailability,
-        duplicate: false,
-        reservation: saved,
-      };
-    },
-    setInventoryLevel: async (input) => {
-      const inventoryItemId = createInventoryItemId(input.inventoryItemId);
-      const stockLocationId = createStockLocationId(input.stockLocationId);
-      const [item, location, existing] = await Promise.all([
-        repository.findInventoryItemById(inventoryItemId),
-        repository.findStockLocationById(stockLocationId),
-        repository.findLevel(inventoryItemId, stockLocationId),
-      ]);
-
-      if (!item) {
-        throw new Error(
-          `Inventory item "${input.inventoryItemId}" was not found.`
+      }),
+    setInventoryLevel: (input) =>
+      Effect.gen(function* setInventoryLevelEffect() {
+        const inventoryItemId = yield* createInventoryItemIdEffect(
+          input.inventoryItemId
         );
-      }
-
-      if (!location) {
-        throw new Error(
-          `Stock location "${input.stockLocationId}" was not found.`
+        const stockLocationId = yield* createStockLocationIdEffect(
+          input.stockLocationId
         );
-      }
+        const [item, location, existing] = yield* Effect.all([
+          repository.findInventoryItemById(inventoryItemId),
+          repository.findStockLocationById(stockLocationId),
+          repository.findLevel(inventoryItemId, stockLocationId),
+        ]);
 
-      const now = clock.now();
-      const level: InventoryLevelRecord = {
-        createdAt: existing?.createdAt ?? now,
-        id:
-          existing?.id ??
-          createInventoryLevelId(
-            createId(INVENTORY_LEVEL_ID_PREFIX, idGenerator)
-          ),
-        inventoryItemId,
-        reservedQuantity: existing?.reservedQuantity ?? 0,
-        stockLocationId,
-        stockedQuantity: input.stockedQuantity,
-        updatedAt: now,
-      };
+        if (!item) {
+          return yield* new InventoryItemNotFound({ inventoryItemId });
+        }
 
-      return repository.saveLevel(level);
-    },
+        if (!location) {
+          return yield* new StockLocationNotFound({ stockLocationId });
+        }
+
+        const now = clock.now();
+        const level: InventoryLevelRecord = {
+          createdAt: existing?.createdAt ?? now,
+          id:
+            existing?.id ??
+            (yield* createInventoryLevelIdEffect(
+              createId(INVENTORY_LEVEL_ID_PREFIX, idGenerator)
+            )),
+          inventoryItemId,
+          reservedQuantity: existing?.reservedQuantity ?? 0,
+          stockLocationId,
+          stockedQuantity: input.stockedQuantity,
+          updatedAt: now,
+        };
+
+        return yield* repository.saveLevel(level);
+      }),
   };
 
   return service;
 };
 
+export const createInventoryRepositoryLayer = (
+  repository: InventoryRepository
+) => Layer.succeed(InventoryRepositoryService, repository);
+
 export const createInventoryServiceLayer = (service: InventoryServiceShape) =>
   Layer.succeed(InventoryService, service);
+
+export const createInventoryServiceFromDependenciesLayer = () =>
+  Layer.effect(
+    InventoryService,
+    Effect.gen(function* createInventoryServiceFromDependenciesEffect() {
+      const clock = yield* ClockService;
+      const idGenerator = yield* IdGeneratorService;
+      const repository = yield* InventoryRepositoryService;
+      const eventPublisher = yield* Effect.serviceOption(
+        EventPublisherService
+      ).pipe(
+        Effect.map((option) =>
+          option._tag === "Some" ? option.value : undefined
+        )
+      );
+
+      return createInventoryService({
+        clock,
+        eventPublisher,
+        idGenerator,
+        repository,
+      });
+    })
+  );
 
 export const defaultInventoryService = createInventoryService({
   repository: defaultInventoryRepository,

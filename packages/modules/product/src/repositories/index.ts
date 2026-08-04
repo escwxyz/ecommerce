@@ -1,5 +1,6 @@
 export {
   InMemoryProductRepository,
+  createInMemoryProductRepositoryLayer,
   createInMemoryProductRepository,
   createResettableInMemoryProductRepository,
   defaultProductRepository,

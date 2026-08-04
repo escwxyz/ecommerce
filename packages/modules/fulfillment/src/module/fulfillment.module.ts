@@ -3,7 +3,6 @@ import { Effect } from "effect";
 
 import { fulfillmentAdminSurfaces } from "../admin";
 import { fulfillmentPermissionList } from "../permissions";
-import { fulfillmentApiFragment } from "../router";
 import {
   FULFILLMENT_CANCELED_EVENT,
   FULFILLMENT_CREATED_EVENT,
@@ -22,7 +21,7 @@ export const fulfillmentExtensionPoints = {
 export const fulfillmentModule = defineCommerceModule({
   contributions: {
     adminSurfaces: fulfillmentAdminSurfaces,
-    apiFragments: [fulfillmentApiFragment],
+    apiFragments: [],
     eventTypes: [
       FULFILLMENT_SET_CREATED_EVENT,
       SHIPPING_OPTION_CREATED_EVENT,
@@ -50,20 +49,9 @@ export const fulfillmentModule = defineCommerceModule({
       },
     ],
   },
+  dependencies: [],
   key: "fulfillment",
   providedServices: [
     { key: "fulfillment-service", service: FulfillmentService },
   ],
-  schema: {
-    tables: [
-      "fulfillment_provider",
-      "fulfillment_set",
-      "shipping_profile",
-      "service_zone",
-      "shipping_option",
-      "fulfillment",
-      "shipment",
-      "return_shipment_link",
-    ],
-  },
 });

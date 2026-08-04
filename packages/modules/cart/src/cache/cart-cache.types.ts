@@ -1,12 +1,16 @@
+import type { Effect as EffectValue } from "effect/Effect";
+
 import type {
   CartAdjustmentRecord,
   CartAggregate,
   CartId,
+  CartExpectedError,
   CartLineItemId,
   CartLineItemRecord,
   CartRecord,
   CartRepository,
 } from "../domain";
+import { CartCacheOwnershipError } from "../domain/cart.errors";
 
 export type CartOwnershipScope =
   | {
@@ -34,75 +38,73 @@ export interface CartProjectionSyncFailure {
 }
 
 export interface CartProjectionSyncPort {
-  syncCartProjection(input: {
+  readonly syncCartProjection: (input: {
     readonly aggregate: CartAggregate;
     readonly repository: CartRepository;
-  }): Promise<void>;
-}
-
-export class CartCacheOwnershipError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "CartCacheOwnershipError";
-  }
+  }) => EffectValue<void, CartExpectedError>;
 }
 
 export const isCartCacheOwnershipError = (
   error: unknown
-): error is CartCacheOwnershipError => error instanceof CartCacheOwnershipError;
+): error is CartCacheOwnershipError =>
+  error instanceof CartCacheOwnershipError ||
+  (typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    error._tag === "CartCacheOwnershipError");
 
 /**
  * Runtime-neutral active cart cache port. Cloudflare Durable Objects implement
  * this from `packages/platform-cloudflare`; tests can use the in-memory adapter.
  */
 export interface CartActiveCache {
-  findAdjustmentByIdempotencyKey(input: {
+  readonly findAdjustmentByIdempotencyKey: (input: {
     readonly idempotencyKey: string;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartAdjustmentRecord | null>;
-  findCartById(input: {
+  }) => EffectValue<CartAdjustmentRecord | null, CartExpectedError>;
+  readonly findCartById: (input: {
     readonly id: CartId;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartRecord | null>;
-  findLineItemById(input: {
+  }) => EffectValue<CartRecord | null, CartExpectedError>;
+  readonly findLineItemById: (input: {
     readonly id: CartLineItemId;
     readonly cartId?: CartId;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartLineItemRecord | null>;
-  findLineItemByIdempotencyKey(input: {
+  }) => EffectValue<CartLineItemRecord | null, CartExpectedError>;
+  readonly findLineItemByIdempotencyKey: (input: {
     readonly idempotencyKey: string;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartLineItemRecord | null>;
-  getCartAggregate(input: {
+  }) => EffectValue<CartLineItemRecord | null, CartExpectedError>;
+  readonly getCartAggregate: (input: {
     readonly id: CartId;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartAggregate | null>;
-  hydrateCartAggregate(input: {
+  }) => EffectValue<CartAggregate | null, CartExpectedError>;
+  readonly hydrateCartAggregate: (input: {
     readonly aggregate: CartAggregate;
     readonly scope: CartOwnershipScope;
-  }): Promise<void>;
-  recordProjectionSyncFailure?(
+  }) => EffectValue<void, CartExpectedError>;
+  readonly recordProjectionSyncFailure?: (
     failure: CartProjectionSyncFailure
-  ): Promise<void>;
-  removeLineItem(input: {
+  ) => EffectValue<void, CartExpectedError>;
+  readonly removeLineItem: (input: {
     readonly cartId?: CartId;
     readonly id: CartLineItemId;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartAggregate | null>;
-  saveAdjustment(input: {
+  }) => EffectValue<CartAggregate | null, CartExpectedError>;
+  readonly saveAdjustment: (input: {
     readonly adjustment: CartAdjustmentRecord;
     readonly idempotencyKey: string;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartAdjustmentRecord>;
-  saveCart(input: {
+  }) => EffectValue<CartAdjustmentRecord, CartExpectedError>;
+  readonly saveCart: (input: {
     readonly cart: CartRecord;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartRecord>;
-  saveLineItem(input: {
+  }) => EffectValue<CartRecord, CartExpectedError>;
+  readonly saveLineItem: (input: {
     readonly idempotencyKey?: string;
     readonly item: CartLineItemRecord;
     readonly scope: CartOwnershipScope;
-  }): Promise<CartLineItemRecord>;
+  }) => EffectValue<CartLineItemRecord, CartExpectedError>;
 }
 
 export const createCustomerCartScope = (id: string): CartOwnershipScope => ({

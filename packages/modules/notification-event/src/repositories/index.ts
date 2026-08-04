@@ -1,5 +1,6 @@
 export {
   InMemoryNotificationEventRepository,
+  createNotificationEventRepositoryLayer,
   createInMemoryNotificationEventRepository,
   createResettableInMemoryNotificationEventRepository,
   defaultNotificationEventRepository,

@@ -1,15 +1,68 @@
+import { Effect, Layer } from "effect";
+
 import type {
   EventDeadLetterRecord,
   EventOutboxRecord,
   NotificationDispatchRecord,
+  NotificationEventExpectedError,
   NotificationEventRepository,
   NotificationProviderRecord,
   NotificationTemplate,
 } from "../domain";
+import { NotificationEventRepositoryService } from "../domain";
 
 export interface ResettableNotificationEventRepository extends NotificationEventRepository {
-  clear(): void;
+  readonly clear: Effect.Effect<void>;
 }
+
+const cloneDate = (date: Date): Date => new Date(date);
+
+const cloneOutbox = (record: EventOutboxRecord): EventOutboxRecord => ({
+  ...record,
+  availableAt: cloneDate(record.availableAt),
+  createdAt: cloneDate(record.createdAt),
+  envelope: {
+    ...record.envelope,
+    emittedAt: cloneDate(record.envelope.emittedAt),
+    payload: record.envelope.payload,
+    subject: record.envelope.subject
+      ? { ...record.envelope.subject }
+      : undefined,
+  },
+  updatedAt: cloneDate(record.updatedAt),
+});
+
+const cloneDeadLetter = (
+  record: EventDeadLetterRecord
+): EventDeadLetterRecord => ({
+  ...record,
+  createdAt: cloneDate(record.createdAt),
+});
+
+const cloneTemplate = (
+  template: NotificationTemplate
+): NotificationTemplate => ({
+  ...template,
+});
+
+const cloneProviderRecord = (
+  record: NotificationProviderRecord
+): NotificationProviderRecord => ({
+  ...record,
+  createdAt: cloneDate(record.createdAt),
+  updatedAt: cloneDate(record.updatedAt),
+});
+
+const cloneDispatch = (
+  record: NotificationDispatchRecord
+): NotificationDispatchRecord => ({
+  ...record,
+  createdAt: cloneDate(record.createdAt),
+  deliveredAt: record.deliveredAt ? cloneDate(record.deliveredAt) : undefined,
+  payload: record.payload,
+  recipient: { ...record.recipient },
+  updatedAt: cloneDate(record.updatedAt),
+});
 
 const sortByCreatedAtDesc = <Record extends { readonly createdAt: Date }>(
   records: Iterable<Record>
@@ -44,80 +97,124 @@ export class InMemoryNotificationEventRepository implements ResettableNotificati
   readonly #providerRecords = new Map<string, NotificationProviderRecord>();
   readonly #templates = new Map<string, NotificationTemplate>();
 
-  clear(): void {
+  readonly clear = Effect.sync(() => {
     this.#deadLetters.clear();
     this.#dispatches.clear();
     this.#dispatchIdempotency.clear();
     this.#outbox.clear();
     this.#providerRecords.clear();
     this.#templates.clear();
-  }
+  });
 
-  findDispatchByIdempotencyKey(
+  readonly findDispatchByIdempotencyKey = (
     idempotencyKey: string
-  ): Promise<NotificationDispatchRecord | null> {
-    const id = this.#dispatchIdempotency.get(idempotencyKey);
-    return Promise.resolve(id ? (this.#dispatches.get(id) ?? null) : null);
-  }
+  ): Effect.Effect<
+    NotificationDispatchRecord | null,
+    NotificationEventExpectedError
+  > =>
+    Effect.sync(() => {
+      const id = this.#dispatchIdempotency.get(idempotencyKey);
+      const dispatch = id ? this.#dispatches.get(id) : undefined;
+      return dispatch ? cloneDispatch(dispatch) : null;
+    });
 
-  findOutboxById(outboxId: string): Promise<EventOutboxRecord | null> {
-    return Promise.resolve(this.#outbox.get(outboxId) ?? null);
-  }
+  readonly findOutboxById = (
+    outboxId: string
+  ): Effect.Effect<EventOutboxRecord | null, NotificationEventExpectedError> =>
+    Effect.sync(() => {
+      const outbox = this.#outbox.get(outboxId);
+      return outbox ? cloneOutbox(outbox) : null;
+    });
 
-  findTemplateByKey({
+  readonly findTemplateByKey = ({
     channel,
     templateKey,
   }: {
     readonly channel: NotificationTemplate["channel"];
     readonly templateKey: string;
-  }): Promise<NotificationTemplate | null> {
-    return Promise.resolve(
-      this.#templates.get(`${channel}:${templateKey}`) ?? null
-    );
-  }
+  }): Effect.Effect<
+    NotificationTemplate | null,
+    NotificationEventExpectedError
+  > =>
+    Effect.sync(() => {
+      const template = this.#templates.get(`${channel}:${templateKey}`);
+      return template ? cloneTemplate(template) : null;
+    });
 
-  listDeadLetters(): Promise<readonly EventDeadLetterRecord[]> {
-    return Promise.resolve(sortByCreatedAtDesc(this.#deadLetters.values()));
-  }
+  readonly listDeadLetters: Effect.Effect<
+    readonly EventDeadLetterRecord[],
+    NotificationEventExpectedError
+  > = Effect.sync(() =>
+    sortByCreatedAtDesc(this.#deadLetters.values()).map(cloneDeadLetter)
+  );
 
-  listDispatches(): Promise<readonly NotificationDispatchRecord[]> {
-    return Promise.resolve(sortByCreatedAtDesc(this.#dispatches.values()));
-  }
+  readonly listDispatches: Effect.Effect<
+    readonly NotificationDispatchRecord[],
+    NotificationEventExpectedError
+  > = Effect.sync(() =>
+    sortByCreatedAtDesc(this.#dispatches.values()).map(cloneDispatch)
+  );
 
-  saveDeadLetter(
+  readonly saveDeadLetter = (
     record: EventDeadLetterRecord
-  ): Promise<EventDeadLetterRecord> {
-    this.#deadLetters.set(record.id, record);
-    return Promise.resolve(record);
-  }
+  ): Effect.Effect<EventDeadLetterRecord, NotificationEventExpectedError> =>
+    Effect.sync(() => {
+      const cloned = cloneDeadLetter(record);
+      this.#deadLetters.set(cloned.id, cloned);
+      return cloneDeadLetter(cloned);
+    });
 
-  saveDispatch(
+  readonly saveDispatch = (
     record: NotificationDispatchRecord
-  ): Promise<NotificationDispatchRecord> {
-    this.#dispatches.set(record.id, record);
-    this.#dispatchIdempotency.set(record.idempotencyKey, record.id);
-    return Promise.resolve(record);
-  }
+  ): Effect.Effect<
+    NotificationDispatchRecord,
+    NotificationEventExpectedError
+  > =>
+    Effect.sync(() => {
+      const existingId = this.#dispatchIdempotency.get(record.idempotencyKey);
 
-  saveOutbox(record: EventOutboxRecord): Promise<EventOutboxRecord> {
-    this.#outbox.set(record.id, record);
-    return Promise.resolve(record);
-  }
+      if (existingId && existingId !== record.id) {
+        const existing = this.#dispatches.get(existingId);
+        if (existing) {
+          return cloneDispatch(existing);
+        }
+      }
 
-  saveProviderRecord(
+      const cloned = cloneDispatch(record);
+      this.#dispatches.set(cloned.id, cloned);
+      this.#dispatchIdempotency.set(cloned.idempotencyKey, cloned.id);
+      return cloneDispatch(cloned);
+    });
+
+  readonly saveOutbox = (
+    record: EventOutboxRecord
+  ): Effect.Effect<EventOutboxRecord, NotificationEventExpectedError> =>
+    Effect.sync(() => {
+      const cloned = cloneOutbox(record);
+      this.#outbox.set(cloned.id, cloned);
+      return cloneOutbox(cloned);
+    });
+
+  readonly saveProviderRecord = (
     record: NotificationProviderRecord
-  ): Promise<NotificationProviderRecord> {
-    this.#providerRecords.set(record.id, record);
-    return Promise.resolve(record);
-  }
+  ): Effect.Effect<
+    NotificationProviderRecord,
+    NotificationEventExpectedError
+  > =>
+    Effect.sync(() => {
+      const cloned = cloneProviderRecord(record);
+      this.#providerRecords.set(cloned.id, cloned);
+      return cloneProviderRecord(cloned);
+    });
 
-  saveTemplate(template: NotificationTemplate): Promise<NotificationTemplate> {
-    this.#templates.set(
-      `${template.channel}:${template.templateKey}`,
-      template
-    );
-    return Promise.resolve(template);
-  }
+  readonly saveTemplate = (
+    template: NotificationTemplate
+  ): Effect.Effect<NotificationTemplate, NotificationEventExpectedError> =>
+    Effect.sync(() => {
+      const cloned = cloneTemplate(template);
+      this.#templates.set(`${cloned.channel}:${cloned.templateKey}`, cloned);
+      return cloneTemplate(cloned);
+    });
 }
 
 export const defaultNotificationEventRepository =
@@ -129,3 +226,7 @@ export const createInMemoryNotificationEventRepository =
 export const createResettableInMemoryNotificationEventRepository =
   (): ResettableNotificationEventRepository =>
     new InMemoryNotificationEventRepository();
+
+export const createNotificationEventRepositoryLayer = (
+  repository: NotificationEventRepository
+) => Layer.succeed(NotificationEventRepositoryService, repository);

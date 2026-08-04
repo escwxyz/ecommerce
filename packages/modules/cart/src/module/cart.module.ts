@@ -3,7 +3,6 @@ import { Effect } from "effect";
 
 import { cartAdminSurfaces } from "../admin";
 import { cartPermissionList } from "../permissions";
-import { cartApiFragment } from "../router";
 import {
   CART_ADJUSTMENT_APPLIED_EVENT,
   CART_CHECKOUT_REFERENCE_SET_EVENT,
@@ -24,7 +23,6 @@ export const cartExtensionPoints = {
 export const cartModule = defineCommerceModule({
   contributions: {
     adminSurfaces: cartAdminSurfaces,
-    apiFragments: [cartApiFragment],
     eventTypes: [
       CART_CREATED_EVENT,
       CART_LINE_ITEM_ADDED_EVENT,

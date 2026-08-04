@@ -1,89 +1,137 @@
-import { z } from "zod";
+import { Schema } from "effect";
 
-const MetadataSchema = z.record(z.string(), z.unknown());
-const NullableStringSchema = z.string().min(1).nullable();
+const isCanonicalIsoDateTime = (value: string): boolean => {
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+};
 
-export const OrderCoordinationMetadataSchema = z.object({
-  causationId: z.string().min(1).optional(),
-  correlationId: z.string().min(1),
-  idempotencyKey: z.string().min(1),
-  workflowRunId: z.string().min(1).optional(),
+const isEmailLike = (value: string): boolean => /\S+@\S+\.\S+/u.test(value);
+
+export const OrderTrimmedStringSchema = Schema.Trimmed.pipe(
+  Schema.check(Schema.isMinLength(1))
+);
+export const OrderMetadataSchema = Schema.Record(Schema.String, Schema.Unknown);
+
+export const OrderIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("ord_")),
+  Schema.brand("OrderId")
+);
+export const OrderLineItemIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("ordli_")),
+  Schema.brand("OrderLineItemId")
+);
+export const OrderTransactionIdSchema = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.isStartsWith("ordtxn_")),
+  Schema.brand("OrderTransactionId")
+);
+export const OrderSerializedIdSchema = OrderTrimmedStringSchema.pipe(
+  Schema.check(Schema.isStartsWith("ord_"))
+);
+export const OrderLineItemSerializedIdSchema = OrderTrimmedStringSchema.pipe(
+  Schema.check(Schema.isStartsWith("ordli_"))
+);
+export const OrderTransactionSerializedIdSchema = OrderTrimmedStringSchema.pipe(
+  Schema.check(Schema.isStartsWith("ordtxn_"))
+);
+
+export const OrderIsoDateTimeStringSchema = OrderTrimmedStringSchema.pipe(
+  Schema.check(Schema.makeFilter(isCanonicalIsoDateTime))
+);
+export const OrderNullableIsoDateTimeStringSchema = Schema.NullOr(
+  OrderIsoDateTimeStringSchema
+);
+
+export const OrderEmailSchema = OrderTrimmedStringSchema.pipe(
+  Schema.check(Schema.makeFilter(isEmailLike))
+);
+export const OrderCountryCodeSchema = OrderTrimmedStringSchema.pipe(
+  Schema.check(Schema.isMinLength(2)),
+  Schema.check(Schema.isMaxLength(2))
+);
+export const OrderCurrencyCodeSchema = OrderTrimmedStringSchema.pipe(
+  Schema.check(Schema.isMinLength(3)),
+  Schema.check(Schema.isMaxLength(3))
+);
+export const OrderNonNegativeIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+export const OrderPositiveIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThan(0))
+);
+
+export const OrderCoordinationMetadataSchema = Schema.Struct({
+  causationId: Schema.optional(OrderTrimmedStringSchema),
+  correlationId: OrderTrimmedStringSchema,
+  idempotencyKey: OrderTrimmedStringSchema,
+  workflowRunId: Schema.optional(OrderTrimmedStringSchema),
 });
 
-export const OrderAddressSnapshotSchema = z.object({
-  address1: z.string().min(1),
-  address2: z.string().min(1).optional(),
-  city: z.string().min(1),
-  company: z.string().min(1).optional(),
-  countryCode: z
-    .string()
-    .min(2)
-    .max(2)
-    .transform((value) => value.toUpperCase()),
-  firstName: z.string().min(1).optional(),
-  lastName: z.string().min(1).optional(),
-  phone: z.string().min(1).optional(),
-  postalCode: z.string().min(1),
-  province: z.string().min(1).optional(),
+export const OrderAddressSnapshotSchema = Schema.Struct({
+  address1: OrderTrimmedStringSchema,
+  address2: Schema.optional(OrderTrimmedStringSchema),
+  city: OrderTrimmedStringSchema,
+  company: Schema.optional(OrderTrimmedStringSchema),
+  countryCode: OrderCountryCodeSchema,
+  firstName: Schema.optional(OrderTrimmedStringSchema),
+  lastName: Schema.optional(OrderTrimmedStringSchema),
+  phone: Schema.optional(OrderTrimmedStringSchema),
+  postalCode: OrderTrimmedStringSchema,
+  province: Schema.optional(OrderTrimmedStringSchema),
 });
 
-export const OrderTotalsSnapshotSchema = z.object({
-  adjustmentTotal: z.number().int(),
-  currencyCode: z
-    .string()
-    .min(3)
-    .max(3)
-    .transform((value) => value.toUpperCase()),
-  discountTotal: z.number().int().nonnegative(),
-  giftCardTotal: z.number().int().nonnegative(),
-  itemSubtotal: z.number().int().nonnegative(),
-  shippingTotal: z.number().int().nonnegative(),
-  subtotal: z.number().int().nonnegative(),
-  taxTotal: z.number().int().nonnegative(),
-  total: z.number().int().nonnegative(),
+export const OrderTotalsSnapshotSchema = Schema.Struct({
+  adjustmentTotal: Schema.Int,
+  currencyCode: OrderCurrencyCodeSchema,
+  discountTotal: OrderNonNegativeIntegerSchema,
+  giftCardTotal: OrderNonNegativeIntegerSchema,
+  itemSubtotal: OrderNonNegativeIntegerSchema,
+  shippingTotal: OrderNonNegativeIntegerSchema,
+  subtotal: OrderNonNegativeIntegerSchema,
+  taxTotal: OrderNonNegativeIntegerSchema,
+  total: OrderNonNegativeIntegerSchema,
 });
 
-export const OrderItemSnapshotSchema = z.object({
-  metadata: MetadataSchema.optional(),
-  productId: z.string().min(1),
-  productTitle: z.string().min(1),
-  sku: z.string().min(1).optional(),
-  thumbnailUrl: z.string().min(1).optional(),
-  variantId: z.string().min(1),
-  variantTitle: z.string().min(1),
+export const OrderItemSnapshotSchema = Schema.Struct({
+  metadata: Schema.optional(OrderMetadataSchema),
+  productId: OrderTrimmedStringSchema,
+  productTitle: OrderTrimmedStringSchema,
+  sku: Schema.optional(OrderTrimmedStringSchema),
+  thumbnailUrl: Schema.optional(OrderTrimmedStringSchema),
+  variantId: OrderTrimmedStringSchema,
+  variantTitle: OrderTrimmedStringSchema,
 });
 
-export const OrderPaymentReferenceSchema = z.object({
-  amount: z.number().int().nonnegative(),
-  currencyCode: z.string().min(3).max(3),
-  paymentCollectionId: z.string().min(1).optional(),
-  paymentId: z.string().min(1),
-  providerId: z.string().min(1).optional(),
-  status: z.string().min(1),
+export const OrderPaymentReferenceSchema = Schema.Struct({
+  amount: OrderNonNegativeIntegerSchema,
+  currencyCode: OrderCurrencyCodeSchema,
+  paymentCollectionId: Schema.optional(OrderTrimmedStringSchema),
+  paymentId: OrderTrimmedStringSchema,
+  providerId: Schema.optional(OrderTrimmedStringSchema),
+  status: OrderTrimmedStringSchema,
 });
 
-export const OrderFulfillmentReferenceSchema = z.object({
-  fulfillmentId: z.string().min(1).optional(),
-  providerId: z.string().min(1).optional(),
-  shippingOptionId: z.string().min(1),
-  status: z.string().min(1),
+export const OrderFulfillmentReferenceSchema = Schema.Struct({
+  fulfillmentId: Schema.optional(OrderTrimmedStringSchema),
+  providerId: Schema.optional(OrderTrimmedStringSchema),
+  shippingOptionId: OrderTrimmedStringSchema,
+  status: OrderTrimmedStringSchema,
 });
 
-export const OrderStatusSchema = z.enum([
+export const OrderStatusSchema = Schema.Literals([
   "placed",
   "processing",
   "completed",
   "canceled",
 ]);
-
-export const OrderTransactionTypeSchema = z.enum([
+export const OrderTransactionTypeSchema = Schema.Literals([
   "payment",
   "refund",
   "capture",
   "adjustment",
 ]);
-
-export const OrderPostPurchaseOperationTypeSchema = z.enum([
+export const OrderPostPurchaseOperationTypeSchema = Schema.Literals([
   "edit",
   "exchange",
   "claim",
@@ -91,157 +139,194 @@ export const OrderPostPurchaseOperationTypeSchema = z.enum([
   "cancellation",
 ]);
 
-export const OrderRecordSchema = z.object({
-  billingAddress: OrderAddressSnapshotSchema.nullable(),
-  cartId: z.string().min(1),
-  completedAt: z.date().nullable(),
-  createdAt: z.date(),
-  currencyCode: z.string().min(3).max(3),
-  customerId: NullableStringSchema,
-  email: z.string().email().nullable(),
-  fulfillmentReferences: z.array(OrderFulfillmentReferenceSchema).readonly(),
-  id: z.string().min(1).startsWith("ord_"),
-  metadata: MetadataSchema,
-  paymentReferences: z.array(OrderPaymentReferenceSchema).readonly(),
-  shippingAddress: OrderAddressSnapshotSchema.nullable(),
+export const OrderRecordSchema = Schema.Struct({
+  billingAddress: Schema.NullOr(OrderAddressSnapshotSchema),
+  cartId: OrderTrimmedStringSchema,
+  completedAt: Schema.NullOr(Schema.Date),
+  createdAt: Schema.Date,
+  currencyCode: OrderCurrencyCodeSchema,
+  customerId: Schema.NullOr(OrderTrimmedStringSchema),
+  email: Schema.NullOr(OrderEmailSchema),
+  fulfillmentReferences: Schema.Array(OrderFulfillmentReferenceSchema),
+  id: OrderIdSchema,
+  metadata: OrderMetadataSchema,
+  paymentReferences: Schema.Array(OrderPaymentReferenceSchema),
+  shippingAddress: Schema.NullOr(OrderAddressSnapshotSchema),
   status: OrderStatusSchema,
   totals: OrderTotalsSnapshotSchema,
-  updatedAt: z.date(),
+  updatedAt: Schema.Date,
 });
 
-export const OrderLineItemRecordSchema = z.object({
-  createdAt: z.date(),
-  id: z.string().min(1).startsWith("ordli_"),
+export const OrderLineItemRecordSchema = Schema.Struct({
+  createdAt: Schema.Date,
+  id: OrderLineItemIdSchema,
   itemSnapshot: OrderItemSnapshotSchema,
-  metadata: MetadataSchema,
-  orderId: z.string().min(1).startsWith("ord_"),
-  quantity: z.number().int().positive(),
-  taxTotal: z.number().int().nonnegative(),
-  title: z.string().min(1),
-  total: z.number().int().nonnegative(),
-  unitPrice: z.number().int().nonnegative(),
-  updatedAt: z.date(),
+  metadata: OrderMetadataSchema,
+  orderId: OrderIdSchema,
+  quantity: OrderPositiveIntegerSchema,
+  taxTotal: OrderNonNegativeIntegerSchema,
+  title: OrderTrimmedStringSchema,
+  total: OrderNonNegativeIntegerSchema,
+  unitPrice: OrderNonNegativeIntegerSchema,
+  updatedAt: Schema.Date,
 });
 
-export const OrderTransactionRecordSchema = z.object({
-  amount: z.number().int(),
-  createdAt: z.date(),
-  currencyCode: z.string().min(3).max(3),
-  id: z.string().min(1).startsWith("ordtxn_"),
-  metadata: MetadataSchema,
-  orderId: z.string().min(1).startsWith("ord_"),
-  referenceId: z.string().min(1).nullable(),
+export const OrderTransactionRecordSchema = Schema.Struct({
+  amount: Schema.Int,
+  createdAt: Schema.Date,
+  currencyCode: OrderCurrencyCodeSchema,
+  id: OrderTransactionIdSchema,
+  metadata: OrderMetadataSchema,
+  orderId: OrderIdSchema,
+  referenceId: Schema.NullOr(OrderTrimmedStringSchema),
   type: OrderTransactionTypeSchema,
-  updatedAt: z.date(),
+  updatedAt: Schema.Date,
 });
 
-export const OrderStateTransitionRecordSchema = z.object({
-  changedAt: z.date(),
-  fromStatus: OrderStatusSchema.nullable(),
-  metadata: MetadataSchema,
-  orderId: z.string().min(1).startsWith("ord_"),
+export const OrderStateTransitionRecordSchema = Schema.Struct({
+  changedAt: Schema.Date,
+  fromStatus: Schema.NullOr(OrderStatusSchema),
+  metadata: OrderMetadataSchema,
+  orderId: OrderIdSchema,
   toStatus: OrderStatusSchema,
 });
 
-export const OrderPostPurchaseOperationRecordSchema = z.object({
-  createdAt: z.date(),
-  id: z.string().min(1),
-  metadata: MetadataSchema,
-  orderId: z.string().min(1).startsWith("ord_"),
-  status: z.string().min(1),
+export const OrderPostPurchaseOperationRecordSchema = Schema.Struct({
+  createdAt: Schema.Date,
+  id: OrderTrimmedStringSchema,
+  metadata: OrderMetadataSchema,
+  orderId: OrderIdSchema,
+  status: OrderTrimmedStringSchema,
   type: OrderPostPurchaseOperationTypeSchema,
-  updatedAt: z.date(),
+  updatedAt: Schema.Date,
 });
 
-export const OrderAggregateSchema = z.object({
-  lineItems: z.array(OrderLineItemRecordSchema).readonly(),
-  operations: z.array(OrderPostPurchaseOperationRecordSchema).readonly(),
+export const OrderAggregateSchema = Schema.Struct({
+  lineItems: Schema.Array(OrderLineItemRecordSchema),
+  operations: Schema.Array(OrderPostPurchaseOperationRecordSchema),
   order: OrderRecordSchema,
-  stateTransitions: z.array(OrderStateTransitionRecordSchema).readonly(),
-  transactions: z.array(OrderTransactionRecordSchema).readonly(),
+  stateTransitions: Schema.Array(OrderStateTransitionRecordSchema),
+  transactions: Schema.Array(OrderTransactionRecordSchema),
 });
 
-export const CreateOrderLineItemInputSchema = z.object({
+export const CreateOrderLineItemInputSchema = Schema.Struct({
   itemSnapshot: OrderItemSnapshotSchema,
-  metadata: MetadataSchema.optional(),
-  quantity: z.number().int().positive(),
-  taxTotal: z.number().int().nonnegative().optional(),
-  title: z.string().min(1),
-  total: z.number().int().nonnegative(),
-  unitPrice: z.number().int().nonnegative(),
+  metadata: Schema.optional(OrderMetadataSchema),
+  quantity: OrderPositiveIntegerSchema,
+  taxTotal: Schema.optional(OrderNonNegativeIntegerSchema),
+  title: OrderTrimmedStringSchema,
+  total: OrderNonNegativeIntegerSchema,
+  unitPrice: OrderNonNegativeIntegerSchema,
 });
 
-export const CreateOrderFromCheckoutInputSchema =
-  OrderCoordinationMetadataSchema.extend({
-    billingAddress: OrderAddressSnapshotSchema.nullable().optional(),
-    cartId: z.string().min(1),
-    customerId: z.string().min(1).optional(),
-    email: z.string().email().optional(),
-    fulfillmentReferences: z
-      .array(OrderFulfillmentReferenceSchema)
-      .readonly()
-      .optional(),
-    lineItems: z.array(CreateOrderLineItemInputSchema).min(1).readonly(),
-    metadata: MetadataSchema.optional(),
-    paymentReferences: z
-      .array(OrderPaymentReferenceSchema)
-      .readonly()
-      .optional(),
-    shippingAddress: OrderAddressSnapshotSchema.nullable().optional(),
-    totals: OrderTotalsSnapshotSchema,
-  });
-
-export const TransitionOrderStatusInputSchema =
-  OrderCoordinationMetadataSchema.extend({
-    metadata: MetadataSchema.optional(),
-    orderId: z.string().min(1).startsWith("ord_"),
-    status: OrderStatusSchema,
-  });
-
-export const RecordOrderTransactionInputSchema =
-  OrderCoordinationMetadataSchema.extend({
-    amount: z.number().int(),
-    currencyCode: z.string().min(3).max(3),
-    metadata: MetadataSchema.optional(),
-    orderId: z.string().min(1).startsWith("ord_"),
-    referenceId: z.string().min(1).optional(),
-    type: OrderTransactionTypeSchema,
-  });
-
-export const OrderIdentifierSchema = z.object({
-  id: z.string().min(1).startsWith("ord_"),
+export const CreateOrderFromCheckoutInputSchema = Schema.Struct({
+  billingAddress: Schema.optional(Schema.NullOr(OrderAddressSnapshotSchema)),
+  cartId: OrderTrimmedStringSchema,
+  causationId: Schema.optional(OrderTrimmedStringSchema),
+  correlationId: OrderTrimmedStringSchema,
+  customerId: Schema.optional(OrderTrimmedStringSchema),
+  email: Schema.optional(OrderEmailSchema),
+  fulfillmentReferences: Schema.optional(
+    Schema.Array(OrderFulfillmentReferenceSchema)
+  ),
+  idempotencyKey: OrderTrimmedStringSchema,
+  lineItems: Schema.NonEmptyArray(CreateOrderLineItemInputSchema),
+  metadata: Schema.optional(OrderMetadataSchema),
+  paymentReferences: Schema.optional(Schema.Array(OrderPaymentReferenceSchema)),
+  shippingAddress: Schema.optional(Schema.NullOr(OrderAddressSnapshotSchema)),
+  totals: OrderTotalsSnapshotSchema,
+  workflowRunId: Schema.optional(OrderTrimmedStringSchema),
 });
 
-const ApiDateFields = {
-  completedAt: z.string().min(1).nullable(),
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
-} as const;
-
-export const OrderApiRecordSchema = OrderRecordSchema.extend(ApiDateFields);
-export const OrderLineItemApiRecordSchema = OrderLineItemRecordSchema.extend({
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
+export const TransitionOrderStatusInputSchema = Schema.Struct({
+  causationId: Schema.optional(OrderTrimmedStringSchema),
+  correlationId: OrderTrimmedStringSchema,
+  idempotencyKey: OrderTrimmedStringSchema,
+  metadata: Schema.optional(OrderMetadataSchema),
+  orderId: OrderSerializedIdSchema,
+  status: OrderStatusSchema,
+  workflowRunId: Schema.optional(OrderTrimmedStringSchema),
 });
-export const OrderTransactionApiRecordSchema =
-  OrderTransactionRecordSchema.extend({
-    createdAt: z.string().min(1),
-    updatedAt: z.string().min(1),
-  });
-export const OrderStateTransitionApiRecordSchema =
-  OrderStateTransitionRecordSchema.extend({
-    changedAt: z.string().min(1),
-  });
-export const OrderPostPurchaseOperationApiRecordSchema =
-  OrderPostPurchaseOperationRecordSchema.extend({
-    createdAt: z.string().min(1),
-    updatedAt: z.string().min(1),
-  });
-export const OrderAggregateApiSchema = OrderAggregateSchema.extend({
-  lineItems: z.array(OrderLineItemApiRecordSchema).readonly(),
-  operations: z.array(OrderPostPurchaseOperationApiRecordSchema).readonly(),
+
+export const RecordOrderTransactionInputSchema = Schema.Struct({
+  amount: Schema.Int,
+  causationId: Schema.optional(OrderTrimmedStringSchema),
+  correlationId: OrderTrimmedStringSchema,
+  currencyCode: OrderCurrencyCodeSchema,
+  idempotencyKey: OrderTrimmedStringSchema,
+  metadata: Schema.optional(OrderMetadataSchema),
+  orderId: OrderSerializedIdSchema,
+  referenceId: Schema.optional(OrderTrimmedStringSchema),
+  type: OrderTransactionTypeSchema,
+  workflowRunId: Schema.optional(OrderTrimmedStringSchema),
+});
+
+export const OrderIdentifierSchema = Schema.Struct({
+  id: OrderSerializedIdSchema,
+});
+
+export const OrderApiRecordSchema = Schema.Struct({
+  billingAddress: Schema.NullOr(OrderAddressSnapshotSchema),
+  cartId: OrderTrimmedStringSchema,
+  completedAt: OrderNullableIsoDateTimeStringSchema,
+  createdAt: OrderIsoDateTimeStringSchema,
+  currencyCode: OrderCurrencyCodeSchema,
+  customerId: Schema.NullOr(OrderTrimmedStringSchema),
+  email: Schema.NullOr(OrderEmailSchema),
+  fulfillmentReferences: Schema.Array(OrderFulfillmentReferenceSchema),
+  id: OrderIdSchema,
+  metadata: OrderMetadataSchema,
+  paymentReferences: Schema.Array(OrderPaymentReferenceSchema),
+  shippingAddress: Schema.NullOr(OrderAddressSnapshotSchema),
+  status: OrderStatusSchema,
+  totals: OrderTotalsSnapshotSchema,
+  updatedAt: OrderIsoDateTimeStringSchema,
+});
+export const OrderLineItemApiRecordSchema = Schema.Struct({
+  createdAt: OrderIsoDateTimeStringSchema,
+  id: OrderLineItemIdSchema,
+  itemSnapshot: OrderItemSnapshotSchema,
+  metadata: OrderMetadataSchema,
+  orderId: OrderIdSchema,
+  quantity: OrderPositiveIntegerSchema,
+  taxTotal: OrderNonNegativeIntegerSchema,
+  title: OrderTrimmedStringSchema,
+  total: OrderNonNegativeIntegerSchema,
+  unitPrice: OrderNonNegativeIntegerSchema,
+  updatedAt: OrderIsoDateTimeStringSchema,
+});
+export const OrderTransactionApiRecordSchema = Schema.Struct({
+  amount: Schema.Int,
+  createdAt: OrderIsoDateTimeStringSchema,
+  currencyCode: OrderCurrencyCodeSchema,
+  id: OrderTransactionIdSchema,
+  metadata: OrderMetadataSchema,
+  orderId: OrderIdSchema,
+  referenceId: Schema.NullOr(OrderTrimmedStringSchema),
+  type: OrderTransactionTypeSchema,
+  updatedAt: OrderIsoDateTimeStringSchema,
+});
+export const OrderStateTransitionApiRecordSchema = Schema.Struct({
+  changedAt: OrderIsoDateTimeStringSchema,
+  fromStatus: Schema.NullOr(OrderStatusSchema),
+  metadata: OrderMetadataSchema,
+  orderId: OrderIdSchema,
+  toStatus: OrderStatusSchema,
+});
+export const OrderPostPurchaseOperationApiRecordSchema = Schema.Struct({
+  createdAt: OrderIsoDateTimeStringSchema,
+  id: OrderTrimmedStringSchema,
+  metadata: OrderMetadataSchema,
+  orderId: OrderIdSchema,
+  status: OrderTrimmedStringSchema,
+  type: OrderPostPurchaseOperationTypeSchema,
+  updatedAt: OrderIsoDateTimeStringSchema,
+});
+export const OrderAggregateApiSchema = Schema.Struct({
+  lineItems: Schema.Array(OrderLineItemApiRecordSchema),
+  operations: Schema.Array(OrderPostPurchaseOperationApiRecordSchema),
   order: OrderApiRecordSchema,
-  stateTransitions: z.array(OrderStateTransitionApiRecordSchema).readonly(),
-  transactions: z.array(OrderTransactionApiRecordSchema).readonly(),
+  stateTransitions: Schema.Array(OrderStateTransitionApiRecordSchema),
+  transactions: Schema.Array(OrderTransactionApiRecordSchema),
 });
-export const OrderApiListSchema = z.array(OrderApiRecordSchema).readonly();
+export const OrderApiListSchema = Schema.Array(OrderApiRecordSchema);

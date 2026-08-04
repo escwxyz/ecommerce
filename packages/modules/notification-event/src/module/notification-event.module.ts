@@ -3,7 +3,6 @@ import { Effect } from "effect";
 
 import { notificationEventAdminSurfaces } from "../admin";
 import { notificationEventPermissionList } from "../permissions";
-import { notificationEventApiFragment } from "../router";
 import {
   EVENT_OUTBOX_DEAD_LETTERED_EVENT,
   NOTIFICATION_DISPATCH_DELIVERED_EVENT,
@@ -20,7 +19,7 @@ export const notificationEventExtensionPoints = {
 export const notificationEventModule = defineCommerceModule({
   contributions: {
     adminSurfaces: notificationEventAdminSurfaces,
-    apiFragments: [notificationEventApiFragment],
+    apiFragments: [],
     eventTypes: [
       NOTIFICATION_DISPATCH_REQUESTED_EVENT,
       NOTIFICATION_DISPATCH_DELIVERED_EVENT,

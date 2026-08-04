@@ -2,7 +2,6 @@ import { defineCommerceModule } from "@ecommerce/core";
 
 import { orderAdminSurfaces } from "../admin";
 import { orderPermissionList } from "../permissions";
-import { orderApiFragment } from "../router";
 import {
   ORDER_PLACED_EVENT,
   ORDER_STATUS_TRANSITIONED_EVENT,
@@ -20,7 +19,7 @@ export const orderExtensionPoints = {
 export const orderModule = defineCommerceModule({
   contributions: {
     adminSurfaces: orderAdminSurfaces,
-    apiFragments: [orderApiFragment],
+    apiFragments: [],
     eventTypes: [
       ORDER_PLACED_EVENT,
       ORDER_STATUS_TRANSITIONED_EVENT,

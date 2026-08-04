@@ -1,22 +1,28 @@
 export {
   REGION_CREATED_EVENT,
   RegionService,
+  createRegionRepositoryLayer,
   createRegionService,
+  createRegionServiceFromDependenciesLayer,
   createRegionServiceLayer,
   defaultRegionService,
   type CreateRegionServiceOptions,
   type RegionCreatedEventPayload,
+  type RegionServiceFailure,
   type RegionServiceShape,
 } from "./region.service";
 export {
   SALES_CHANNEL_CREATED_EVENT,
   SALES_CHANNEL_PRODUCT_PUBLISHED_EVENT,
   SalesChannelService,
+  createSalesChannelRepositoryLayer,
   createSalesChannelService,
+  createSalesChannelServiceFromDependenciesLayer,
   createSalesChannelServiceLayer,
   defaultSalesChannelService,
   type CreateSalesChannelServiceOptions,
   type SalesChannelCreatedEventPayload,
+  type SalesChannelServiceFailure,
   type SalesChannelProductPublishedEventPayload,
   type SalesChannelServiceShape,
 } from "./sales-channel.service";

@@ -1,6 +1,82 @@
-// oxlint-disable-next-line oxc/no-barrel-file
-export * from "./notification-event.database-schema";
-// oxlint-disable-next-line oxc/no-barrel-file
-export * from "./notification-event.schema";
-// oxlint-disable-next-line oxc/no-barrel-file
-export * from "./notification-event.types";
+import { Context } from "effect";
+
+import type { NotificationEventRepository } from "./notification-event.types";
+
+export {
+  DispatchNotificationInputSchema,
+  EventDeadLetterApiSchema,
+  EventDeadLetterListApiSchema,
+  EventDeadLetterRecordSchema,
+  EventDeliveryFailureInputSchema,
+  EventEnvelopeApiSchema,
+  EventEnvelopeSchema,
+  EventOutboxApiSchema,
+  EventOutboxRecordSchema,
+  EventOutboxStatusSchema,
+  EventPublishInputSchema,
+  EventPublishResultApiSchema,
+  EventPublishResultSchema,
+  EventSerializedIdSchema,
+  EventSubjectSchema,
+  NotificationChannelSchema,
+  NotificationDispatchApiSchema,
+  NotificationDispatchListApiSchema,
+  NotificationDispatchRecordSchema,
+  NotificationDispatchSerializedIdSchema,
+  NotificationDispatchStatusSchema,
+  NotificationEventIsoDateTimeStringSchema,
+  NotificationEventMetadataSchema,
+  NotificationEventNonNegativeIntegerSchema,
+  NotificationEventPositiveIntegerSchema,
+  NotificationEventTrimmedStringSchema,
+  NotificationProviderApiSchema,
+  NotificationProviderRecordSchema,
+  NotificationProviderSerializedIdSchema,
+  NotificationRecipientSchema,
+  NotificationTemplateSchema,
+  NotificationTemplateSerializedIdSchema,
+  UpsertNotificationTemplateInputSchema,
+} from "./notification-event.schema";
+export {
+  NotificationEventOutboxNotFound,
+  NotificationEventRuntimeFailure,
+  NotificationEventValidationFailure,
+  NotificationProviderUnavailable,
+  NotificationTemplateNotFound,
+  type NotificationEventExpectedError,
+} from "./notification-event.errors";
+export type {
+  DispatchNotificationInput,
+  EventDeadLetterApiRecord,
+  EventDeadLetterListApiRecord,
+  EventDeadLetterRecord,
+  EventEnvelope,
+  EventEnvelopeApiRecord,
+  EventDeliveryFailureInput,
+  EventOutboxApiRecord,
+  EventOutboxRecord,
+  EventOutboxStatus,
+  EventPublishInput,
+  EventPublishResult,
+  EventPublishResultApiRecord,
+  EventRetryPolicy,
+  NotificationChannel,
+  NotificationDispatchApiRecord,
+  NotificationDispatchListApiRecord,
+  NotificationDispatchRecord,
+  NotificationDispatchStatus,
+  NotificationEventRepository,
+  NotificationProvider,
+  NotificationProviderApiRecord,
+  NotificationProviderDeliveryInput,
+  NotificationProviderDeliveryResult,
+  NotificationProviderRecord,
+  NotificationRecipient,
+  NotificationTemplate,
+  UpsertNotificationTemplateInput,
+} from "./notification-event.types";
+
+export const NotificationEventRepositoryService =
+  Context.Service<NotificationEventRepository>(
+    "@ecommerce/notification-event/NotificationEventRepository"
+  );
