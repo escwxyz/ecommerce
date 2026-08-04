@@ -35,6 +35,7 @@ export interface CreateEffectHttpWorkerRuntimeOptions {
   readonly adminRoot?: HttpApi.AnyWithProps;
   readonly auth?: BetterAuthCompatibleService;
   readonly contributions: readonly EffectHttpApiGroupContribution[];
+  readonly corsOrigin?: string;
   readonly runtimeLayers?: readonly EffectLayer<never, never, never>[];
   readonly storefrontRoot?: HttpApi.AnyWithProps;
 }
@@ -148,6 +149,58 @@ const assertNoCrossSurfaceRouteConflicts = (
   }
 };
 
+const corsAllowedMethods = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
+const corsDefaultAllowedHeaders = "authorization,content-type";
+
+const appendCorsHeaders = (
+  response: Response,
+  request: Request,
+  corsOrigin: string
+): Response => {
+  if (request.headers.get("origin") !== corsOrigin) {
+    return response;
+  }
+
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-credentials", "true");
+  headers.set("access-control-allow-origin", corsOrigin);
+  headers.append("vary", "Origin");
+
+  return new Response(response.body, {
+    headers,
+    status: response.status,
+    statusText: response.statusText,
+  });
+};
+
+const createCorsPreflightResponse = (
+  request: Request,
+  corsOrigin: string
+): Response | null => {
+  if (request.method !== "OPTIONS") {
+    return null;
+  }
+
+  if (request.headers.get("origin") !== corsOrigin) {
+    return null;
+  }
+
+  const requestedHeaders = request.headers.get(
+    "access-control-request-headers"
+  );
+  const headers = new Headers({
+    "access-control-allow-credentials": "true",
+    "access-control-allow-headers":
+      requestedHeaders ?? corsDefaultAllowedHeaders,
+    "access-control-allow-methods": corsAllowedMethods,
+    "access-control-allow-origin": corsOrigin,
+    "access-control-max-age": "600",
+    vary: "Origin, Access-Control-Request-Headers",
+  });
+
+  return new Response(null, { headers, status: 204 });
+};
+
 /**
  * Composes both canonical API surfaces into the single router Layer served by
  * the Cloudflare Worker. Runtime Layers are provided once so every group sees
@@ -213,11 +266,25 @@ export const createEffectHttpWorkerRuntime = (
   const runtime = HttpRouter.toWebHandler(application, {
     disableLogger: true,
   });
+  const { corsOrigin } = options;
 
   return {
     admin,
     dispose: runtime.dispose,
-    fetch: (request) => runtime.handler(request, Context.empty()),
+    fetch: async (request) => {
+      if (corsOrigin) {
+        const preflight = createCorsPreflightResponse(request, corsOrigin);
+        if (preflight) {
+          return preflight;
+        }
+      }
+
+      const response = await runtime.handler(request, Context.empty());
+
+      return corsOrigin
+        ? appendCorsHeaders(response, request, corsOrigin)
+        : response;
+    },
     storefront,
   };
 };

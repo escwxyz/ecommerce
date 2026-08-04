@@ -176,6 +176,7 @@ const effectHttpRuntime = createEffectHttpWorkerRuntime({
     ...orderEffectHttpApiContribution.groups,
     ...notificationEventEffectHttpApiContribution.groups,
   ],
+  corsOrigin: serverEnv.CORS_ORIGIN,
   runtimeLayers: [
     createStoreServiceLayer(defaultStoreService),
     createCustomerServiceLayer(defaultCustomerService),

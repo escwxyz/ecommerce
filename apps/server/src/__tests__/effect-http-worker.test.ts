@@ -229,6 +229,106 @@ describe("Cloudflare Effect HTTP Worker runtime", () => {
     }
   });
 
+  it("answers Effect API preflights for the configured CORS origin", async () => {
+    const runtime = createEffectHttpWorkerRuntime({
+      adminRoot: adminHttpApi,
+      contributions: [createContribution("admin", "/admin/runtime")],
+      corsOrigin: "https://admin.example",
+      runtimeLayers: [
+        Layer.succeed(RuntimeGreeting, { value: "hello from layer" }),
+      ],
+      storefrontRoot: storefrontHttpApi,
+    });
+
+    try {
+      const response = await runtime.fetch(
+        new Request("https://commerce.example/admin/runtime", {
+          headers: {
+            "access-control-request-headers": "authorization,content-type",
+            "access-control-request-method": "GET",
+            origin: "https://admin.example",
+          },
+          method: "OPTIONS",
+        })
+      );
+
+      expect(response.status).toBe(204);
+      expect(response.headers.get("access-control-allow-origin")).toBe(
+        "https://admin.example"
+      );
+      expect(response.headers.get("access-control-allow-credentials")).toBe(
+        "true"
+      );
+      expect(response.headers.get("access-control-allow-methods")).toContain(
+        "GET"
+      );
+      expect(response.headers.get("access-control-allow-headers")).toBe(
+        "authorization,content-type"
+      );
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("adds CORS headers to Effect API responses from the configured origin", async () => {
+    const runtime = createEffectHttpWorkerRuntime({
+      adminRoot: adminHttpApi,
+      contributions: [createContribution("admin", "/admin/runtime")],
+      corsOrigin: "https://admin.example",
+      runtimeLayers: [
+        Layer.succeed(RuntimeGreeting, { value: "hello from layer" }),
+      ],
+      storefrontRoot: storefrontHttpApi,
+    });
+
+    try {
+      const response = await runtime.fetch(
+        new Request("https://commerce.example/admin/runtime", {
+          headers: { origin: "https://admin.example" },
+        })
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("access-control-allow-origin")).toBe(
+        "https://admin.example"
+      );
+      expect(response.headers.get("access-control-allow-credentials")).toBe(
+        "true"
+      );
+      expect(response.headers.get("vary")).toContain("Origin");
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("does not add CORS headers for untrusted origins", async () => {
+    const runtime = createEffectHttpWorkerRuntime({
+      adminRoot: adminHttpApi,
+      contributions: [createContribution("admin", "/admin/runtime")],
+      corsOrigin: "https://admin.example",
+      runtimeLayers: [
+        Layer.succeed(RuntimeGreeting, { value: "hello from layer" }),
+      ],
+      storefrontRoot: storefrontHttpApi,
+    });
+
+    try {
+      const response = await runtime.fetch(
+        new Request("https://commerce.example/admin/runtime", {
+          headers: { origin: "https://evil.example" },
+        })
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      expect(
+        response.headers.get("access-control-allow-credentials")
+      ).toBeNull();
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   it("serves protected API groups through the Better Auth Effect adapter", async () => {
     const calls: Headers[] = [];
     const runtime = createEffectHttpWorkerRuntime({
