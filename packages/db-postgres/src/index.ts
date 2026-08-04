@@ -544,6 +544,7 @@ export {
   createPostgresOutboxLayer,
   PostgresOutboxLayer,
   postgresOutboxClaimLockClause,
+  postgresOutboxDefaultClaimLeaseMs,
   toEnqueuedOutboxRecord,
   toStoredOutboxRecord,
   type PostgresOutboxLayerOptions,

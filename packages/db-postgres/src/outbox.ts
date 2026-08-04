@@ -29,8 +29,12 @@ import type { CommerceOutboxRow } from "./schema/index";
 /** SQL clause that makes PostgreSQL outbox claims safe for concurrent workers. */
 export const postgresOutboxClaimLockClause = "FOR UPDATE SKIP LOCKED" as const;
 
+/** Default time before a claimed outbox record is considered abandoned. */
+export const postgresOutboxDefaultClaimLeaseMs = 5 * 60 * 1000;
+
 /** Options for deterministic or production PostgreSQL outbox identifiers. */
 export interface PostgresOutboxLayerOptions {
+  readonly claimLeaseMs?: number;
   readonly now?: Effect.Effect<Date>;
   readonly nextClaimId?: Effect.Effect<string>;
   readonly nextDeadLetterId?: Effect.Effect<string>;
@@ -91,6 +95,14 @@ const defaultIdentifier = (prefix: string) =>
   Effect.sync(() => `${prefix}_${globalThis.crypto.randomUUID()}`);
 
 const defaultNow = Effect.sync(() => new Date());
+
+const getAbandonedClaimCutoff = ({
+  claimLeaseMs,
+  claimedAt,
+}: {
+  readonly claimLeaseMs: number;
+  readonly claimedAt: Date;
+}): Date => new Date(claimedAt.getTime() - claimLeaseMs);
 
 const toPersistenceFailure =
   (operation: "claim" | "deliver" | "enqueue" | "fail", topic: string) =>
@@ -299,12 +311,14 @@ const enqueueOutboxMessage = <EventName extends string, Payload>({
   }).pipe(Effect.mapError(toPersistenceFailure("enqueue", message.topic)));
 
 const claimPendingOutboxRecords = ({
+  claimLeaseMs,
   limit,
   nextClaimId,
   now,
   service,
   topic,
 }: {
+  readonly claimLeaseMs: number;
   readonly limit: number;
   readonly nextClaimId: Effect.Effect<string>;
   readonly now: Effect.Effect<Date>;
@@ -314,6 +328,10 @@ const claimPendingOutboxRecords = ({
   Effect.gen(function* claimPendingOutboxRecordsGenerator() {
     const claimId = yield* nextClaimId;
     const claimedAt = yield* now;
+    const abandonedClaimedBefore = getAbandonedClaimCutoff({
+      claimLeaseMs,
+      claimedAt,
+    });
     const boundedLimit = Math.max(0, Math.floor(limit));
 
     if (boundedLimit === 0) {
@@ -329,8 +347,15 @@ const claimPendingOutboxRecords = ({
         SELECT record_id
         FROM ${commerceOutbox}
         WHERE topic = ${topic}
-          AND status = 'pending'
           AND available_at <= ${claimedAt}
+          AND (
+            status = 'pending'
+            OR (
+              status = 'claimed'
+              AND claimed_at IS NOT NULL
+              AND claimed_at <= ${abandonedClaimedBefore}
+            )
+          )
         ORDER BY available_at ASC, created_at ASC, record_id ASC
         LIMIT ${boundedLimit}
         FOR UPDATE SKIP LOCKED
@@ -449,6 +474,7 @@ const markOutboxFailed = ({
 
 /** Creates the PostgreSQL transactional outbox writer and claiming Layer. */
 export const createPostgresOutboxLayer = ({
+  claimLeaseMs = postgresOutboxDefaultClaimLeaseMs,
   nextClaimId = defaultIdentifier("outbox_claim"),
   nextDeadLetterId = defaultIdentifier("outbox_dead_letter"),
   nextRecordId = defaultIdentifier("outbox"),
@@ -478,6 +504,7 @@ export const createPostgresOutboxLayer = ({
             OutboxClaimerService.of({
               claimPending: ({ limit, topic }) =>
                 claimPendingOutboxRecords({
+                  claimLeaseMs,
                   limit,
                   nextClaimId,
                   now,

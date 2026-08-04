@@ -124,6 +124,38 @@ const readOutboxStatuses = () =>
     Effect.map((result) => normalizeQueryRows<{ status: string }>(result))
   );
 
+const readOutboxClaimAttempts = () =>
+  PostgresDrizzleService.use((service) =>
+    service.database.execute<{
+      attempts: number;
+      claimId: string | null;
+      recordId: string;
+    }>(
+      sql`SELECT attempts, claim_id AS "claimId", record_id AS "recordId" FROM ${commerceOutbox} ORDER BY record_id ASC`
+    )
+  ).pipe(
+    Effect.map((result) =>
+      normalizeQueryRows<{
+        attempts: number;
+        claimId: string | null;
+        recordId: string;
+      }>(result)
+    )
+  );
+
+const moveClaimBeforeLeaseCutoff = ({
+  claimedAt,
+  recordId,
+}: {
+  readonly claimedAt: Date;
+  readonly recordId: string;
+}) =>
+  PostgresDrizzleService.use((service) =>
+    service.database.execute(
+      sql`UPDATE ${commerceOutbox} SET claimed_at = ${claimedAt}, updated_at = ${claimedAt} WHERE record_id = ${recordId}`
+    )
+  );
+
 const insertOutboxRecord = ({
   idempotencyKey,
   recordId,
@@ -367,6 +399,82 @@ describeLivePostgres("live PostgreSQL verification", () => {
       "claimed",
       "claimed",
       "claimed",
+    ]);
+  });
+
+  it("reclaims abandoned outbox claims after the claim lease expires", async () => {
+    await runLiveEffect(
+      withLiveTransaction(
+        "transaction_abandoned_claim",
+        OutboxWriterService.use((writer) =>
+          writer.enqueue({
+            event: createEventEnvelope({
+              id: "event_abandoned_claim",
+              name: "store.created",
+              payload: { storeId: "store_abandoned" },
+              sourceModule: "store",
+            }),
+            idempotencyKey: "store_abandoned:create",
+            topic: "commerce.events",
+          })
+        )
+      )
+    );
+
+    const firstClaim = await runLiveEffect(
+      OutboxClaimerService.use((claimer) =>
+        claimer.claimPending({
+          limit: 1,
+          topic: "commerce.events",
+        })
+      )
+    );
+    const freshReplay = await runLiveEffect(
+      OutboxClaimerService.use((claimer) =>
+        claimer.claimPending({
+          limit: 1,
+          topic: "commerce.events",
+        })
+      )
+    );
+
+    expect(firstClaim.records).toHaveLength(1);
+    expect(freshReplay.records).toEqual([]);
+
+    const claimedRecord = firstClaim.records[0];
+    if (!claimedRecord) {
+      throw new Error("Expected the first outbox claim to include a record.");
+    }
+
+    await runLiveEffect(
+      moveClaimBeforeLeaseCutoff({
+        claimedAt: new Date("2026-07-12T11:50:00.000Z"),
+        recordId: claimedRecord.recordId,
+      })
+    );
+
+    const reclaimed = await runLiveEffect(
+      OutboxClaimerService.use((claimer) =>
+        claimer.claimPending({
+          limit: 1,
+          topic: "commerce.events",
+        })
+      )
+    );
+    const claimAttempts = await runLiveEffect(readOutboxClaimAttempts());
+
+    expect(reclaimed.records).toHaveLength(1);
+    expect(reclaimed.records[0]?.recordId).toBe(claimedRecord.recordId);
+    expect(reclaimed.records[0]?.idempotencyKey).toBe(
+      claimedRecord.idempotencyKey
+    );
+    expect(reclaimed.records[0]?.attempts).toBe(2);
+    expect(claimAttempts).toEqual([
+      {
+        attempts: 2,
+        claimId: reclaimed.claimId,
+        recordId: claimedRecord.recordId,
+      },
     ]);
   });
 });

@@ -12,6 +12,7 @@ import {
   createPostgresOutboxLayer,
   postgresAdapterTarget,
   postgresOutboxClaimLockClause,
+  postgresOutboxDefaultClaimLeaseMs,
   toEnqueuedOutboxRecord,
   toStoredOutboxRecord,
   type CommerceOutboxRow,
@@ -178,6 +179,7 @@ describe("PostgreSQL transactional outbox", () => {
 
   it("documents the PostgreSQL concurrency primitive used for claims", () => {
     expect(postgresOutboxClaimLockClause).toBe("FOR UPDATE SKIP LOCKED");
+    expect(postgresOutboxDefaultClaimLeaseMs).toBe(300_000);
     expect(postgresAdapterTarget).toBe("effect-postgres");
   });
 });
