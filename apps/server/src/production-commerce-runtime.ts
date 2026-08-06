@@ -347,6 +347,7 @@ export const createProductionCommerceRuntimeComposition = ({
         idGenerator: runtimeIdGenerator,
         repository: createCloudflareCartCacheRepository({
           namespace: cartCache,
+          projectionSyncFailureMode: "fail-write",
           projectionRepository,
         }),
       });

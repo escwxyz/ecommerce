@@ -544,6 +544,56 @@ describe("cloudflare cart cache adapter", () => {
     ]);
   });
 
+  it("fails active line-item mutations when configured for write-through projection commits", async () => {
+    const projectionRepository = {
+      ...createResettableInMemoryCartRepository(),
+      saveLineItem: () =>
+        Effect.fail(
+          new CartValidationFailure({ message: "projection offline" })
+        ),
+    };
+    const cartCache = createFakeCartCacheNamespace();
+    const repository = createCloudflareCartCacheRepository({
+      namespace: cartCache.namespace,
+      projectionRepository,
+      projectionSyncFailureMode: "fail-write",
+      scope: createVisitorCartScope("visitor_write_through"),
+    });
+    const service = createCartService({
+      actorService: createInMemoryCartActorService(),
+      clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "cart_fail",
+        "evt_cart_fail",
+        "clitem_fail",
+      ]),
+      repository,
+    });
+    const cart = await Effect.runPromise(
+      service.createCart({ currencyCode: "USD" })
+    );
+
+    await expect(
+      Effect.runPromise(
+        service.addLineItem({
+          cartId: cart.id,
+          correlationId: "cart_line_fail",
+          idempotencyKey: "cart_line_fail",
+          productId: "prod_hat",
+          quantity: 1,
+          title: "Hat",
+          unitPrice: 1200,
+          variantId: "variant_hat",
+        })
+      )
+    ).rejects.toThrow(/projection offline/);
+    expect(cartCache.failures).toEqual([
+      expect.objectContaining({
+        reason: "projection offline",
+      }),
+    ]);
+  });
+
   it("enforces visitor and customer scope isolation in the Cloudflare cache adapter", async () => {
     const cartCache = createFakeCartCacheNamespace();
     const projectionRepository = createResettableInMemoryCartRepository();
