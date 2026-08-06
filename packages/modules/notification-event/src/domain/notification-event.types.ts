@@ -107,6 +107,13 @@ export interface NotificationEventRepository {
     readonly NotificationDispatchRecord[],
     NotificationEventExpectedError
   >;
+  readonly listPendingOutbox: (input: {
+    readonly availableAt: Date;
+    readonly limit: number;
+  }) => EffectValue<
+    readonly EventOutboxRecord[],
+    NotificationEventExpectedError
+  >;
   readonly saveDeadLetter: (
     record: EventDeadLetterRecord
   ) => EffectValue<EventDeadLetterRecord, NotificationEventExpectedError>;

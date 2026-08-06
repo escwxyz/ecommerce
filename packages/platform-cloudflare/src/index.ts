@@ -16,6 +16,7 @@ export {
 } from "./queue";
 export {
   createCloudflareQueuedNotificationProvider,
+  drainNotificationEventOutbox,
   createNotificationEventQueuePublisher,
   createNotificationEventRealtimePublisher,
   notificationEventDeadLetterQueueName,
@@ -26,6 +27,8 @@ export {
   type NotificationDispatchQueueMessage,
   type NotificationEventDeadLetterQueueMessage,
   type NotificationEventOutboxQueueMessage,
+  type NotificationEventOutboxDrainOptions,
+  type NotificationEventOutboxDrainReport,
   type NotificationEventQueueBatch,
   type NotificationEventQueueConsumerOptions,
   type NotificationEventQueueMessage,

@@ -101,6 +101,7 @@ export default {
 
     return effectHttpRuntime.fetch(request);
   },
+  scheduled: () => composition.drainNotificationEventOutbox(),
   queue: (batch: MessageBatch<NotificationEventQueueMessage>) =>
     composition.processNotificationEventQueue(batch),
 };

@@ -50,6 +50,7 @@ import {
   CloudflareWorkflowRuntimeFailure,
   createInMemorySandboxPluginMetadataStore,
   createInMemorySandboxStorage,
+  drainNotificationEventOutbox,
   createNotificationEventQueuePublisher,
   createNotificationEventRealtimePublisher,
   processNotificationEventQueueBatch,
@@ -850,6 +851,55 @@ describe("cloudflare workflow runtime adapter", () => {
         },
       },
     ]);
+  });
+
+  it("drains notification-event outbox after commit without surfacing queue rejection", async () => {
+    const repository = createInMemoryNotificationEventRepository();
+    const clock = createStaticClock(new Date("2026-06-07T12:00:00.000Z"));
+    const service = createNotificationEventService({
+      clock,
+      idGenerator: createSequenceIdGenerator(["evt_cf_notify_1"]),
+      notificationProviders: [],
+      repository,
+    });
+    const published = await Effect.runPromise(
+      service.publishEvent({
+        correlationId: "corr_notify_1",
+        name: "order.placed",
+        payload: { orderId: "order_1" },
+        sourceModule: "order",
+      })
+    );
+    const queue = {
+      send: async () => {
+        throw new Error("queue unavailable");
+      },
+    } as unknown as Queue<NotificationEventQueueMessage>;
+
+    await expect(
+      drainNotificationEventOutbox({
+        clock,
+        limit: 10,
+        queue,
+        repository,
+        retryPolicy: {
+          backoffSeconds: [30],
+          maxAttempts: 3,
+        },
+      })
+    ).resolves.toEqual({
+      deadLettered: 0,
+      failed: 1,
+      published: 0,
+      scanned: 1,
+    });
+    await expect(
+      Effect.runPromise(repository.findOutboxById(published.outbox.id))
+    ).resolves.toMatchObject({
+      attempts: 1,
+      lastError: "queue unavailable",
+      status: "retrying",
+    });
   });
 
   it("queues notification dispatches and lets consumers deliver idempotently", async () => {

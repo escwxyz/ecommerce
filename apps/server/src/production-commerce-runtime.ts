@@ -55,7 +55,7 @@ import {
 import {
   createCloudflareCartCacheRepository,
   createCloudflareKeyedActorLayer,
-  createNotificationEventQueuePublisher,
+  drainNotificationEventOutbox,
   createNotificationEventRealtimePublisher,
   processNotificationEventQueueBatch,
 } from "@ecommerce/platform-cloudflare";
@@ -138,6 +138,7 @@ export interface ProductionCommerceRuntimeComposition {
   readonly processNotificationEventQueue: (
     batch: MessageBatch<NotificationEventQueueMessage>
   ) => Promise<void>;
+  readonly drainNotificationEventOutbox: () => Promise<void>;
 }
 
 export interface CreateProductionCommerceRuntimeCompositionOptions {
@@ -278,13 +279,6 @@ export const createProductionCommerceRuntimeComposition = ({
       typeof createNotificationEventRealtimePublisher
     >[0]["namespace"],
   });
-  const notificationEventQueuePublisher = notificationEventQueue
-    ? createNotificationEventQueuePublisher({
-        clock,
-        queue: notificationEventQueue,
-        realtime: notificationEventRealtime,
-      })
-    : undefined;
   const clockDependencyLayer = clockLayer(clock);
   const idGeneratorDependencyLayer = idGeneratorLayer(idGenerator);
   const notificationEventServiceLayer = Layer.effect(
@@ -297,7 +291,6 @@ export const createProductionCommerceRuntimeComposition = ({
         idGenerator,
         notificationProviders: [],
         repository,
-        runtime: notificationEventQueuePublisher,
       });
     })
   ).pipe(Layer.provide(repositoryLayer));
@@ -474,6 +467,24 @@ export const createProductionCommerceRuntimeComposition = ({
         )
       ).pipe(Effect.provide(notificationEventRepositoryLayer))
     );
+  const drainNotificationOutbox = (): Promise<void> =>
+    Effect.runPromise(
+      NotificationEventRepositoryService.use((repository) =>
+        Effect.promise(async () => {
+          await drainNotificationEventOutbox({
+            clock,
+            limit: 100,
+            queue: notificationEventQueue,
+            repository,
+            retryPolicy: {
+              backoffSeconds: [30, 120, 300],
+              maxAttempts: 3,
+            },
+            realtime: notificationEventRealtime,
+          });
+        })
+      ).pipe(Effect.provide(notificationEventRepositoryLayer))
+    );
 
   return {
     applicationLayer,
@@ -492,6 +503,7 @@ export const createProductionCommerceRuntimeComposition = ({
       },
       modules: productionModuleKeys,
     },
+    drainNotificationEventOutbox: drainNotificationOutbox,
     processNotificationEventQueue,
   };
 };

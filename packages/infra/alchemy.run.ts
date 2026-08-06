@@ -183,6 +183,8 @@ export const notificationEventRealtime = Cloudflare.DurableObject(
   "NotificationEventRealtimeDurableObject"
 );
 
+export const notificationEventOutboxDrainCrons = ["* * * * *"] as const;
+
 type NotificationEventQueueEnv = Record<
   string,
   typeof notificationEventDeadLetterQueue | typeof notificationEventQueue
@@ -208,6 +210,7 @@ export const server = Effect.gen(function* createServer() {
     main: fromPackageRoot("../../apps/server/src/index.ts"),
     name: "ecommerce-server",
     compatibility,
+    crons: dev ? [] : [...notificationEventOutboxDrainCrons],
     dev: {
       port: 3000,
       strictPort: true,

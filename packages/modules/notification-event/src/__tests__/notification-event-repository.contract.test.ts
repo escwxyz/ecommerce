@@ -89,6 +89,44 @@ const runNotificationEventRepositoryContract = (
       ]);
     });
 
+    it("lists pending outbox records due for delivery", async () => {
+      const repository = createRepository();
+      const now = new Date("2026-06-07T12:00:00.000Z");
+      const pending = createOutboxRecord();
+      const retrying = {
+        ...createOutboxRecord(),
+        eventId: "evt_repo_2",
+        id: "evt_repo_2",
+        status: "retrying" as const,
+      };
+      const future = {
+        ...createOutboxRecord(),
+        availableAt: new Date("2026-06-07T12:05:00.000Z"),
+        eventId: "evt_repo_3",
+        id: "evt_repo_3",
+      };
+      const dispatched = {
+        ...createOutboxRecord(),
+        eventId: "evt_repo_4",
+        id: "evt_repo_4",
+        status: "dispatched" as const,
+      };
+
+      await Effect.runPromise(repository.saveOutbox(future));
+      await Effect.runPromise(repository.saveOutbox(dispatched));
+      await Effect.runPromise(repository.saveOutbox(retrying));
+      await Effect.runPromise(repository.saveOutbox(pending));
+
+      await expect(
+        Effect.runPromise(
+          repository.listPendingOutbox({ availableAt: now, limit: 10 })
+        )
+      ).resolves.toMatchObject([
+        { id: "evt_repo_1", status: "pending" },
+        { id: "evt_repo_2", status: "retrying" },
+      ]);
+    });
+
     it("persists templates, providers, and dispatch records", async () => {
       const repository = createRepository();
       const dispatch = createDispatchRecord();

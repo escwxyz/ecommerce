@@ -155,6 +155,37 @@ export class InMemoryNotificationEventRepository implements ResettableNotificati
     sortByCreatedAtDesc(this.#dispatches.values()).map(cloneDispatch)
   );
 
+  readonly listPendingOutbox = ({
+    availableAt,
+    limit,
+  }: {
+    readonly availableAt: Date;
+    readonly limit: number;
+  }): Effect.Effect<
+    readonly EventOutboxRecord[],
+    NotificationEventExpectedError
+  > =>
+    Effect.sync(() =>
+      [...this.#outbox.values()]
+        .filter(
+          (record) =>
+            (record.status === "pending" || record.status === "retrying") &&
+            record.availableAt <= availableAt
+        )
+        .toSorted((left, right) => {
+          const availableAtComparison =
+            left.availableAt.getTime() - right.availableAt.getTime();
+
+          if (availableAtComparison !== 0) {
+            return availableAtComparison;
+          }
+
+          return left.id.localeCompare(right.id);
+        })
+        .slice(0, limit)
+        .map(cloneOutbox)
+    );
+
   readonly saveDeadLetter = (
     record: EventDeadLetterRecord
   ): Effect.Effect<EventDeadLetterRecord, NotificationEventExpectedError> =>

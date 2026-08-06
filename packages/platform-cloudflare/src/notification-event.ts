@@ -127,6 +127,23 @@ export interface NotificationEventQueueConsumerOptions {
   readonly streamScope?: string;
 }
 
+export interface NotificationEventOutboxDrainOptions {
+  readonly clock: { now(): Date };
+  readonly limit: number;
+  readonly queue?: Queue<NotificationEventQueueMessage>;
+  readonly repository: NotificationEventRepository;
+  readonly retryPolicy: EventRetryPolicy;
+  readonly realtime?: NotificationEventRealtimePublisher;
+  readonly streamScope?: string;
+}
+
+export interface NotificationEventOutboxDrainReport {
+  readonly deadLettered: number;
+  readonly failed: number;
+  readonly published: number;
+  readonly scanned: number;
+}
+
 export interface NotificationEventQueueBatch {
   readonly messages: readonly NotificationEventQueueBatchMessage[];
 }
@@ -168,6 +185,15 @@ const recordNotificationRuntimeMetric = async (
 const failedDispatchRuntimeMetricEvent = (
   status: NotificationDispatchRecord["status"]
 ) => (status === "dead-lettered" ? "poison_message" : "retry");
+
+const getRetryDelaySeconds = (
+  retryPolicy: EventRetryPolicy,
+  attempts: number
+): number => {
+  const backoffSeconds = retryPolicy.backoffSeconds ?? [30];
+  const retryIndex = Math.min(attempts - 1, backoffSeconds.length - 1);
+  return backoffSeconds[retryIndex] ?? 30;
+};
 
 const realtimeTypeForFailedDispatch = (
   status: NotificationDispatchRecord["status"]
@@ -379,6 +405,95 @@ export const createNotificationEventQueuePublisher = ({
     });
   },
 });
+
+export const drainNotificationEventOutbox = async ({
+  clock,
+  limit,
+  queue,
+  repository,
+  retryPolicy,
+  realtime,
+  streamScope,
+}: NotificationEventOutboxDrainOptions): Promise<NotificationEventOutboxDrainReport> => {
+  if (!queue) {
+    return {
+      deadLettered: 0,
+      failed: 0,
+      published: 0,
+      scanned: 0,
+    };
+  }
+
+  const outboxRecords = await Effect.runPromise(
+    repository.listPendingOutbox({
+      availableAt: clock.now(),
+      limit,
+    })
+  );
+  let deadLettered = 0;
+  let failed = 0;
+  let published = 0;
+
+  for (const outbox of outboxRecords) {
+    const message = toOutboxQueueMessage({
+      envelope: outbox.envelope,
+      outbox,
+    });
+
+    try {
+      await queue.send(message);
+      await safePublishRealtime(realtime, streamScope, {
+        id: message.id,
+        occurredAt: clock.now().toISOString(),
+        payload: message.payload,
+        type: "notification-queued",
+      });
+      published += 1;
+    } catch (error) {
+      const attempts = outbox.attempts + 1;
+      const exhausted = attempts >= retryPolicy.maxAttempts;
+
+      await Effect.runPromise(
+        repository.saveOutbox({
+          ...outbox,
+          attempts,
+          availableAt: exhausted
+            ? outbox.availableAt
+            : new Date(
+                clock.now().getTime() +
+                  getRetryDelaySeconds(retryPolicy, attempts) * 1000
+              ),
+          lastError: serializeError(error),
+          status: exhausted ? "dead-lettered" : "retrying",
+          updatedAt: clock.now(),
+        })
+      );
+
+      if (exhausted) {
+        await Effect.runPromise(
+          repository.saveDeadLetter({
+            attempts,
+            createdAt: clock.now(),
+            eventId: outbox.eventId,
+            id: `${outbox.id}:dead-letter`,
+            outboxId: outbox.id,
+            reason: serializeError(error),
+          })
+        );
+        deadLettered += 1;
+      } else {
+        failed += 1;
+      }
+    }
+  }
+
+  return {
+    deadLettered,
+    failed,
+    published,
+    scanned: outboxRecords.length,
+  };
+};
 
 export const createCloudflareQueuedNotificationProvider = ({
   clock,
