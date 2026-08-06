@@ -6,8 +6,11 @@ import {
   createVisitorCartScope,
 } from "@ecommerce/cart/cache";
 import { CartValidationFailure, createCartId } from "@ecommerce/cart/domain";
-import { createResettableInMemoryCartRepository } from "@ecommerce/cart/repository";
 import { createCartService } from "@ecommerce/cart/service";
+import {
+  createInMemoryCartActorService,
+  createResettableInMemoryCartRepository,
+} from "@ecommerce/cart/testing";
 import {
   defineQueueMessage,
   defineSandboxPlugin,
@@ -24,11 +27,11 @@ import {
   KeyedActorCommandSchema,
   KeyedActorService,
 } from "@ecommerce/core/stateful";
+import { createNotificationEventService } from "@ecommerce/notification-event";
 import {
   createFakeNotificationProvider,
-  createNotificationEventService,
-} from "@ecommerce/notification-event";
-import { createInMemoryNotificationEventRepository } from "@ecommerce/notification-event/repository";
+  createInMemoryNotificationEventRepository,
+} from "@ecommerce/notification-event/testing";
 import { Effect, Schema } from "effect";
 
 import {
@@ -426,6 +429,7 @@ describe("cloudflare cart cache adapter", () => {
       scope: createVisitorCartScope("visitor_1"),
     });
     const service = createCartService({
+      actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
         "cart_cf",
@@ -488,6 +492,7 @@ describe("cloudflare cart cache adapter", () => {
       scope: createVisitorCartScope("visitor_1"),
     });
     const seedService = createCartService({
+      actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["cart_seed", "evt_seed"]),
       repository: seedRepository,
@@ -524,6 +529,7 @@ describe("cloudflare cart cache adapter", () => {
       scope: createVisitorCartScope("visitor_2"),
     });
     const failingService = createCartService({
+      actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["cart_fail", "evt_fail"]),
       repository: failingRepository,
@@ -557,6 +563,7 @@ describe("cloudflare cart cache adapter", () => {
       scope: createSystemCartScope(),
     });
     const visitorService = createCartService({
+      actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["cart_owner", "evt_owner"]),
       repository: visitorRepository,
@@ -646,6 +653,7 @@ describe("cloudflare cart cache adapter", () => {
       scope: createVisitorCartScope("visitor_3"),
     });
     const service = createCartService({
+      actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
         "cart_line_do",
@@ -752,6 +760,7 @@ describe("cloudflare workflow runtime adapter", () => {
     const service = createNotificationEventService({
       clock: createStaticClock(new Date("2026-06-07T12:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["evt_cf_notify_1"]),
+      notificationProviders: [],
       repository,
       runtime: createNotificationEventQueuePublisher({
         clock: createStaticClock(new Date("2026-06-07T12:00:00.000Z")),

@@ -270,8 +270,6 @@ export class InMemoryInventoryRepository implements ResettableInventoryRepositor
     });
 }
 
-export const defaultInventoryRepository = new InMemoryInventoryRepository();
-
 export const createInMemoryInventoryRepository = (): InventoryRepository =>
   new InMemoryInventoryRepository();
 

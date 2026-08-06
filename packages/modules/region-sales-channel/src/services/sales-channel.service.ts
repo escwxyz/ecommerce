@@ -32,7 +32,6 @@ import {
   SalesChannelValidationFailure,
   createSalesChannelIdEffect,
 } from "../domain";
-import { defaultRegionSalesChannelRepository } from "../repositories";
 
 export const SALES_CHANNEL_CREATED_EVENT = "sales-channel.created" as const;
 export const SALES_CHANNEL_PRODUCT_PUBLISHED_EVENT =
@@ -80,7 +79,7 @@ export interface CreateSalesChannelServiceOptions {
   readonly clock?: ClockServiceShape;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly repository?: SalesChannelRepository;
+  readonly repository: SalesChannelRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -126,8 +125,8 @@ export const createSalesChannelService = ({
   clock = createDefaultClock(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
-  repository = defaultRegionSalesChannelRepository,
-}: CreateSalesChannelServiceOptions = {}): SalesChannelServiceShape => ({
+  repository,
+}: CreateSalesChannelServiceOptions): SalesChannelServiceShape => ({
   checkProductPublishability: (input) =>
     Effect.gen(function* checkProductPublishabilityEffect() {
       const channel = yield* repository.findSalesChannelById(
@@ -266,7 +265,7 @@ export const createSalesChannelService = ({
 });
 
 export const createSalesChannelRepositoryLayer = (
-  repository: SalesChannelRepository = defaultRegionSalesChannelRepository
+  repository: SalesChannelRepository
 ) => Layer.succeed(SalesChannelRepositoryService, repository);
 
 export const createSalesChannelServiceFromDependenciesLayer = () =>
@@ -290,7 +289,3 @@ export const createSalesChannelServiceFromDependenciesLayer = () =>
 export const createSalesChannelServiceLayer = (
   service: SalesChannelServiceShape
 ) => Layer.succeed(SalesChannelService, service);
-
-export const defaultSalesChannelService = createSalesChannelService({
-  repository: defaultRegionSalesChannelRepository,
-});

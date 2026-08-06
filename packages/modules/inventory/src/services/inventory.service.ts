@@ -9,13 +9,14 @@ import {
   IdGeneratorService,
 } from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import type { KeyedActorService } from "@ecommerce/core/stateful";
-import { KeyedActorCommandSchema } from "@ecommerce/core/stateful";
+import {
+  KeyedActorCommandSchema,
+  KeyedActorService,
+} from "@ecommerce/core/stateful";
 import { Context, Effect, Layer, Schema } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
-import { createInMemoryInventoryActorService } from "../coordination";
 import type {
   AdjustInventoryInput,
   CreateInventoryItemInput,
@@ -52,7 +53,6 @@ import {
   createInventoryReservationIdEffect,
   createStockLocationIdEffect,
 } from "../domain";
-import { defaultInventoryRepository } from "../repositories";
 
 export const INVENTORY_RESERVED_EVENT = "inventory.reserved" as const;
 export const INVENTORY_ADJUSTED_EVENT = "inventory.adjusted" as const;
@@ -99,11 +99,11 @@ export const InventoryService = Context.Service<InventoryServiceShape>(
 );
 
 export interface CreateInventoryServiceOptions {
-  readonly actorService?: KeyedActorService;
+  readonly actorService: KeyedActorService;
   readonly clock?: ClockServiceShape;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly repository?: InventoryRepository;
+  readonly repository: InventoryRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -235,12 +235,12 @@ const waitForDuplicateAdjustmentReplay = (
 > => repository.findAdjustmentEventByIdempotencyKey(idempotencyKey);
 
 export const createInventoryService = ({
-  actorService = createInMemoryInventoryActorService(),
+  actorService,
   clock = createDefaultClock(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
-  repository = defaultInventoryRepository,
-}: CreateInventoryServiceOptions = {}): InventoryServiceShape => {
+  repository,
+}: CreateInventoryServiceOptions): InventoryServiceShape => {
   const service: InventoryServiceShape = {
     adjustInventory: (input) =>
       Effect.gen(function* adjustInventoryEffect() {
@@ -675,6 +675,7 @@ export const createInventoryServiceFromDependenciesLayer = () =>
   Layer.effect(
     InventoryService,
     Effect.gen(function* createInventoryServiceFromDependenciesEffect() {
+      const actorService = yield* KeyedActorService;
       const clock = yield* ClockService;
       const idGenerator = yield* IdGeneratorService;
       const repository = yield* InventoryRepositoryService;
@@ -687,6 +688,7 @@ export const createInventoryServiceFromDependenciesLayer = () =>
       );
 
       return createInventoryService({
+        actorService,
         clock,
         eventPublisher,
         idGenerator,
@@ -694,7 +696,3 @@ export const createInventoryServiceFromDependenciesLayer = () =>
       });
     })
   );
-
-export const defaultInventoryService = createInventoryService({
-  repository: defaultInventoryRepository,
-});

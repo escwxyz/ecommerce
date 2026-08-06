@@ -3,19 +3,12 @@ import {
   createStaticClock,
 } from "@ecommerce/core/testing";
 
-import {
-  createResettableInMemoryProductRepository,
-  defaultProductRepository,
-} from "../repositories";
+import { createResettableInMemoryProductRepository } from "../repositories";
 import {
   createProductRepositoryLayer,
   createProductService,
   createProductServiceLayer,
 } from "../services";
-
-export const resetProductState = (): void => {
-  defaultProductRepository.clear();
-};
 
 export const createTestProductService = () =>
   createProductService({

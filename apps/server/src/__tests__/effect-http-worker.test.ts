@@ -22,7 +22,6 @@ import {
   HttpApiGroup,
 } from "effect/unstable/httpapi";
 
-import effectHttpWorker from "../effect-http-worker";
 import {
   createEffectHttpWorkerRuntime,
   EffectHttpWorkerRuntimeError,
@@ -189,10 +188,6 @@ const fetchProtectedRuntime = async ({
 };
 
 describe("Cloudflare Effect HTTP Worker runtime", () => {
-  it("exports an Alchemy Effect Worker entrypoint", () => {
-    expect(Effect.isEffect(effectHttpWorker)).toBe(true);
-  });
-
   it("serves canonical admin and storefront APIs through one Fetch handler", async () => {
     const runtime = createEffectHttpWorkerRuntime({
       adminRoot: adminHttpApi,

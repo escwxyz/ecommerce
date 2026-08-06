@@ -30,7 +30,6 @@ import {
   RegionValidationFailure,
   createRegionIdEffect,
 } from "../domain";
-import { defaultRegionSalesChannelRepository } from "../repositories";
 
 export const REGION_CREATED_EVENT = "region.created" as const;
 
@@ -66,7 +65,7 @@ export interface CreateRegionServiceOptions {
   readonly clock?: ClockServiceShape;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly repository?: RegionRepository;
+  readonly repository: RegionRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -149,8 +148,8 @@ export const createRegionService = ({
   clock = createDefaultClock(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
-  repository = defaultRegionSalesChannelRepository,
-}: CreateRegionServiceOptions = {}): RegionServiceShape => ({
+  repository,
+}: CreateRegionServiceOptions): RegionServiceShape => ({
   createRegion: (input) =>
     Effect.gen(function* createRegionEffect() {
       const countries = normalizeDistinctValues(
@@ -276,9 +275,8 @@ export const createRegionService = ({
     }),
 });
 
-export const createRegionRepositoryLayer = (
-  repository: RegionRepository = defaultRegionSalesChannelRepository
-) => Layer.succeed(RegionRepositoryService, repository);
+export const createRegionRepositoryLayer = (repository: RegionRepository) =>
+  Layer.succeed(RegionRepositoryService, repository);
 
 export const createRegionServiceFromDependenciesLayer = () =>
   Layer.effect(
@@ -300,7 +298,3 @@ export const createRegionServiceFromDependenciesLayer = () =>
 
 export const createRegionServiceLayer = (service: RegionServiceShape) =>
   Layer.succeed(RegionService, service);
-
-export const defaultRegionService = createRegionService({
-  repository: defaultRegionSalesChannelRepository,
-});

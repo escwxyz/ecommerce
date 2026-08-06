@@ -1,11 +1,12 @@
 import type { CartRepository, CartServiceShape } from "@ecommerce/cart";
+import { createCartIdEffect, createCartService } from "@ecommerce/cart";
 import {
-  createCartIdEffect,
-  createCartService,
+  createInMemoryCartActorService,
   createInMemoryCartRepository,
-} from "@ecommerce/cart";
+} from "@ecommerce/cart/testing";
 import type { CreateCheckoutServiceOptions } from "@ecommerce/checkout";
 import { createCheckoutService } from "@ecommerce/checkout";
+import { createInMemoryCheckoutCompletionStore } from "@ecommerce/checkout/testing";
 import type {
   ClockServiceShape,
   EventPublisherServiceShape,
@@ -16,12 +17,11 @@ import {
   createCustomerIdEffect,
   createCustomerService,
 } from "@ecommerce/customer";
+import { createInMemoryCustomerRepository } from "@ecommerce/customer/testing";
 import {
-  createFakeFulfillmentProvider,
   createFulfillmentPromiseServiceFromEffectService,
   createFulfillmentProviderRegistry,
   createFulfillmentService,
-  createInMemoryFulfillmentRepository,
   createFulfillmentProviderRecordId,
   createFulfillmentSetId,
   createServiceZoneId,
@@ -30,44 +30,48 @@ import {
 } from "@ecommerce/fulfillment";
 import type { FulfillmentProviderRegistry } from "@ecommerce/fulfillment";
 import {
-  createInMemoryNotificationEventRepository,
-  createNotificationEventService,
-} from "@ecommerce/notification-event";
+  createFakeFulfillmentProvider,
+  createInMemoryFulfillmentRepository,
+} from "@ecommerce/fulfillment/testing";
+import { createNotificationEventService } from "@ecommerce/notification-event";
 import type {
   CreateNotificationEventServiceOptions,
   NotificationProvider,
 } from "@ecommerce/notification-event";
-import {
-  createInMemoryOrderRepository,
-  createOrderService,
-} from "@ecommerce/order";
+import { createInMemoryNotificationEventRepository } from "@ecommerce/notification-event/testing";
+import { createOrderService } from "@ecommerce/order";
 import type { OrderServiceShape } from "@ecommerce/order";
+import { createInMemoryOrderRepository } from "@ecommerce/order/testing";
 import {
-  createFakePaymentProvider,
-  createInMemoryPaymentRepository,
   createPaymentPromiseServiceFromEffectService,
   createPaymentProviderRegistry,
   createPaymentService,
 } from "@ecommerce/payment";
 import type { PaymentProviderRegistry } from "@ecommerce/payment";
+import {
+  createFakePaymentProvider,
+  createInMemoryPaymentRepository,
+} from "@ecommerce/payment/testing";
 import { createProductIdEffect } from "@ecommerce/product";
 import {
   CalculatePromotionAdjustmentsInputSchema,
-  createInMemoryPromotionRepository,
   createPromotionService,
 } from "@ecommerce/promotion";
 import type { PromotionServiceShape } from "@ecommerce/promotion";
+import { createInMemoryPromotionRepository } from "@ecommerce/promotion/testing";
 import { createStoreService } from "@ecommerce/store";
+import { createInMemoryStoreRepository } from "@ecommerce/store/testing";
 import {
   CalculateTaxInputSchema,
-  createInMemoryTaxRepository,
   createTaxCategoryIdEffect,
   createTaxProviderConfigIdEffect,
   createTaxRateIdEffect,
   createTaxRegionIdEffect,
   createTaxService,
+  manualTaxProvider,
 } from "@ecommerce/tax";
 import type { TaxServiceShape } from "@ecommerce/tax";
+import { createInMemoryTaxRepository } from "@ecommerce/tax/testing";
 import { Effect, Schema } from "effect";
 
 import { developmentSeedIds } from "./development-seed";
@@ -319,7 +323,7 @@ export const createDevelopmentCommerceProviderRegistries = () => ({
  * Composes the server-owned commerce runtime from module public adapters.
  * Domain behavior remains in module packages; this factory only owns wiring.
  */
-export const createServerCommerceRuntime = ({
+export const createDevelopmentCommerceRuntime = ({
   cartActorService,
   cartRepository: providedCartRepository,
   clock,
@@ -340,6 +344,7 @@ export const createServerCommerceRuntime = ({
 
   const repositories = {
     cart: providedCartRepository ?? createInMemoryCartRepository(),
+    customer: createInMemoryCustomerRepository(),
     // Checkout-only repository backing for the remaining Promise-shaped
     // checkout dependency contract. New fulfillment traffic uses Effect HTTP.
     fulfillment: createInMemoryFulfillmentRepository(),
@@ -351,6 +356,7 @@ export const createServerCommerceRuntime = ({
     // Checkout-only repository backing for the remaining Promise-shaped
     // checkout dependency contract. New promotion traffic uses Effect HTTP.
     promotion: createInMemoryPromotionRepository(),
+    store: createInMemoryStoreRepository(),
     // Checkout-only repository backing for the remaining Promise-shaped
     // checkout dependency contract. New tax traffic uses Effect HTTP.
     tax: createInMemoryTaxRepository(),
@@ -361,7 +367,7 @@ export const createServerCommerceRuntime = ({
   const notificationEvent = createNotificationEventService({
     clock,
     idGenerator,
-    notificationProviders,
+    notificationProviders: notificationProviders ?? [],
     repository: repositories.notificationEvent,
     runtime: notificationRuntime,
   });
@@ -385,6 +391,7 @@ export const createServerCommerceRuntime = ({
     clock,
     eventPublisher,
     idGenerator: { nextId: () => "store_checkout_defaults" },
+    repository: repositories.store,
   });
   const checkoutStoreService = {
     getStoreDefaults: () => Effect.runPromise(storeService.getStoreDefaults),
@@ -392,6 +399,7 @@ export const createServerCommerceRuntime = ({
   const customerService = createCustomerService({
     clock,
     idGenerator,
+    repository: repositories.customer,
   });
   const checkoutCustomerService = {
     getPaymentIdentity: (customerId: string) =>
@@ -610,7 +618,7 @@ export const createServerCommerceRuntime = ({
   };
   const services = {
     cart: createCartService({
-      actorService: cartActorService,
+      actorService: cartActorService ?? createInMemoryCartActorService(),
       clock,
       eventPublisher,
       idGenerator,
@@ -621,7 +629,8 @@ export const createServerCommerceRuntime = ({
       clock,
       eventPublisher,
       idGenerator,
-      providerRegistry: fulfillmentProviderRegistry,
+      providerRegistry:
+        fulfillmentProviderRegistry ?? createFulfillmentProviderRegistry([]),
       repository: repositories.fulfillment,
     }),
     inventory: checkoutInventoryService,
@@ -633,7 +642,8 @@ export const createServerCommerceRuntime = ({
     payment: createPaymentService({
       clock,
       idGenerator,
-      providerRegistry: paymentProviderRegistry,
+      providerRegistry:
+        paymentProviderRegistry ?? createPaymentProviderRegistry([]),
       repository: repositories.payment,
     }),
     pricing: checkoutPricingService,
@@ -647,6 +657,7 @@ export const createServerCommerceRuntime = ({
     store: checkoutStoreService,
     tax: createTaxService({
       ...sharedServiceOptions,
+      providers: [manualTaxProvider],
       repository: repositories.tax,
     }),
   };
@@ -677,7 +688,10 @@ export const createServerCommerceRuntime = ({
       : undefined;
   const checkout = checkoutServices ? { ...checkoutServices } : undefined;
   const checkoutService = checkout
-    ? createCheckoutService(checkout)
+    ? createCheckoutService({
+        ...checkout,
+        completionStore: createInMemoryCheckoutCompletionStore(),
+      })
     : undefined;
 
   return {

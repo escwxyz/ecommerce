@@ -3,13 +3,7 @@ import type {
   EventPublisherServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
-import {
-  ClockService,
-  EventPublisherService,
-  IdGeneratorService,
-  createCorrelationContext,
-  createEventEnvelope,
-} from "@ecommerce/core";
+import { createCorrelationContext, createEventEnvelope } from "@ecommerce/core";
 import { Context, Effect, Layer } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
@@ -39,7 +33,6 @@ import {
   TaxProviderConfigNotFound,
   TaxProviderUnavailable,
   TaxRegionNotFound,
-  TaxRepositoryService,
   TaxValidationFailure,
   createTaxCalculationIdEffect,
   createTaxCategoryIdEffect,
@@ -48,9 +41,8 @@ import {
   createTaxRateIdEffect,
   createTaxRegionIdEffect,
 } from "../domain";
-import { defaultTaxProviders, findTaxProvider } from "../providers";
+import { findTaxProvider } from "../providers";
 import type { TaxProvider } from "../providers";
-import { defaultTaxRepository } from "../repositories";
 
 export const TAX_CATEGORY_CREATED_EVENT = "tax.category-created" as const;
 export const TAX_PROVIDER_CONFIGURED_EVENT = "tax.provider-configured" as const;
@@ -113,8 +105,8 @@ export interface CreateTaxServiceOptions {
   readonly clock?: ClockServiceShape;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly providers?: readonly TaxProvider[];
-  readonly repository?: TaxRepository;
+  readonly providers: readonly TaxProvider[];
+  readonly repository: TaxRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -177,9 +169,9 @@ export const createTaxService = ({
   clock = createDefaultClock(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
-  providers = defaultTaxProviders,
-  repository = defaultTaxRepository,
-}: CreateTaxServiceOptions = {}): TaxServiceShape => ({
+  providers,
+  repository,
+}: CreateTaxServiceOptions): TaxServiceShape => ({
   calculateTax: (input) =>
     Effect.gen(function* calculateTaxEffect() {
       const region = yield* repository.findRegionById(input.regionId);
@@ -435,26 +427,6 @@ export const createTaxServiceLayer = (service: TaxServiceShape) =>
   Layer.succeed(TaxService, service);
 
 export const createTaxServiceLayerFromRepository = (
-  repository: TaxRepository
-) => createTaxServiceLayer(createTaxService({ repository }));
-
-export const TaxServiceLive = Layer.effect(
-  TaxService,
-  Effect.gen(function* createTaxServiceLiveEffect() {
-    const clock = yield* ClockService;
-    const eventPublisher = yield* EventPublisherService;
-    const idGenerator = yield* IdGeneratorService;
-    const repository = yield* TaxRepositoryService;
-
-    return createTaxService({
-      clock,
-      eventPublisher,
-      idGenerator,
-      repository,
-    });
-  })
-);
-
-export const defaultTaxService = createTaxService({
-  repository: defaultTaxRepository,
-});
+  repository: TaxRepository,
+  providers: readonly TaxProvider[]
+) => createTaxServiceLayer(createTaxService({ providers, repository }));

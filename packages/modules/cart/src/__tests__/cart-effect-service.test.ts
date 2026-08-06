@@ -7,6 +7,7 @@ import {
 } from "@ecommerce/core/testing";
 import { Effect } from "effect";
 
+import { createInMemoryCartActorService } from "../coordination";
 import { CartLineItemNotFound, createCartLineItemId } from "../domain";
 import { createResettableInMemoryCartRepository } from "../repositories";
 import { createCartService } from "../services";
@@ -15,6 +16,7 @@ describe("cart Effect service", () => {
   it("creates and mutates a cart aggregate with idempotent line item metadata", async () => {
     const eventCollector = createEventCollector();
     const service = createCartService({
+      actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       eventPublisher: eventCollector.publisher,
       idGenerator: createSequenceIdGenerator([
@@ -106,6 +108,7 @@ describe("cart Effect service", () => {
 
   it("returns typed failures for missing line-item adjustments", async () => {
     const service = createCartService({
+      actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
         "cart_a",

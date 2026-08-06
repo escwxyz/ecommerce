@@ -101,11 +101,10 @@ resolve the route ownership before Worker/OpenAPI generation.
 
 ## Cloudflare Worker runtime composition
 
-Task 4.5 adds the native Alchemy v2 and Effect HTTP Worker foundation in
-`apps/server/src/effect-http-worker.ts`. Alchemy owns the Worker lifecycle and
-accepts the `HttpEffect` produced by `HttpRouter.toHttpEffect`; request work is
-therefore executed by the Worker runtime rather than during Alchemy's init
-phase.
+The deployed Worker entrypoint is `apps/server/src/index.ts`. It builds the
+Effect HTTP runtime with the explicit composition from
+`apps/server/src/production-commerce-runtime.ts`; Alchemy owns deployment while
+request work executes inside the Worker runtime.
 
 `createEffectHttpWorkerApplicationLayer` assembles the admin and storefront
 contracts independently, merges their `HttpApiBuilder.group` handler Layers,
@@ -118,11 +117,13 @@ HTTP endpoints are JSON or stream based; Cloudflare asset/file support must be
 introduced later through an explicit platform adapter rather than importing a
 Node filesystem into the Worker.
 
-The existing Hono Worker remains the deployed entrypoint during vertical
-migration. The Effect Worker is the canonical replacement foundation, but its
-contribution list stays empty until migrated module groups are ready. This keeps
-legacy behavior available without creating a second reusable handler or schema
-ownership boundary in `apps/server`.
+Production startup requires the Hyperdrive, cart-cache Durable Object,
+stateful-coordinator Durable Object, notification queue, and notification
+realtime bindings. Missing production bindings raise a typed configuration
+error. The Worker supplies PostgreSQL repository Layers and Cloudflare platform
+Layers once; module constructors do not select persistence, actor, provider, or
+checkout-completion adapters. Development tests opt into the separate
+`commerce-runtime.ts` compatibility seam and receive fresh in-memory state.
 
 ## Derived OpenAPI snapshots
 

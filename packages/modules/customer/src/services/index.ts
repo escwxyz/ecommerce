@@ -7,7 +7,6 @@ export {
   createCustomerServiceFromDependenciesLayer,
   createCustomerService,
   createCustomerServiceLayer,
-  defaultCustomerService,
   type CreateCustomerServiceOptions,
   type CustomerAuthLinkedEventPayload,
   type CustomerChangedEventPayload,

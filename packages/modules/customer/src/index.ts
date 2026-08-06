@@ -70,14 +70,6 @@ export type {
 export { customerExtensionPoints, customerModule } from "./module";
 export { customerPermissionList, customerPermissions } from "./permissions";
 export {
-  InMemoryCustomerRepository,
-  createInMemoryCustomerRepositoryLayer,
-  createInMemoryCustomerRepository,
-  createResettableInMemoryCustomerRepository,
-  defaultCustomerRepository,
-  type ResettableCustomerRepository,
-} from "./repositories";
-export {
   CUSTOMER_AUTH_LINKED_EVENT,
   CUSTOMER_CREATED_EVENT,
   CUSTOMER_UPDATED_EVENT,
@@ -86,7 +78,6 @@ export {
   createCustomerServiceFromDependenciesLayer,
   createCustomerService,
   createCustomerServiceLayer,
-  defaultCustomerService,
   type CreateCustomerServiceOptions,
   type CustomerAuthLinkedEventPayload,
   type CustomerChangedEventPayload,

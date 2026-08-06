@@ -1,4 +1,1 @@
-export {
-  createTestProductService,
-  resetProductState,
-} from "./product-test-kit";
+export { createTestProductService } from "./product-test-kit";

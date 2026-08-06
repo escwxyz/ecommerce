@@ -195,8 +195,6 @@ export class InMemoryProductRepository implements ResettableProductRepository {
   }
 }
 
-export const defaultProductRepository = new InMemoryProductRepository();
-
 export const createInMemoryProductRepository = (): ProductRepository =>
   new InMemoryProductRepository();
 

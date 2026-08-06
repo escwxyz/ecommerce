@@ -2,4 +2,7 @@ export {
   createInMemoryNotificationEventRepository,
   createResettableInMemoryNotificationEventRepository,
 } from "../repositories";
-export { createFakeNotificationProvider } from "../services";
+export {
+  createFakeNotificationProvider,
+  type FakeNotificationProvider,
+} from "../services/notification-event.service";

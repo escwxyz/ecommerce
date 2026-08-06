@@ -19,7 +19,3 @@ export {
   syncCartProjection,
   type SyncCartProjectionInput,
 } from "./cart-projection";
-export {
-  createInMemoryCartActiveCache,
-  InMemoryCartActiveCache,
-} from "./in-memory-cart-cache";

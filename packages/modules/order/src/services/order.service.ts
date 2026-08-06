@@ -31,7 +31,6 @@ import {
   createOrderLineItemIdEffect,
   createOrderTransactionIdEffect,
 } from "../domain";
-import { defaultOrderRepository } from "../repositories";
 
 export const ORDER_PLACED_EVENT = "order.placed" as const;
 export const ORDER_STATUS_TRANSITIONED_EVENT =
@@ -63,7 +62,7 @@ export interface CreateOrderServiceOptions {
   readonly clock?: ClockServiceShape;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly repository?: OrderRepository;
+  readonly repository: OrderRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -161,8 +160,8 @@ export const createOrderService = ({
   clock = createDefaultClock(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
-  repository = defaultOrderRepository,
-}: CreateOrderServiceOptions = {}): OrderServiceShape => ({
+  repository,
+}: CreateOrderServiceOptions): OrderServiceShape => ({
   createOrderFromCheckout: (input) =>
     Effect.gen(function* createOrderFromCheckoutEffect() {
       const duplicate = yield* repository.findOrderByIdempotencyKey(
@@ -366,10 +365,8 @@ export const createOrderService = ({
     }),
 });
 
-export const defaultOrderService = createOrderService();
-
-export const createOrderServiceLayer = (service?: OrderServiceShape) =>
-  Layer.succeed(OrderService, service ?? createOrderService());
+export const createOrderServiceLayer = (service: OrderServiceShape) =>
+  Layer.succeed(OrderService, service);
 
 export const orderServiceFromRepositoryLayer = Layer.effect(
   OrderService,

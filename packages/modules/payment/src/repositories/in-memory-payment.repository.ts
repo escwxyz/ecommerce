@@ -277,19 +277,12 @@ export class InMemoryPaymentRepository implements ResettablePaymentRepository {
     });
 }
 
-export const defaultPaymentRepository = new InMemoryPaymentRepository();
-
 export const createInMemoryPaymentRepository = (): PaymentRepository =>
   new InMemoryPaymentRepository();
 
 export const createResettableInMemoryPaymentRepository =
   (): ResettablePaymentRepository => new InMemoryPaymentRepository();
 
-export const InMemoryPaymentRepositoryLayer = Layer.succeed(
-  PaymentRepositoryService,
-  defaultPaymentRepository
-);
-
 export const createInMemoryPaymentRepositoryLayer = (
-  repository: PaymentRepository = createInMemoryPaymentRepository()
+  repository: PaymentRepository
 ) => Layer.succeed(PaymentRepositoryService, repository);

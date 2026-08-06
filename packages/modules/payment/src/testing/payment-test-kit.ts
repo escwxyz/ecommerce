@@ -3,10 +3,8 @@ import {
   createStaticClock,
 } from "@ecommerce/core/testing";
 
-import {
-  createFakePaymentProvider,
-  createPaymentProviderRegistry,
-} from "../providers";
+import { createPaymentProviderRegistry } from "../providers";
+import { createFakePaymentProvider } from "../providers/fake-payment-provider";
 import { createResettableInMemoryPaymentRepository } from "../repositories";
 import { createPaymentService } from "../services";
 

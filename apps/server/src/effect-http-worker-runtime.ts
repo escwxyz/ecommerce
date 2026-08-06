@@ -124,7 +124,7 @@ const createRuntimeSupportLayer = ({
     ...runtimeLayers
   );
 
-  return baseLayer as EffectLayer<never, never, never>;
+  return baseLayer;
 };
 
 const assertNoCrossSurfaceRouteConflicts = (

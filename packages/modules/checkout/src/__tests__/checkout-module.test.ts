@@ -9,8 +9,9 @@ import {
   CHECKOUT_COMPLETED_EVENT,
   CHECKOUT_FAILED_EVENT,
   createCheckoutService,
-  type CheckoutServiceDependencies,
+  type CreateCheckoutServiceOptions,
 } from "../services";
+import { createInMemoryCheckoutCompletionStore } from "../testing";
 
 const checkoutInput = {
   cartId: "cart_1",
@@ -25,7 +26,7 @@ const checkoutInput = {
 
 const createDependencyStubs = (
   calls: string[]
-): CheckoutServiceDependencies => {
+): CreateCheckoutServiceOptions => {
   const cartAggregate = {
     adjustments: [],
     cart: {
@@ -399,6 +400,7 @@ const createDependencyStubs = (
 
   return {
     cart,
+    completionStore: createInMemoryCheckoutCompletionStore(),
     customer,
     fulfillment,
     inventory,

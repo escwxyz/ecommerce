@@ -8,6 +8,7 @@ import {
   createStaticClock,
 } from "@ecommerce/core/testing";
 
+import { manualTaxProvider } from "../providers";
 import { createResettableInMemoryTaxRepository } from "../repositories";
 import { createTaxService } from "../services";
 
@@ -28,6 +29,7 @@ export const createTaxTestKit = (ids: readonly string[] = []): TaxTestKit => {
     clock,
     eventPublisher: eventCollector.publisher,
     idGenerator,
+    providers: [manualTaxProvider],
     repository,
   });
 

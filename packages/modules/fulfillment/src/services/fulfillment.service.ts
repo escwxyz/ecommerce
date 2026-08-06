@@ -3,13 +3,7 @@ import type {
   EventPublisherServiceShape,
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
-import {
-  ClockService,
-  EventPublisherService,
-  IdGeneratorService,
-  createEventEnvelope,
-  createCorrelationContext,
-} from "@ecommerce/core";
+import { createEventEnvelope, createCorrelationContext } from "@ecommerce/core";
 import { Context, Effect, Layer } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
@@ -42,7 +36,6 @@ import {
   FULFILLMENT_SET_ID_PREFIX,
   FulfillmentNotFound,
   FulfillmentProviderUnavailable,
-  FulfillmentRepositoryService,
   FulfillmentSetNotFound,
   FulfillmentValidationFailure,
   SERVICE_ZONE_ID_PREFIX,
@@ -64,11 +57,6 @@ import type {
   FulfillmentProvider,
   FulfillmentProviderRegistry,
 } from "../providers";
-import {
-  createFulfillmentProviderRegistry,
-  emptyFulfillmentProviderRegistry,
-} from "../providers";
-import { defaultFulfillmentRepository } from "../repositories";
 
 export const FULFILLMENT_SET_CREATED_EVENT = "fulfillment.set-created" as const;
 export const SHIPPING_OPTION_CREATED_EVENT =
@@ -132,8 +120,8 @@ export interface CreateFulfillmentServiceOptions {
   readonly clock?: ClockServiceShape;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly providerRegistry?: FulfillmentProviderRegistry;
-  readonly repository?: FulfillmentRepository;
+  readonly providerRegistry: FulfillmentProviderRegistry;
+  readonly repository: FulfillmentRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -197,9 +185,9 @@ export const createFulfillmentService = ({
   clock = createDefaultClock(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
-  providerRegistry = emptyFulfillmentProviderRegistry,
-  repository = defaultFulfillmentRepository,
-}: CreateFulfillmentServiceOptions = {}): FulfillmentServiceShape => {
+  providerRegistry,
+  repository,
+}: CreateFulfillmentServiceOptions): FulfillmentServiceShape => {
   const saveShipmentFromProvider = ({
     fulfillmentId,
     providerShipment,
@@ -650,35 +638,9 @@ export const createFulfillmentService = ({
   };
 };
 
-export const defaultFulfillmentService = createFulfillmentService({
-  providerRegistry: createFulfillmentProviderRegistry([]),
-});
-
-export const FulfillmentServiceLive = Layer.succeed(
-  FulfillmentService,
-  defaultFulfillmentService
-);
-
 export const createFulfillmentServiceLayer = (
-  service: FulfillmentServiceShape = createFulfillmentService()
+  service: FulfillmentServiceShape
 ) => Layer.succeed(FulfillmentService, service);
-
-export const FulfillmentServiceLayer = Layer.effect(
-  FulfillmentService,
-  Effect.gen(function* createFulfillmentServiceLayerEffect() {
-    const clock = yield* ClockService;
-    const eventPublisher = yield* EventPublisherService;
-    const idGenerator = yield* IdGeneratorService;
-    const repository = yield* FulfillmentRepositoryService;
-
-    return createFulfillmentService({
-      clock,
-      eventPublisher,
-      idGenerator,
-      repository,
-    });
-  })
-);
 
 /** Temporary Promise facade until checkout consumes FulfillmentService directly. */
 export const createFulfillmentPromiseServiceFromEffectService = (

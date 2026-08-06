@@ -35,24 +35,14 @@ export type {
 export { storeExtensionPoints, storeModule } from "./module";
 export { storePermissionList, storePermissions } from "./permissions";
 export {
-  InMemoryStoreRepository,
-  createInMemoryStoreRepositoryLayer,
-  createInMemoryStoreRepository,
-  createResettableInMemoryStoreRepository,
-  defaultStoreRepository,
-  type ResettableStoreRepository,
-} from "./repositories";
-export {
   STORE_SETTINGS_UPDATED_EVENT,
   StoreService,
   createStoreRepositoryLayer,
   createStoreServiceFromDependenciesLayer,
   createStoreService,
   createStoreServiceLayer,
-  defaultStoreService,
   type CreateStoreServiceOptions,
   type StoreServiceFailure,
   type StoreServiceShape,
   type StoreSettingsUpdatedEventPayload,
 } from "./services";
-export { createTestStoreService, resetStoreState } from "./testing";

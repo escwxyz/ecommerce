@@ -9,12 +9,13 @@ import { Effect } from "effect";
 import {
   createCachedCartRepository,
   createCustomerCartScope,
-  createInMemoryCartActiveCache,
   createVisitorCartScope,
 } from "../cache";
+import { createInMemoryCartActorService } from "../coordination";
 import { createCartId } from "../domain";
 import { createResettableInMemoryCartRepository } from "../repositories";
 import { createCartService } from "../services";
+import { createInMemoryCartActiveCache } from "../testing";
 
 const clock = createStaticClock(new Date("2026-01-01T00:00:00.000Z"));
 
@@ -27,6 +28,7 @@ describe("cart Effect active cache repository", () => {
       scope: createVisitorCartScope("visitor_1"),
     });
     const service = createCartService({
+      actorService: createInMemoryCartActorService(),
       clock,
       idGenerator: createSequenceIdGenerator([
         "cart_cache",
@@ -63,6 +65,7 @@ describe("cart Effect active cache repository", () => {
   it("hydrates a missing cache entry from the projection repository", async () => {
     const projection = createResettableInMemoryCartRepository();
     const service = createCartService({
+      actorService: createInMemoryCartActorService(),
       clock,
       idGenerator: createSequenceIdGenerator(["cart_seed", "evt_seed"]),
       repository: projection,
@@ -105,6 +108,7 @@ describe("cart Effect active cache repository", () => {
       scope: createCustomerCartScope("cus_2"),
     });
     const visitorService = createCartService({
+      actorService: createInMemoryCartActorService(),
       clock,
       idGenerator: createSequenceIdGenerator(["cart_claim", "evt_claim"]),
       repository: visitorRepository,

@@ -28,7 +28,6 @@ import {
   StoreRepositoryService,
   createStoreIdEffect,
 } from "../domain";
-import { defaultStoreRepository } from "../repositories";
 
 export const STORE_SETTINGS_UPDATED_EVENT = "store.settings.updated" as const;
 
@@ -56,7 +55,7 @@ export interface CreateStoreServiceOptions {
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
   readonly initialSettings?: StoreSettings;
-  readonly repository?: StoreRepository;
+  readonly repository: StoreRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -200,8 +199,8 @@ export const createStoreService = ({
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
   initialSettings,
-  repository = defaultStoreRepository,
-}: CreateStoreServiceOptions = {}): StoreServiceShape => {
+  repository,
+}: CreateStoreServiceOptions): StoreServiceShape => {
   const loadOrCreateSettings = Effect.fn("StoreService.loadOrCreateSettings")(
     function* loadOrCreateSettingsEffect() {
       const existing = yield* repository.getStoreSettings;
@@ -320,7 +319,3 @@ export const createStoreServiceFromDependenciesLayer = (
       });
     })
   );
-
-export const defaultStoreService = createStoreService({
-  repository: defaultStoreRepository,
-});

@@ -37,6 +37,7 @@ describe("tax Effect service", () => {
         "txcalc_cart_1",
         "evt_calculated",
       ]),
+      providers: [manualTaxProvider],
       repository,
     });
 

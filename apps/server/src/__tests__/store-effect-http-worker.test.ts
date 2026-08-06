@@ -9,11 +9,8 @@ import {
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
-import {
-  createInMemoryStoreRepository,
-  createStoreService,
-  createStoreServiceLayer,
-} from "@ecommerce/store";
+import { createStoreService, createStoreServiceLayer } from "@ecommerce/store";
+import { createInMemoryStoreRepository } from "@ecommerce/store/testing";
 
 import { createEffectHttpWorkerRuntime } from "../effect-http-worker-runtime";
 

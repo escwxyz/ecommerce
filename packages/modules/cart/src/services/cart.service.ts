@@ -9,13 +9,14 @@ import {
   IdGeneratorService,
 } from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import type { KeyedActorService } from "@ecommerce/core/stateful";
-import { KeyedActorCommandSchema } from "@ecommerce/core/stateful";
+import {
+  KeyedActorCommandSchema,
+  KeyedActorService,
+} from "@ecommerce/core/stateful";
 import { Context, Effect, Layer, Schema } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
-import { createInMemoryCartActorService } from "../coordination";
 import type {
   AddCartLineItemInput,
   ApplyCartAdjustmentInput,
@@ -47,7 +48,6 @@ import {
   createCartIdEffect,
   createCartLineItemIdEffect,
 } from "../domain";
-import { defaultCartRepository } from "../repositories";
 
 export const CART_CREATED_EVENT = "cart.created" as const;
 export const CART_LINE_ITEM_ADDED_EVENT = "cart.line-item-added" as const;
@@ -100,11 +100,11 @@ export const CartService = Context.Service<CartServiceShape>(
 );
 
 export interface CreateCartServiceOptions {
-  readonly actorService?: KeyedActorService;
+  readonly actorService: KeyedActorService;
   readonly clock?: ClockServiceShape;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly repository?: CartRepository;
+  readonly repository: CartRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -268,12 +268,12 @@ const coordinateCart = (
   });
 
 export const createCartService = ({
-  actorService = createInMemoryCartActorService(),
+  actorService,
   clock = createDefaultClock(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
-  repository = defaultCartRepository,
-}: CreateCartServiceOptions = {}): CartServiceShape => {
+  repository,
+}: CreateCartServiceOptions): CartServiceShape => {
   const service: CartServiceShape = {
     addLineItem: (input) =>
       Effect.gen(function* addCartLineItemEffect() {
@@ -624,14 +624,11 @@ export const createCartServiceLayer = (service: CartServiceShape) =>
 export const createCartRepositoryLayer = (repository: CartRepository) =>
   Layer.succeed(CartRepositoryService, repository);
 
-export const createCartServiceFromDependenciesLayer = ({
-  actorService,
-}: {
-  readonly actorService?: KeyedActorService;
-} = {}) =>
+export const createCartServiceFromDependenciesLayer = () =>
   Layer.effect(
     CartService,
     Effect.gen(function* createCartServiceFromDependencies() {
+      const actorService = yield* KeyedActorService;
       const clock = yield* ClockService;
       const eventPublisher = yield* EventPublisherService;
       const idGenerator = yield* IdGeneratorService;
@@ -646,7 +643,3 @@ export const createCartServiceFromDependenciesLayer = ({
       });
     })
   );
-
-export const defaultCartService = createCartService({
-  repository: defaultCartRepository,
-});

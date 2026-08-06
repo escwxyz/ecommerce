@@ -25,12 +25,10 @@ import type {
 } from "../domain";
 import {
   NotificationEventOutboxNotFound,
-  NotificationEventRepositoryService,
   NotificationEventRuntimeFailure,
   NotificationProviderUnavailable,
   NotificationTemplateNotFound,
 } from "../domain";
-import { defaultNotificationEventRepository } from "../repositories";
 
 export const NOTIFICATION_DISPATCH_REQUESTED_EVENT =
   "notification.dispatch-requested" as const;
@@ -83,8 +81,8 @@ export const NotificationEventService =
 export interface CreateNotificationEventServiceOptions {
   readonly clock?: ClockServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly notificationProviders?: readonly NotificationProvider[];
-  readonly repository?: NotificationEventRepository;
+  readonly notificationProviders: readonly NotificationProvider[];
+  readonly repository: NotificationEventRepository;
   readonly runtime?: NotificationEventRuntimeHooks;
 }
 
@@ -178,10 +176,10 @@ const applyDeliveryResult = (
 export const createNotificationEventService = ({
   clock = createDefaultClock(),
   idGenerator = createDefaultIdGenerator(),
-  notificationProviders = [],
-  repository = defaultNotificationEventRepository,
+  notificationProviders,
+  repository,
   runtime,
-}: CreateNotificationEventServiceOptions = {}): NotificationEventServiceShape => {
+}: CreateNotificationEventServiceOptions): NotificationEventServiceShape => {
   const providers = createProviderMap(notificationProviders);
 
   return NotificationEventService.of({
@@ -348,15 +346,6 @@ export const createNotificationEventService = ({
   });
 };
 
-export const defaultNotificationEventService = createNotificationEventService();
-
 export const createNotificationEventServiceLayer = (
-  service: NotificationEventServiceShape = defaultNotificationEventService
+  service: NotificationEventServiceShape
 ) => Layer.succeed(NotificationEventService, service);
-
-export const notificationEventServiceFromRepositoryLayer = Layer.effect(
-  NotificationEventService,
-  NotificationEventRepositoryService.use((repository) =>
-    Effect.succeed(createNotificationEventService({ repository }))
-  )
-);

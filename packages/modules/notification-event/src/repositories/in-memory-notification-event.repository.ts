@@ -217,9 +217,6 @@ export class InMemoryNotificationEventRepository implements ResettableNotificati
     });
 }
 
-export const defaultNotificationEventRepository =
-  new InMemoryNotificationEventRepository();
-
 export const createInMemoryNotificationEventRepository =
   (): NotificationEventRepository => new InMemoryNotificationEventRepository();
 

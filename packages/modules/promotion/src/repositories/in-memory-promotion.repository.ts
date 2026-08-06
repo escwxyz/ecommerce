@@ -199,8 +199,6 @@ export class InMemoryPromotionRepository implements ResettablePromotionRepositor
   }
 }
 
-export const defaultPromotionRepository = new InMemoryPromotionRepository();
-
 export const createInMemoryPromotionRepository = (): PromotionRepository =>
   new InMemoryPromotionRepository();
 
@@ -208,5 +206,5 @@ export const createResettableInMemoryPromotionRepository =
   (): ResettablePromotionRepository => new InMemoryPromotionRepository();
 
 export const createInMemoryPromotionRepositoryLayer = (
-  repository: PromotionRepository = createInMemoryPromotionRepository()
+  repository: PromotionRepository
 ) => Layer.succeed(PromotionRepositoryService, repository);

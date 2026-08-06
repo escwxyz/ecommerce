@@ -18,6 +18,9 @@
     },
     "./service": {
       "default": "./src/services/index.ts"
+    },
+    "./testing": {
+      "default": "./src/testing/index.ts"
     }
   },
   "scripts": {

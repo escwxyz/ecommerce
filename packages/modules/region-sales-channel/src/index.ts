@@ -82,18 +82,6 @@ export {
   regionSalesChannelPermissions,
 } from "./permissions";
 export {
-  InMemoryRegionSalesChannelRepository,
-  createInMemoryRegionRepository,
-  createInMemoryRegionRepositoryLayer,
-  createInMemoryRegionSalesChannelRepository,
-  createInMemoryRegionSalesChannelRepositoryLayer,
-  createInMemorySalesChannelRepository,
-  createInMemorySalesChannelRepositoryLayer,
-  createResettableInMemoryRegionSalesChannelRepository,
-  defaultRegionSalesChannelRepository,
-  type ResettableRegionSalesChannelRepository,
-} from "./repositories";
-export {
   REGION_CREATED_EVENT,
   RegionService,
   SALES_CHANNEL_CREATED_EVENT,
@@ -107,8 +95,6 @@ export {
   createSalesChannelService,
   createSalesChannelServiceFromDependenciesLayer,
   createSalesChannelServiceLayer,
-  defaultRegionService,
-  defaultSalesChannelService,
   type CreateRegionServiceOptions,
   type CreateSalesChannelServiceOptions,
   type RegionCreatedEventPayload,

@@ -216,7 +216,7 @@ export const server = Effect.gen(function* createServer() {
       ...requiredServerConfig,
       ...getNotificationEventQueueEnv(dev),
       CART_CACHE: cartCache,
-      COMMERCE_PROVIDER_MODE: dev ? "development" : "disabled",
+      COMMERCE_RUNTIME_MODE: dev ? "development" : "production",
       DB: database,
       NOTIFICATION_EVENT_REALTIME: notificationEventRealtime,
       POSTGRES: postgresConnection,

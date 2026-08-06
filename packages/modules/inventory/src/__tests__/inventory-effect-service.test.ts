@@ -7,6 +7,7 @@ import {
 } from "@ecommerce/core/testing";
 import { Effect, Exit } from "effect";
 
+import { createInMemoryInventoryActorService } from "../coordination";
 import { createInMemoryInventoryRepository } from "../repositories";
 import { createInventoryService } from "../services";
 
@@ -14,6 +15,7 @@ describe("inventory Effect service", () => {
   it("creates scoped stock and reserves it idempotently", async () => {
     const eventCollector = createEventCollector();
     const service = createInventoryService({
+      actorService: createInMemoryInventoryActorService(),
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       eventPublisher: eventCollector.publisher,
       idGenerator: createSequenceIdGenerator([
@@ -77,6 +79,7 @@ describe("inventory Effect service", () => {
 
   it("returns typed failures for missing levels and insufficient stock", async () => {
     const service = createInventoryService({
+      actorService: createInMemoryInventoryActorService(),
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
         "iitem_hat",

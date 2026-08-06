@@ -10,17 +10,11 @@
     "./admin": {
       "default": "./src/admin/index.ts"
     },
-    "./coordination": {
-      "default": "./src/coordination/index.ts"
-    },
     "./domain": {
       "default": "./src/domain/index.ts"
     },
     "./module": {
       "default": "./src/module/index.ts"
-    },
-    "./repository": {
-      "default": "./src/repositories/index.ts"
     },
     "./schema": {
       "default": "./src/domain/index.ts"

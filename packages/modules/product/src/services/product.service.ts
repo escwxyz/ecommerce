@@ -33,7 +33,6 @@ import {
   ProductRepositoryService,
   createProductIdEffect,
 } from "../domain";
-import { defaultProductRepository } from "../repositories";
 
 export type ProductServiceFailure = ProductExpectedError;
 
@@ -99,7 +98,7 @@ export const ProductService = Context.Service<ProductServiceShape>(
 export interface CreateProductServiceOptions {
   readonly clock?: ClockServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly repository?: ProductRepository;
+  readonly repository: ProductRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -239,8 +238,8 @@ const createPrefixedId = (
 export const createProductService = ({
   clock = createDefaultClock(),
   idGenerator = createDefaultIdGenerator(),
-  repository = defaultProductRepository,
-}: CreateProductServiceOptions = {}): ProductServiceShape => ({
+  repository,
+}: CreateProductServiceOptions): ProductServiceShape => ({
   addProductCategory: ({ category, productId }) =>
     Effect.gen(function* addProductCategoryEffect() {
       const product = yield* requireProduct(repository, productId);
@@ -410,9 +409,8 @@ export const createProductService = ({
     }),
 });
 
-export const createProductRepositoryLayer = (
-  repository: ProductRepository = defaultProductRepository
-) => Layer.succeed(ProductRepositoryService, repository);
+export const createProductRepositoryLayer = (repository: ProductRepository) =>
+  Layer.succeed(ProductRepositoryService, repository);
 
 export const createProductServiceFromDependenciesLayer = () =>
   Layer.effect(
@@ -432,7 +430,3 @@ export const createProductServiceFromDependenciesLayer = () =>
 
 export const createProductServiceLayer = (service: ProductServiceShape) =>
   Layer.succeed(ProductService, service);
-
-export const defaultProductService = createProductService({
-  repository: defaultProductRepository,
-});

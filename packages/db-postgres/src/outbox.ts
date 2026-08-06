@@ -92,7 +92,7 @@ const normalizeQueryRows = <TRow>(value: unknown): readonly TRow[] => {
 };
 
 const defaultIdentifier = (prefix: string) =>
-  Effect.sync(() => `${prefix}_${globalThis.crypto.randomUUID()}`);
+  Effect.sync(() => `${prefix}_${crypto.randomUUID()}`);
 
 const defaultNow = Effect.sync(() => new Date());
 

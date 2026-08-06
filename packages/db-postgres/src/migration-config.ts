@@ -1,4 +1,4 @@
-import { fileURLToPath } from "node:url";
+import { URL, fileURLToPath } from "node:url";
 
 import type * as PgDrizzleMigrator from "drizzle-orm/effect-postgres/migrator";
 

@@ -43,14 +43,6 @@ export type {
   ProductVariantValidationResult,
 } from "./domain";
 export { productModule } from "./module";
-export {
-  InMemoryProductRepository,
-  createInMemoryProductRepositoryLayer,
-  createInMemoryProductRepository,
-  createResettableInMemoryProductRepository,
-  defaultProductRepository,
-  type ResettableProductRepository,
-} from "./repositories";
 export { productPermissionList, productPermissions } from "./permissions";
 export {
   ProductService,
@@ -59,8 +51,6 @@ export {
   createProductService,
   createProductServiceFromDependenciesLayer,
   createProductServiceLayer,
-  defaultProductService,
   type CreateProductServiceOptions,
   type ProductServiceShape,
 } from "./services";
-export { createTestProductService, resetProductState } from "./testing";

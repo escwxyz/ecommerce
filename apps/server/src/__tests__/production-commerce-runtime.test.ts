@@ -1,0 +1,149 @@
+import { describe, expect, it } from "bun:test";
+
+import { Effect, Layer } from "effect";
+
+import {
+  ProductionCommerceRuntimeConfigError,
+  createProductionCommerceRuntimeComposition,
+} from "../production-commerce-runtime";
+
+const createBindings = () => ({
+  cartCache: {} as DurableObjectNamespace,
+  notificationEventRealtime: {} as DurableObjectNamespace,
+  notificationEventQueue: {} as Queue,
+  postgres: {
+    connectionString:
+      "postgres://commerce:secret@database.example.test:5432/commerce",
+  } as Hyperdrive,
+  statefulCoordinator: {} as DurableObjectNamespace,
+});
+
+describe("production commerce runtime composition", () => {
+  for (const binding of [
+    "cartCache",
+    "notificationEventQueue",
+    "notificationEventRealtime",
+    "postgres",
+    "statefulCoordinator",
+  ] as const) {
+    it(`fails closed with a typed error when ${binding} is missing`, () => {
+      expect(() =>
+        createProductionCommerceRuntimeComposition({
+          bindings: {
+            ...createBindings(),
+            [binding]: undefined,
+          },
+          mode: "production",
+        })
+      ).toThrow(ProductionCommerceRuntimeConfigError);
+    });
+  }
+
+  it("selects PostgreSQL and Cloudflare adapters without exposing secrets", () => {
+    const composition = createProductionCommerceRuntimeComposition({
+      bindings: createBindings(),
+      mode: "production",
+    });
+
+    expect(Layer.isLayer(composition.applicationLayer)).toBe(true);
+    expect(composition.diagnostics).toEqual({
+      adapters: {
+        actor: "cloudflare-durable-object",
+        cartCache: "cloudflare-durable-object",
+        notifications: "cloudflare-queue",
+        providers: {
+          fulfillment: "disabled",
+          notification: "disabled",
+          payment: "disabled",
+          tax: "manual",
+        },
+        relational: "effect-postgres",
+      },
+      modules: [
+        "store",
+        "customer",
+        "product",
+        "pricing",
+        "inventory",
+        "cart",
+        "region-sales-channel",
+        "promotion",
+        "tax",
+        "fulfillment",
+        "payment",
+        "order",
+        "notification-event",
+      ],
+    });
+    expect(JSON.stringify(composition.diagnostics)).not.toContain("secret");
+  });
+
+  it("keeps in-memory and default services out of production composition", async () => {
+    const productionSource = await Bun.file(
+      new URL("../production-commerce-runtime.ts", import.meta.url)
+    ).text();
+    const workerSource = await Bun.file(
+      new URL("../index.ts", import.meta.url)
+    ).text();
+    const source = `${productionSource}\n${workerSource}`;
+
+    expect(source).not.toMatch(/createInMemory\w+/);
+    expect(source).not.toMatch(/default\w+(Repository|Service)/);
+    expect(source).not.toMatch(/@ecommerce\/[^"\n]+\/testing/);
+    expect(source).not.toContain("createCloudflareQueuedNotificationProvider");
+    expect(source).not.toContain("./commerce-runtime");
+  });
+
+  it("requires stateful adapter choices at module construction seams", async () => {
+    const serviceSources = await Promise.all(
+      [
+        "../../../../packages/modules/cart/src/services/cart.service.ts",
+        "../../../../packages/modules/checkout/src/services/checkout.service.ts",
+        "../../../../packages/modules/fulfillment/src/services/fulfillment.service.ts",
+        "../../../../packages/modules/inventory/src/services/inventory.service.ts",
+        "../../../../packages/modules/notification-event/src/services/notification-event.service.ts",
+        "../../../../packages/modules/payment/src/services/payment.service.ts",
+        "../../../../packages/modules/tax/src/services/tax.service.ts",
+      ].map((path) => Bun.file(new URL(path, import.meta.url)).text())
+    );
+    const source = serviceSources.join("\n");
+
+    expect(source).not.toMatch(
+      /(actorService|completionStore|notificationProviders|providerRegistry|repository)\s*=\s*(create|default|empty)/
+    );
+    expect(source).not.toMatch(/default\w+(Repository|Service)/);
+  });
+
+  it("represents missing queue bindings explicitly in development", () => {
+    const composition = createProductionCommerceRuntimeComposition({
+      bindings: {
+        ...createBindings(),
+        notificationEventQueue: undefined,
+      },
+      mode: "development",
+    });
+
+    expect(composition.diagnostics.adapters.notifications).toBe("disabled");
+  });
+
+  it("rejects a missing or invalid runtime mode", () => {
+    expect(() =>
+      createProductionCommerceRuntimeComposition({
+        bindings: createBindings(),
+        mode: undefined as unknown as "production",
+      })
+    ).toThrow(ProductionCommerceRuntimeConfigError);
+  });
+
+  it("rejects malformed PostgreSQL configuration before Layer construction", () => {
+    expect(() =>
+      createProductionCommerceRuntimeComposition({
+        bindings: {
+          ...createBindings(),
+          postgres: { connectionString: "not-a-postgres-url" } as Hyperdrive,
+        },
+        mode: "production",
+      })
+    ).toThrow(ProductionCommerceRuntimeConfigError);
+  });
+});

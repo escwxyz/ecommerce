@@ -6,7 +6,6 @@ export {
   createInventoryService,
   createInventoryServiceFromDependenciesLayer,
   createInventoryServiceLayer,
-  defaultInventoryService,
   type CreateInventoryServiceOptions,
   type InventoryAdjustedEventPayload,
   type InventoryReservedEventPayload,

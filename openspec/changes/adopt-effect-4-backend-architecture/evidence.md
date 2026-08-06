@@ -1,10 +1,40 @@
 # adopt-effect-4-backend-architecture evidence audit
 
-Date: 2026-08-03
+Date: 2026-08-06
 
 ## Verification commands
 
+### Explicit runtime composition follow-up (2026-08-06)
+
+- `bun x turbo check-types --filter=!web`
+  - Result: 26/26 backend and server tasks pass.
+- `bun run test`
+  - Result: the workspace run reached the server package with all preceding
+    package tasks passing, then found one stale server-test import from the
+    production store root. The import was moved to `@ecommerce/store/testing`.
+- `bun run --cwd apps/server test`
+  - Result after the import fix: 34 pass, 0 fail.
+- `bun run check`
+  - Result: issue-local source is clean. The command remains nonzero only for
+    user-owned `.vscode/settings.json`, untracked
+    `apps/web/src/routeTree.gen.ts`, and the existing UI label warning.
+- `bun run build`
+  - Result: 2/2 server and web build tasks pass; the existing Cloudflare
+    externalization and web chunk-size warnings remain.
+- `openspec status --change adopt-effect-4-backend-architecture`
+  - Result: 4/4 artifacts complete.
+
 Passed:
+
+- `bun test packages/modules/checkout/src/__tests__ packages/modules/tax/src/__tests__ packages/modules/fulfillment/src/__tests__ packages/modules/payment/src/__tests__ packages/modules/cart/src/__tests__ packages/platform-cloudflare/src/index.test.ts apps/server/src/__tests__/production-commerce-runtime.test.ts apps/server/src/commerce-runtime.test.ts apps/server/src/__tests__/effect-http-worker.test.ts`
+  - Result: 98 pass, 0 fail before the final static composition assertion was
+    added; the production composition suite was rerun separately afterward.
+  - Coverage: typed missing-binding failures, explicit PostgreSQL/Cloudflare
+    adapter diagnostics, fresh development state, provider selection, checkout
+    completion state, cart actors, and Cloudflare queue/cache behavior.
+- `bun run --cwd apps/server check-types`
+  - Result: pass with production PostgreSQL and Cloudflare adapter source in
+    the server compilation graph.
 
 - `bun run test`
   - Result: 24/24 Turbo test tasks successful.

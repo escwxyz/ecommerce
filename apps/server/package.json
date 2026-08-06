@@ -15,6 +15,7 @@
     "@ecommerce/checkout": "workspace:*",
     "@ecommerce/core": "workspace:*",
     "@ecommerce/customer": "workspace:*",
+    "@ecommerce/db-postgres": "workspace:*",
     "@ecommerce/env": "workspace:*",
     "@ecommerce/fulfillment": "workspace:*",
     "@ecommerce/inventory": "workspace:*",
