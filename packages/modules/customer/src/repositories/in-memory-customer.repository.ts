@@ -223,8 +223,6 @@ export class InMemoryCustomerRepository implements ResettableCustomerRepository 
   }
 }
 
-export const defaultCustomerRepository = new InMemoryCustomerRepository();
-
 export const createInMemoryCustomerRepository = (): CustomerRepository =>
   new InMemoryCustomerRepository();
 

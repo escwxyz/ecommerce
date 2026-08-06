@@ -12,16 +12,15 @@ import {
 } from "../domain";
 import { notificationEventModule } from "../module";
 import { createInMemoryNotificationEventRepository } from "../repositories";
-import {
-  createFakeNotificationProvider,
-  createNotificationEventService,
-} from "../services";
+import { createNotificationEventService } from "../services";
+import { createFakeNotificationProvider } from "../testing";
 
 describe("notification event module foundation", () => {
   it("publishes shared event envelopes without requiring notification providers", async () => {
     const service = createNotificationEventService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["evt_1"]),
+      notificationProviders: [],
       repository: createInMemoryNotificationEventRepository(),
     });
 
@@ -50,6 +49,7 @@ describe("notification event module foundation", () => {
     const service = createNotificationEventService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["evt_2"]),
+      notificationProviders: [],
       repository: createInMemoryNotificationEventRepository(),
     });
     const published = await Effect.runPromise(

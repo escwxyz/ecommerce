@@ -19,9 +19,6 @@
     "./module": {
       "default": "./src/module/index.ts"
     },
-    "./repository": {
-      "default": "./src/repositories/index.ts"
-    },
     "./schema": {
       "default": "./src/domain/index.ts"
     },

@@ -102,15 +102,6 @@ export type {
 export { pricingModule } from "./module";
 export { pricingPermissionList, pricingPermissions } from "./permissions";
 export {
-  InMemoryPricingRepository,
-  createInMemoryPricingRepositoryLayer,
-  createInMemoryPricingRepository,
-  createPricingPromiseRepositoryFromEffectRepository,
-  createResettableInMemoryPricingRepository,
-  defaultPricingRepository,
-  type ResettablePricingRepository,
-} from "./repositories";
-export {
   PRICE_CALCULATED_EVENT,
   PRICE_SET_CREATED_EVENT,
   PricingService,
@@ -118,10 +109,8 @@ export {
   createPricingService,
   createPricingServiceFromDependenciesLayer,
   createPricingServiceLayer,
-  defaultPricingService,
   type CreatePricingServiceOptions,
   type PriceCalculatedEventPayload,
   type PriceSetCreatedEventPayload,
   type PricingServiceShape,
 } from "./services";
-export { createTestPricingService, resetPricingState } from "./testing";

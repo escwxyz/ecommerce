@@ -66,10 +66,14 @@ bun run test
 
 This test does not read or modify Wrangler's development database and does not
 require Cloudflare, payment-provider, or fulfillment-provider credentials.
-Alchemy development sets `COMMERCE_PROVIDER_MODE=development`, which explicitly
-registers deterministic payment and fulfillment providers under the seeded
-`manual` provider key. Non-development stacks set the mode to `disabled`; they
-do not expose checkout until production provider registries are configured.
+Alchemy development sets `COMMERCE_RUNTIME_MODE=development`, which keeps the
+notification queue binding optional while still using PostgreSQL and
+Cloudflare state adapters. The golden checkout test explicitly calls
+`createDevelopmentCommerceRuntime`, which registers deterministic payment and
+fulfillment providers under the seeded `manual` provider key. The deployed
+Worker does not expose checkout, notification dispatch, payment, or
+fulfillment HTTP groups until terminal production providers and durable
+checkout completion are composed.
 
 The root `bun run test:integration` command remains a separate,
 credential-gated Alchemy deployment and health check. A skipped deployment test

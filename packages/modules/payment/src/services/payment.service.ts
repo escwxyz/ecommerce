@@ -3,8 +3,6 @@ import type {
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
 import {
-  ClockService,
-  IdGeneratorService,
   correlationContextFromHeaders,
   createCorrelationContext,
 } from "@ecommerce/core";
@@ -48,7 +46,6 @@ import {
   PaymentAccountHolderNotFound,
   PaymentNotFound,
   PaymentProviderUnavailable,
-  PaymentRepositoryService,
   PaymentSessionNotFound,
   PaymentValidationFailure,
   createPaymentAccountHolderIdEffect,
@@ -61,11 +58,7 @@ import {
   createPaymentSessionIdEffect,
 } from "../domain";
 import type { PaymentProviderRegistry } from "../providers";
-import {
-  createPaymentProviderRegistry,
-  emptyPaymentProviderRegistry,
-} from "../providers";
-import { defaultPaymentRepository } from "../repositories";
+import { createPaymentProviderRegistry } from "../providers";
 import { mapProviderEventsToPaymentActions } from "../webhooks";
 
 export const PAYMENT_COLLECTION_CREATED_EVENT =
@@ -125,8 +118,8 @@ export const PaymentService = Context.Service<PaymentServiceShape>(
 export interface CreatePaymentServiceOptions {
   readonly clock?: ClockServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly providerRegistry?: PaymentProviderRegistry;
-  readonly repository?: PaymentRepository;
+  readonly providerRegistry: PaymentProviderRegistry;
+  readonly repository: PaymentRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -269,9 +262,9 @@ const getSessionStatusForPayment = (
 export const createPaymentService = ({
   clock = createDefaultClock(),
   idGenerator = createDefaultIdGenerator(),
-  providerRegistry = emptyPaymentProviderRegistry,
-  repository = defaultPaymentRepository,
-}: CreatePaymentServiceOptions = {}): PaymentServiceShape => {
+  providerRegistry,
+  repository,
+}: CreatePaymentServiceOptions): PaymentServiceShape => {
   const updateCollectionStatus = (
     collection: PaymentCollection,
     status: PaymentCollection["status"]
@@ -772,21 +765,9 @@ export const createPaymentService = ({
   };
 };
 
-export const defaultPaymentService = createPaymentService();
-
 export const createPaymentServiceLayer = (
   options: CreatePaymentServiceOptions
 ) => Layer.succeed(PaymentService, createPaymentService(options));
-
-export const PaymentServiceLayer = Layer.effect(
-  PaymentService,
-  Effect.gen(function* createPaymentServiceLayerEffect() {
-    const clock = yield* ClockService;
-    const idGenerator = yield* IdGeneratorService;
-    const repository = yield* PaymentRepositoryService;
-    return createPaymentService({ clock, idGenerator, repository });
-  })
-);
 
 export const createPaymentServiceWithProviders = (
   options: Omit<CreatePaymentServiceOptions, "providerRegistry"> & {

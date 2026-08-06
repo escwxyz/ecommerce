@@ -49,7 +49,6 @@ import {
   createPromotionRuleIdEffect,
   createPromotionUsageLimitIdEffect,
 } from "../domain";
-import { defaultPromotionRepository } from "../repositories";
 
 export const PROMOTION_CREATED_EVENT = "promotion.created" as const;
 export const PROMOTION_ADJUSTMENTS_CALCULATED_EVENT =
@@ -107,7 +106,7 @@ export interface CreatePromotionServiceOptions {
   readonly clock?: ClockServiceShape;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly repository?: PromotionRepository;
+  readonly repository: PromotionRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -269,8 +268,8 @@ export const createPromotionService = ({
   clock = createDefaultClock(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
-  repository = defaultPromotionRepository,
-}: CreatePromotionServiceOptions = {}): PromotionServiceShape => ({
+  repository,
+}: CreatePromotionServiceOptions): PromotionServiceShape => ({
   calculateAdjustments: (input) =>
     Effect.gen(function* calculateAdjustmentsEffect() {
       const now = clock.now();
@@ -566,7 +565,3 @@ export const PromotionServiceLive = Layer.effect(
     });
   })
 );
-
-export const defaultPromotionService = createPromotionService({
-  repository: defaultPromotionRepository,
-});

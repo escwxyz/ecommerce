@@ -147,8 +147,6 @@ export class InMemoryPricingRepository implements ResettablePricingRepository {
   }
 }
 
-export const defaultPricingRepository = new InMemoryPricingRepository();
-
 export const createInMemoryPricingRepository = (): PricingRepository =>
   new InMemoryPricingRepository();
 

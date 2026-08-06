@@ -1,11 +1,11 @@
-import { defaultPricingRepository } from "../repositories";
+import { createInMemoryPricingRepository } from "../repositories";
 import { createPricingService } from "../services";
 import type { CreatePricingServiceOptions } from "../services";
 
-export const resetPricingState = (): void => {
-  defaultPricingRepository.clear();
-};
-
 export const createTestPricingService = (
-  options: CreatePricingServiceOptions = {}
-) => createPricingService(options);
+  options: Omit<CreatePricingServiceOptions, "repository"> = {}
+) =>
+  createPricingService({
+    ...options,
+    repository: createInMemoryPricingRepository(),
+  });

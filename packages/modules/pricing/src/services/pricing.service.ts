@@ -51,7 +51,6 @@ import {
   createPriceRuleIdEffect,
   createPriceSetIdEffect,
 } from "../domain";
-import { defaultPricingRepository } from "../repositories";
 
 export const PRICE_SET_CREATED_EVENT = "pricing.price-set-created" as const;
 export const PRICE_CALCULATED_EVENT = "pricing.price-calculated" as const;
@@ -108,7 +107,7 @@ export interface CreatePricingServiceOptions {
   readonly clock?: ClockServiceShape;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly repository?: PricingRepository;
+  readonly repository: PricingRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -292,8 +291,8 @@ export const createPricingService = ({
   clock = createDefaultClock(),
   eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
-  repository = defaultPricingRepository,
-}: CreatePricingServiceOptions = {}): PricingServiceShape => ({
+  repository,
+}: CreatePricingServiceOptions): PricingServiceShape => ({
   calculatePrice: (input) =>
     Effect.gen(function* calculatePriceEffect() {
       const now = clock.now();
@@ -555,7 +554,3 @@ export const createPricingServiceFromDependenciesLayer = () =>
       });
     })
   );
-
-export const defaultPricingService = createPricingService({
-  repository: defaultPricingRepository,
-});

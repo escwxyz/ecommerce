@@ -7,6 +7,5 @@ export {
   createInMemorySalesChannelRepositoryLayer,
   createInMemorySalesChannelRepository,
   createResettableInMemoryRegionSalesChannelRepository,
-  defaultRegionSalesChannelRepository,
   type ResettableRegionSalesChannelRepository,
 } from "./in-memory-region-sales-channel.repository";

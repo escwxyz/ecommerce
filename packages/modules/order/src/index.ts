@@ -68,17 +68,8 @@ export {
 export { orderExtensionPoints, orderModule } from "./module";
 export { orderPermissionList, orderPermissions } from "./permissions";
 export {
-  createOrderRepositoryLayer,
-  createInMemoryOrderRepository,
-  createResettableInMemoryOrderRepository,
-  defaultOrderRepository,
-  InMemoryOrderRepository,
-  type ResettableOrderRepository,
-} from "./repositories";
-export {
   createOrderService,
   createOrderServiceLayer,
-  defaultOrderService,
   ORDER_PLACED_EVENT,
   ORDER_STATUS_TRANSITIONED_EVENT,
   ORDER_TRANSACTION_RECORDED_EVENT,

@@ -20,7 +20,7 @@ import type {
   NotificationProviderRecord,
   NotificationTemplate,
 } from "@ecommerce/notification-event";
-import { desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte } from "drizzle-orm";
 import { Effect, Layer, Option, Schema } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import type { SqlError } from "effect/unstable/sql/SqlError";
@@ -380,6 +380,27 @@ export const createPostgresNotificationEventRepository = (
 
       return yield* Effect.all(rows.map(decodeNotificationDispatchRow));
     }),
+    listPendingOutbox: ({ availableAt, limit }) =>
+      Effect.gen(function* listPendingOutboxEffect() {
+        const executor = yield* getNotificationEventExecutor(service);
+        const rows = yield* executor
+          .select()
+          .from(postgresEventOutbox)
+          .where(
+            and(
+              inArray(postgresEventOutbox.status, ["pending", "retrying"]),
+              lte(postgresEventOutbox.availableAt, availableAt)
+            )
+          )
+          .orderBy(
+            asc(postgresEventOutbox.availableAt),
+            asc(postgresEventOutbox.id)
+          )
+          .limit(limit)
+          .pipe(Effect.mapError(toRepositoryUnavailable("read")));
+
+        return yield* Effect.all(rows.map(decodeEventOutboxRow));
+      }),
     saveDeadLetter: (record) =>
       Effect.gen(function* saveDeadLetterEffect() {
         const executor = yield* getNotificationEventExecutor(service);

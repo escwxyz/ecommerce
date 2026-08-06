@@ -5,6 +5,7 @@ import Stack, {
   cartCache,
   database,
   notificationEventDeadLetterQueue,
+  notificationEventOutboxDrainCrons,
   notificationEventQueue,
   notificationEventQueueConsumer,
   notificationEventRealtime,
@@ -58,6 +59,10 @@ describe("local web development", () => {
 });
 
 describe("notification event queue bindings", () => {
+  it("configures a cron cadence for deployed outbox drains", () => {
+    expect(notificationEventOutboxDrainCrons).toEqual(["* * * * *"]);
+  });
+
   it("omits queue bindings in local development", () => {
     expect(getNotificationEventQueueEnv).toBeFunction();
     if (!getNotificationEventQueueEnv) {

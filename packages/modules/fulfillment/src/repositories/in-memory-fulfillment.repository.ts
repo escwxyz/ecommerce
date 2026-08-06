@@ -259,8 +259,6 @@ export class InMemoryFulfillmentRepository implements ResettableFulfillmentRepos
     });
 }
 
-export const defaultFulfillmentRepository = new InMemoryFulfillmentRepository();
-
 export const createInMemoryFulfillmentRepository = (): FulfillmentRepository =>
   new InMemoryFulfillmentRepository();
 

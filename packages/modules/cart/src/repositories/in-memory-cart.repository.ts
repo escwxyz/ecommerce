@@ -184,8 +184,6 @@ export class InMemoryCartRepository implements ResettableCartRepository {
     });
 }
 
-export const defaultCartRepository = new InMemoryCartRepository();
-
 export const createInMemoryCartRepository = (): CartRepository =>
   new InMemoryCartRepository();
 

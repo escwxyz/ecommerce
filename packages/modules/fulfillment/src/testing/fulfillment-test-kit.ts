@@ -1,7 +1,5 @@
-import {
-  createFakeFulfillmentProvider,
-  createFulfillmentProviderRegistry,
-} from "../providers";
+import { createFulfillmentProviderRegistry } from "../providers";
+import { createFakeFulfillmentProvider } from "../providers/fake-fulfillment-provider";
 import { createResettableInMemoryFulfillmentRepository } from "../repositories";
 import { createFulfillmentService } from "../services";
 

@@ -136,3 +136,4 @@
 - [x] 12.8 Run formatting, lint, typecheck, unit, contract, API, SDK, workflow, plugin, build, and credential-free Cloudflare smoke suites
 - [x] 12.9 Update the roadmap, stateful runtime guide, package documentation, active OpenSpec task state, and project memory to match the implemented architecture
 - [x] 12.10 Run `openspec status --change "adopt-effect-4-backend-architecture"` and complete a requirement-by-requirement evidence audit
+- [x] 12.11 Concentrate production repository, actor, provider, and notification adapter selection in one fail-closed Worker composition and keep in-memory implementations behind explicit testing/development seams

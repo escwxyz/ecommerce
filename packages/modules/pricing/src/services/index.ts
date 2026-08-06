@@ -6,7 +6,6 @@ export {
   createPricingService,
   createPricingServiceFromDependenciesLayer,
   createPricingServiceLayer,
-  defaultPricingService,
   type CreatePricingServiceOptions,
   type PriceCalculatedEventPayload,
   type PriceSetCreatedEventPayload,

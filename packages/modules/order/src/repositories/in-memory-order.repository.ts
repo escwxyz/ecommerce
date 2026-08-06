@@ -252,7 +252,5 @@ export const createInMemoryOrderRepository = (): OrderRepository =>
 export const createResettableInMemoryOrderRepository =
   (): ResettableOrderRepository => new InMemoryOrderRepository();
 
-export const defaultOrderRepository = createInMemoryOrderRepository();
-
 export const createOrderRepositoryLayer = (repository: OrderRepository) =>
   Layer.succeed(OrderRepositoryService, repository);

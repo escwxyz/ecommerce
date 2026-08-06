@@ -7,10 +7,10 @@ import {
 } from "@ecommerce/core/testing";
 import { Effect } from "effect";
 
-import { createFakeFulfillmentProvider } from "../providers";
 import { createFulfillmentProviderRegistry } from "../providers";
 import { createResettableInMemoryFulfillmentRepository } from "../repositories";
 import { createFulfillmentService } from "../services";
+import { createFakeFulfillmentProvider } from "../testing";
 
 const createShippingOptionFixture = async (
   service: ReturnType<typeof createFulfillmentService>

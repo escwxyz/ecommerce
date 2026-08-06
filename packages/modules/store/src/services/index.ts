@@ -5,7 +5,6 @@ export {
   createStoreServiceFromDependenciesLayer,
   createStoreService,
   createStoreServiceLayer,
-  defaultStoreService,
   type CreateStoreServiceOptions,
   type StoreServiceFailure,
   type StoreServiceShape,

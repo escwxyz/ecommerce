@@ -354,17 +354,16 @@ architecture:
   Credential-free
   suites validate the in-memory contract, package type shape, migrations as
   checked-in files, API contracts, SDK transports, and Worker composition.
-- Checkout no longer exports legacy Zod/oRPC contracts and is exposed through
-  the admin Effect HTTP group at `POST /admin/checkout/complete`. Its service
-  returns Effect values and schema-backed failures, but the server golden-path
-  composition still uses temporary server-owned Promise facades over migrated
-  downstream services until section 9 introduces durable workflow/runtime Layer
-  composition. Newly migrated module code must not depend on those facades.
+- Checkout no longer exports legacy Zod/oRPC contracts. Its deterministic
+  development and golden-path composition still uses temporary server-owned
+  Promise facades and an explicit in-memory completion store. The production
+  Worker omits the checkout HTTP contribution until a durable completion-store
+  adapter and Effect-native orchestration replace that compatibility seam.
 - The task-9.4 delivery cycle and Cloudflare queue Layer compose through
-  runtime-neutral Effect services, but the deployed Worker does not yet provide
-  the PostgreSQL outbox Layer or a scheduled production drain. That wiring
-  remains part of the broader Cloudflare PostgreSQL-backed runtime-composition
-  gap; credential-free tests use deterministic claimer and queue Layers.
+  runtime-neutral Effect services. The deployed Worker now composes the
+  PostgreSQL notification-event repository and Cloudflare queue processor, but
+  it does not yet schedule the generic PostgreSQL outbox drain. Credential-free
+  tests continue to cover deterministic claimer and queue Layers.
 - Section 12.5 removes the completed Promise-shaped cart/inventory coordinator
   bridge. Cart and inventory now accept `KeyedActorService` directly, the
   deprecated Cloudflare coordinator facade is gone, and only
@@ -377,18 +376,16 @@ architecture:
   supplies interruption, restart, duplicate-delivery, and timer-recovery
   evidence for the generic host, but production commerce actors still need
   workload-specific handlers and runtime Layer composition.
-- The Hono Worker remains the deployed compatibility entrypoint while the
-  Effect Worker foundation accumulates migrated module groups. Cart, promotion,
-  tax, fulfillment, payment, checkout, order, and notification-event are
-  registered in native Effect HTTP contracts/tests with in-memory or test
-  Layers until the Cloudflare PostgreSQL/cache-backed runtime Layer is
-  composed.
-- Tasks 8.1 through 8.9 did not make the cart, promotion, tax, fulfillment,
-  payment, order, or notification-event Effect Worker paths production-backed.
-  The authoritative PostgreSQL repositories and cart Durable Object cache port
-  exist, but the deployed Cloudflare runtime still needs a request/runtime
-  Layer that wires those adapters together before migrated module traffic
-  should rely on that path.
+- The deployed Worker now has one production composition in
+  `apps/server/src/production-commerce-runtime.ts`. It requires Hyperdrive,
+  cart-cache and keyed-actor Durable Object namespaces, and notification queue
+  and realtime bindings; missing production bindings fail closed with a typed
+  configuration error. The composition supplies PostgreSQL repositories and
+  Cloudflare adapters to migrated module services, while deterministic
+  in-memory repositories, actors, providers, and checkout completion state are
+  selected only by the explicit development/testing composition. Payment,
+  fulfillment, and notification-dispatch HTTP groups remain disabled until
+  terminal production providers are registered.
 - The cart Durable Object cache is a hot aggregate and ownership/idempotency
   coordination primitive, not the durable source of truth. PostgreSQL remains
   authoritative for cart, line-item, and adjustment persistence.

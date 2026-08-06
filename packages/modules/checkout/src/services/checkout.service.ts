@@ -58,7 +58,7 @@ export interface CheckoutServiceDependencies {
 }
 
 export interface CreateCheckoutServiceOptions extends CheckoutServiceDependencies {
-  readonly completionStore?: CheckoutCompletionStore;
+  readonly completionStore: CheckoutCompletionStore;
   readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
 }
@@ -384,7 +384,7 @@ const toFulfillmentAddress = (
 
 export const createCheckoutService = ({
   cart,
-  completionStore = createInMemoryCheckoutCompletionStore(),
+  completionStore,
   customer,
   eventPublisher = createNoopEventPublisher(),
   fulfillment,

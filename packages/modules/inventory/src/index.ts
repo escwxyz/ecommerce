@@ -100,14 +100,6 @@ export type {
 export { inventoryExtensionPoints, inventoryModule } from "./module";
 export { inventoryPermissionList, inventoryPermissions } from "./permissions";
 export {
-  InMemoryInventoryRepository,
-  createInMemoryInventoryRepositoryLayer,
-  createInMemoryInventoryRepository,
-  createResettableInMemoryInventoryRepository,
-  defaultInventoryRepository,
-  type ResettableInventoryRepository,
-} from "./repositories";
-export {
   INVENTORY_ADJUSTED_EVENT,
   INVENTORY_RESERVED_EVENT,
   InventoryService,
@@ -115,10 +107,8 @@ export {
   createInventoryService,
   createInventoryServiceFromDependenciesLayer,
   createInventoryServiceLayer,
-  defaultInventoryService,
   type CreateInventoryServiceOptions,
   type InventoryAdjustedEventPayload,
   type InventoryReservedEventPayload,
   type InventoryServiceShape,
 } from "./services";
-export { createTestInventoryService } from "./testing";

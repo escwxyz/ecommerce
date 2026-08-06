@@ -11,7 +11,6 @@ export {
   createCartService,
   createCartServiceFromDependenciesLayer,
   createCartServiceLayer,
-  defaultCartService,
   type CartServiceFailure,
   type CartServiceShape,
   type CreateCartServiceOptions,

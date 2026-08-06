@@ -33,6 +33,7 @@ export interface CreateCachedCartRepositoryOptions {
   readonly onProjectionSyncFailure?: (
     failure: CartProjectionSyncFailure
   ) => Effect.Effect<void, CartExpectedError> | void;
+  readonly projectionSyncFailureMode?: "fail-write" | "record-only";
   readonly projectionRepository: CartRepository;
   readonly scope?: CartOwnershipScope | (() => CartOwnershipScope);
 }
@@ -45,6 +46,7 @@ const resolveScope = (
 export const createCachedCartRepository = ({
   cache,
   onProjectionSyncFailure,
+  projectionSyncFailureMode = "record-only",
   projectionRepository,
   scope,
 }: CreateCachedCartRepositoryOptions): CartRepository => {
@@ -86,6 +88,10 @@ export const createCachedCartRepository = ({
 
       if (observed) {
         yield* observed;
+      }
+
+      if (projectionSyncFailureMode === "fail-write") {
+        yield* Effect.fail(result.failure);
       }
     });
 

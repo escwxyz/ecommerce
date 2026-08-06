@@ -39,7 +39,6 @@ import {
   createCustomerGroupIdEffect,
   createCustomerIdEffect,
 } from "../domain";
-import { defaultCustomerRepository } from "../repositories";
 
 export const CUSTOMER_CREATED_EVENT = "customer.created" as const;
 export const CUSTOMER_UPDATED_EVENT = "customer.updated" as const;
@@ -104,7 +103,7 @@ export interface CreateCustomerServiceOptions {
   readonly authorization?: CreateAuthorizationEvaluatorOptions;
   readonly clock?: ClockServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
-  readonly repository?: CustomerRepository;
+  readonly repository: CustomerRepository;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -177,8 +176,8 @@ export const createCustomerService = ({
   authorization,
   clock = createDefaultClock(),
   idGenerator = createDefaultIdGenerator(),
-  repository = defaultCustomerRepository,
-}: CreateCustomerServiceOptions = {}): CustomerServiceShape => {
+  repository,
+}: CreateCustomerServiceOptions): CustomerServiceShape => {
   const authEvaluator = createAuthorizationEvaluator(authorization);
 
   return {
@@ -345,7 +344,3 @@ export const createCustomerServiceFromDependenciesLayer = (
       });
     })
   );
-
-export const defaultCustomerService = createCustomerService({
-  repository: defaultCustomerRepository,
-});

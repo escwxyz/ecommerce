@@ -69,6 +69,7 @@ export interface CloudflareCartCacheRepositoryOptions extends CloudflareCartCach
   readonly onProjectionSyncFailure?: (
     failure: CartProjectionSyncFailure
   ) => EffectValue<void, CartExpectedError> | void;
+  readonly projectionSyncFailureMode?: "fail-write" | "record-only";
   readonly projectionRepository: CartRepository;
   readonly scope?: CartOwnershipScope | (() => CartOwnershipScope);
 }
@@ -318,12 +319,14 @@ export const createCloudflareCartActiveCache = ({
 export const createCloudflareCartCacheRepository = ({
   namespace,
   onProjectionSyncFailure,
+  projectionSyncFailureMode,
   projectionRepository,
   scope,
 }: CloudflareCartCacheRepositoryOptions): CartRepository =>
   createCachedCartRepository({
     cache: createCloudflareCartActiveCache({ namespace }),
     onProjectionSyncFailure,
+    projectionSyncFailureMode,
     projectionRepository,
     scope,
   });

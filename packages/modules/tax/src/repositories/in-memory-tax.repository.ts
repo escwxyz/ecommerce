@@ -120,14 +120,11 @@ export class InMemoryTaxRepository implements ResettableTaxRepository {
     });
 }
 
-export const defaultTaxRepository = new InMemoryTaxRepository();
-
 export const createInMemoryTaxRepository = (): TaxRepository =>
   new InMemoryTaxRepository();
 
 export const createResettableInMemoryTaxRepository =
   (): ResettableTaxRepository => new InMemoryTaxRepository();
 
-export const createInMemoryTaxRepositoryLayer = (
-  repository: TaxRepository = createInMemoryTaxRepository()
-) => Layer.succeed(TaxRepositoryService, repository);
+export const createInMemoryTaxRepositoryLayer = (repository: TaxRepository) =>
+  Layer.succeed(TaxRepositoryService, repository);

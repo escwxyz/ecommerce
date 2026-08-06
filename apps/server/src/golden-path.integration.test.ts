@@ -6,7 +6,7 @@ import { Effect, Layer } from "effect";
 
 import {
   createDevelopmentCommerceProviderRegistries,
-  createServerCommerceRuntime,
+  createDevelopmentCommerceRuntime,
 } from "./commerce-runtime";
 import { developmentSeedIds } from "./development-seed";
 import { createEffectHttpWorkerRuntime } from "./effect-http-worker-runtime";
@@ -49,7 +49,7 @@ const checkoutAdminAuth = {
 describe("server golden checkout path", () => {
   it("persists checkout outcomes through the Effect HTTP checkout transport", async () => {
     const publishedEventNames: string[] = [];
-    const runtime = createServerCommerceRuntime({
+    const runtime = createDevelopmentCommerceRuntime({
       ...createDevelopmentCommerceProviderRegistries(),
       clock: { now: () => new Date("2026-01-02T00:00:00.000Z") },
       idGenerator: createDeterministicIdGenerator(),

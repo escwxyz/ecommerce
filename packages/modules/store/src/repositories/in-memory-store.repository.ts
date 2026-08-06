@@ -26,8 +26,6 @@ export class InMemoryStoreRepository implements ResettableStoreRepository {
   }
 }
 
-export const defaultStoreRepository = new InMemoryStoreRepository();
-
 export const createInMemoryStoreRepository = (): StoreRepository =>
   new InMemoryStoreRepository();
 

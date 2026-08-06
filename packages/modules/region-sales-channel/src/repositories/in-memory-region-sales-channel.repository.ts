@@ -88,9 +88,6 @@ export class InMemoryRegionSalesChannelRepository implements ResettableRegionSal
   }
 }
 
-export const defaultRegionSalesChannelRepository =
-  new InMemoryRegionSalesChannelRepository();
-
 export const createInMemoryRegionRepository = (): RegionRepository =>
   new InMemoryRegionSalesChannelRepository();
 

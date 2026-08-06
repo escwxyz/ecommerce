@@ -2,7 +2,6 @@ export { cartAdminSurfaces } from "./admin";
 export {
   createCachedCartRepository,
   createCustomerCartScope,
-  createInMemoryCartActiveCache,
   createSystemCartScope,
   createVisitorCartScope,
   syncCartProjection,
@@ -78,22 +77,12 @@ export type {
 export { cartModule } from "./module";
 export { cartPermissionList, cartPermissions } from "./permissions";
 export {
-  createInMemoryCartRepositoryLayer,
-  createInMemoryCartRepository,
-  createResettableInMemoryCartRepository,
-  defaultCartRepository,
-  InMemoryCartRepository,
-  type ResettableCartRepository,
-} from "./repositories";
-export {
   CartService,
   createCartRepositoryLayer,
   createCartService,
   createCartServiceFromDependenciesLayer,
   createCartServiceLayer,
-  defaultCartService,
   type CartServiceFailure,
   type CartServiceShape,
   type CreateCartServiceOptions,
 } from "./services";
-export { createTestCartService, resetCartState } from "./testing";
