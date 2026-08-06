@@ -187,26 +187,18 @@ architecture:
   been removed.
 - `@ecommerce/api` exposes payment admin operations through an Effect `HttpApi`
   group instead of the legacy payment oRPC router.
-- The legacy D1 seed no longer creates `store`, `customer`, `product`,
-  `product_variant`, `region`, `region_country`, `sales_channel`, or
-  `sales_channel_product`, pricing records, inventory records, cart tables, or
-  promotion/tax/fulfillment/payment/order tables. Checkout smoke tests now run
-  against the remaining legacy D1 modules by
-  using temporary server-owned store defaults, customer payment-identity,
-  deterministic product-variant validation, deterministic region/sales-channel
-  validation, deterministic pricing calculation and inventory
-  availability/reservation facades, and Promise facades over the Effect cart,
-  promotion, tax, fulfillment, payment, and order services behind the Effect checkout
-  service boundary. The tax facade translates the legacy checkout commerce-region ID
-  into the seeded tax-region ID rather than weakening migrated tax identifier
-  schemas.
-- The checkout compatibility facades are intentionally not new module adapters:
-  they preserve only the development golden-path invariants formerly supplied
-  by deleted D1 seed rows. Task 8.9 removed checkout's remaining legacy
-  Zod/oRPC contract/router package surface and the server oRPC checkout route.
-  The golden-path suite now exercises the composed Effect checkout service
-  directly while durable workflow/runtime Layer composition remains deferred to
-  section 9.
+- The legacy D1 seed no longer creates migrated commerce records. Checkout now
+  acquires Store, Customer, Product, Region, Sales Channel, Pricing, Promotion,
+  Tax, Inventory, Cart, Payment, Fulfillment, Order, Notification Event, and
+  atomic completion-store services through public Effect service tags, with
+  Clock and identifier behavior supplied explicitly by runtime composition. Its
+  deterministic suite composes those dependencies as Layers and exercises one
+  `CheckoutService.completeCheckout` Effect across success, failure,
+  idempotency, compensation, and interruption.
+- The server-owned checkout compatibility runtime, development seed
+  substitutions, broad input casts, and Payment/Fulfillment Promise bridges have
+  been deleted. The checkout HTTP suite remains a thin transport test over the
+  same `CheckoutService` interface.
 - Order now has Effect Schema domain/API contracts, typed errors, Effect-native
   service and repository contracts, in-memory test Layers, PostgreSQL Drizzle
   persistence, and admin Effect HTTP API assembly. Its legacy Zod contracts,
@@ -354,11 +346,10 @@ architecture:
   Credential-free
   suites validate the in-memory contract, package type shape, migrations as
   checked-in files, API contracts, SDK transports, and Worker composition.
-- Checkout no longer exports legacy Zod/oRPC contracts. Its deterministic
-  development and golden-path composition still uses temporary server-owned
-  Promise facades and an explicit in-memory completion store. The production
-  Worker omits the checkout HTTP contribution until a durable completion-store
-  adapter and Effect-native orchestration replace that compatibility seam.
+- Checkout no longer exports legacy Zod/oRPC contracts or Promise facades. The
+  production Worker still omits its HTTP contribution until terminal Payment and
+  Fulfillment providers plus a durable checkout completion-store adapter are
+  registered; deterministic in-memory completion state is test-only.
 - The task-9.4 delivery cycle and Cloudflare queue Layer compose through
   runtime-neutral Effect services. The deployed Worker now composes the
   PostgreSQL notification-event repository and Cloudflare queue processor, but
@@ -383,7 +374,7 @@ architecture:
   configuration error. The composition supplies PostgreSQL repositories and
   Cloudflare adapters to migrated module services, while deterministic
   in-memory repositories, actors, providers, and checkout completion state are
-  selected only by the explicit development/testing composition. Payment,
+  selected only by explicit testing Layers. Payment,
   fulfillment, and notification-dispatch HTTP groups remain disabled until
   terminal production providers are registered.
 - The cart Durable Object cache is a hot aggregate and ownership/idempotency

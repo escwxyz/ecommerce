@@ -94,6 +94,19 @@ describe("production commerce runtime composition", () => {
     expect(source).not.toContain("./commerce-runtime");
   });
 
+  it("keeps the deleted checkout compatibility runtime deleted", async () => {
+    expect(
+      await Bun.file(
+        new URL("../commerce-runtime.ts", import.meta.url)
+      ).exists()
+    ).toBe(false);
+    expect(
+      await Bun.file(
+        new URL("../development-seed.ts", import.meta.url)
+      ).exists()
+    ).toBe(false);
+  });
+
   it("requires stateful adapter choices at module construction seams", async () => {
     const serviceSources = await Promise.all(
       [

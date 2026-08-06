@@ -778,20 +778,3 @@ export const createPaymentServiceWithProviders = (
     ...options,
     providerRegistry: createPaymentProviderRegistry(options.providers),
   });
-
-/**
- * Temporary Promise facade until checkout consumes PaymentService effects
- * directly.
- */
-export const createPaymentPromiseServiceFromEffectService = (
-  service: PaymentServiceShape
-) => ({
-  authorizePaymentSession: (input: AuthorizePaymentSessionInput) =>
-    Effect.runPromise(service.authorizePaymentSession(input)),
-  capturePayment: (input: CapturePaymentInput) =>
-    Effect.runPromise(service.capturePayment(input)),
-  createCollection: (input: CreatePaymentCollectionInput) =>
-    Effect.runPromise(service.createCollection(input)),
-  createSession: (input: CreatePaymentSessionInput) =>
-    Effect.runPromise(service.createSession(input)),
-});

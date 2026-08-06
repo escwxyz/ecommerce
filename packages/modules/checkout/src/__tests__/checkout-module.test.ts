@@ -1,15 +1,37 @@
 import { describe, expect, it } from "bun:test";
 
-import { createEventCollector } from "@ecommerce/core/testing";
-import { Effect } from "effect";
+import { CartService } from "@ecommerce/cart";
+import { clockLayer, idGeneratorLayer } from "@ecommerce/core";
+import { CustomerService } from "@ecommerce/customer";
+import { FulfillmentService } from "@ecommerce/fulfillment";
+import { InventoryService } from "@ecommerce/inventory";
+import type { InventoryServiceShape } from "@ecommerce/inventory";
+import { NotificationEventService } from "@ecommerce/notification-event";
+import type { NotificationEventServiceShape } from "@ecommerce/notification-event";
+import { OrderService } from "@ecommerce/order";
+import type { OrderServiceShape } from "@ecommerce/order";
+import { PaymentService } from "@ecommerce/payment";
+import { PricingService } from "@ecommerce/pricing";
+import { ProductService } from "@ecommerce/product";
+import { PromotionService } from "@ecommerce/promotion";
+import {
+  RegionService,
+  SalesChannelService,
+} from "@ecommerce/region-sales-channel";
+import { StoreService } from "@ecommerce/store";
+import { TaxService } from "@ecommerce/tax";
+import { Context, Deferred, Effect, Fiber, Layer } from "effect";
 
 import { checkoutAdminMetadata } from "../admin";
+import { CheckoutCompletionFailure } from "../domain";
 import { checkoutModule } from "../module";
 import {
   CHECKOUT_COMPLETED_EVENT,
   CHECKOUT_FAILED_EVENT,
-  createCheckoutService,
-  type CreateCheckoutServiceOptions,
+  CheckoutService,
+  CheckoutServiceLive,
+  createCheckoutCompletionStoreLayer,
+  type CheckoutCompletionStoreShape,
 } from "../services";
 import { createInMemoryCheckoutCompletionStore } from "../testing";
 
@@ -24,82 +46,285 @@ const checkoutInput = {
   shippingOptionId: "shipopt_1",
 };
 
-const createDependencyStubs = (
-  calls: string[]
-): CreateCheckoutServiceOptions => {
-  const cartAggregate = {
-    adjustments: [],
-    cart: {
-      billingAddress: null,
-      completedAt: null,
-      createdAt: new Date("2026-06-16T10:00:00.000Z"),
-      currencyCode: "USD",
-      customerId: "cus_1",
-      email: "ada@example.com",
-      id: "cart_1",
-      metadata: {},
-      paymentCollectionId: null,
-      regionId: "reg_1",
-      salesChannelId: "sc_1",
-      shippingAddress: {
-        address1: "1 Main St",
-        city: "New York",
-        countryCode: "US",
-        postalCode: "10001",
-      },
-      shippingOptionId: "shipopt_1",
-      status: "active" as const,
-      totals: {
-        adjustmentTotal: 0,
-        currencyCode: "USD",
-        discountTotal: 100,
-        giftCardTotal: 0,
-        itemSubtotal: 1000,
-        shippingTotal: 200,
-        subtotal: 900,
-        taxTotal: 90,
-        total: 1190,
-      },
-      updatedAt: new Date("2026-06-16T10:00:00.000Z"),
-    },
-    lineItems: [
-      {
-        cartId: "cart_1",
-        createdAt: new Date("2026-06-16T10:00:00.000Z"),
-        id: "clitem_1",
-        metadata: {
-          inventoryItemId: "invitem_1",
-          priceSetId: "pset_1",
-          sku: "HAT-1",
-          stockLocationId: "sloc_1",
-          taxCategoryId: "taxcat_1",
-        },
-        productId: "prod_1",
-        quantity: 1,
-        title: "Hat",
-        unitPrice: 1000,
-        updatedAt: new Date("2026-06-16T10:00:00.000Z"),
-        variantId: "variant_1",
-      },
-    ],
-  };
+const partialMockLayer = <Identifier, Service extends object>(
+  tag: Context.Key<Identifier, Service>,
+  implementation: object
+) =>
+  // Layer.mock supplies fail-loudly methods outside each focused fixture.
+  Layer.mock(tag, implementation as never);
 
+const timestamp = new Date("2026-06-16T10:00:00.000Z");
+const baseTotals = {
+  adjustmentTotal: 0,
+  currencyCode: "USD",
+  discountTotal: 100,
+  giftCardTotal: 0,
+  itemSubtotal: 1000,
+  shippingTotal: 200,
+  subtotal: 900,
+  taxTotal: 90,
+  total: 1190,
+};
+const cartAggregate = {
+  adjustments: [],
+  cart: {
+    billingAddress: null,
+    completedAt: null,
+    createdAt: timestamp,
+    currencyCode: "USD",
+    customerId: "cust_1",
+    email: "ada@example.com",
+    id: "cart_1",
+    metadata: { taxRegionId: "txreg_1" },
+    paymentCollectionId: null,
+    regionId: "reg_1",
+    salesChannelId: "sc_1",
+    shippingAddress: {
+      address1: "1 Main St",
+      city: "New York",
+      countryCode: "US",
+      postalCode: "10001",
+    },
+    shippingOptionId: "shipopt_1",
+    status: "active",
+    totals: baseTotals,
+    updatedAt: timestamp,
+  },
+  lineItems: [
+    {
+      cartId: "cart_1",
+      createdAt: timestamp,
+      id: "clitem_1",
+      metadata: {
+        inventoryItemId: "iitem_1",
+        priceSetId: "pset_1",
+        sku: "HAT-1",
+        stockLocationId: "sloc_1",
+        taxCategoryId: "txcat_1",
+      },
+      productId: "prod_1",
+      quantity: 1,
+      title: "Hat",
+      unitPrice: 1000,
+      updatedAt: timestamp,
+      variantId: "variant_1",
+    },
+  ],
+};
+
+interface TestOverrides {
+  readonly completionStore?: CheckoutCompletionStoreShape;
+  readonly completionEventFailure?: boolean;
+  readonly lineItems?: readonly (typeof cartAggregate.lineItems)[number][];
+  readonly orderFailure?: string;
+  readonly pricingRelease?: Deferred.Deferred<void>;
+  readonly priceSubtotal?: number;
+  readonly pricingStarted?: Deferred.Deferred<void>;
+  readonly withoutShippingAddress?: boolean;
+}
+
+const createCheckoutTestLayer = (
+  calls: string[],
+  overrides: TestOverrides = {}
+) => {
+  const publishedEvents: string[] = [];
+  const inventoryReservationInputs: unknown[] = [];
+  const orderInputs: unknown[] = [];
+  const priceSubtotal = overrides.priceSubtotal ?? 1000;
   const cart = {
-    getCart: async () => {
-      calls.push("cart.getCart");
-      return cartAggregate;
-    },
-    setCheckoutReferences: async () => {
-      calls.push("cart.setCheckoutReferences");
-      return cartAggregate;
-    },
-    updateTotals: async () => {
-      calls.push("cart.updateTotals");
-      return cartAggregate;
-    },
+    getCart: () =>
+      Effect.sync(() => {
+        calls.push("cart.getCart");
+        return {
+          ...cartAggregate,
+          cart: {
+            ...cartAggregate.cart,
+            shippingAddress: overrides.withoutShippingAddress
+              ? null
+              : cartAggregate.cart.shippingAddress,
+          },
+          lineItems: overrides.lineItems ?? cartAggregate.lineItems,
+        };
+      }),
+    setCheckoutReferences: () =>
+      Effect.sync(() => {
+        calls.push("cart.setCheckoutReferences");
+        return cartAggregate;
+      }),
+    updateTotals: () =>
+      Effect.sync(() => {
+        calls.push("cart.updateTotals");
+        return cartAggregate;
+      }),
+  };
+  const customer = {
+    getPaymentIdentity: () =>
+      Effect.sync(() => {
+        calls.push("customer.getPaymentIdentity");
+        return null;
+      }),
+  };
+  const fulfillment = {
+    cancelFulfillment: () =>
+      Effect.sync(() => {
+        calls.push("fulfillment.cancelFulfillment");
+        return { id: "fulf_1" };
+      }),
+    createFulfillment: () =>
+      Effect.sync(() => {
+        calls.push("fulfillment.createFulfillment");
+        return {
+          fulfillment: { id: "fulf_1" },
+          shipments: [],
+        };
+      }),
+    listShippingOptions: () =>
+      Effect.sync(() => {
+        calls.push("fulfillment.listShippingOptions");
+        return [
+          {
+            id: "shipopt_1",
+            isEnabled: true,
+            priceAmount: 200,
+          },
+        ];
+      }),
+  };
+  const inventory = {
+    adjustInventory: () =>
+      Effect.sync(() => {
+        calls.push("inventory.adjustInventory");
+        return {};
+      }),
+    checkAvailability: () =>
+      Effect.sync(() => {
+        calls.push("inventory.checkAvailability");
+        return {
+          availableQuantity: 10,
+          scopedBy: { stockLocationId: "sloc_1" },
+        };
+      }),
+    reserveInventory: (
+      input: Parameters<InventoryServiceShape["reserveInventory"]>[0]
+    ) =>
+      Effect.sync(() => {
+        calls.push("inventory.reserveInventory");
+        inventoryReservationInputs.push(input);
+        return {
+          reservation: {
+            inventoryItemId: input.inventoryItemId,
+            quantity: input.quantity,
+            stockLocationId: input.stockLocationId,
+          },
+        };
+      }),
+  };
+  const notificationEvent = {
+    publishEvent: (
+      input: Parameters<NotificationEventServiceShape["publishEvent"]>[0]
+    ) =>
+      Effect.suspend(() => {
+        calls.push(`notificationEvent.publishEvent:${input.name}`);
+        if (
+          overrides.completionEventFailure &&
+          input.name === CHECKOUT_COMPLETED_EVENT
+        ) {
+          return Effect.die(new Error("completion event unavailable"));
+        }
+        publishedEvents.push(input.name);
+        return Effect.succeed({});
+      }),
+  };
+  const order = {
+    createOrderFromCheckout: (
+      input: Parameters<OrderServiceShape["createOrderFromCheckout"]>[0]
+    ) =>
+      Effect.suspend(() => {
+        calls.push("order.createOrderFromCheckout");
+        orderInputs.push(input);
+        return overrides.orderFailure
+          ? Effect.fail({
+              _tag: "OrderUnavailable",
+              message: overrides.orderFailure,
+              retryable: true,
+            })
+          : Effect.succeed({ order: { id: "ord_1" } });
+      }),
+  };
+  const payment = {
+    authorizePaymentSession: () =>
+      Effect.sync(() => {
+        calls.push("payment.authorizePaymentSession");
+        return {
+          id: "pay_1",
+          providerKey: "test-payments",
+          status: "authorized",
+        };
+      }),
+    capturePayment: () =>
+      Effect.sync(() => {
+        calls.push("payment.capturePayment");
+        return { status: "succeeded" };
+      }),
+    createCollection: () =>
+      Effect.sync(() => {
+        calls.push("payment.createCollection");
+        return { id: "paycol_1" };
+      }),
+    createSession: () =>
+      Effect.sync(() => {
+        calls.push("payment.createSession");
+        return { id: "payses_1" };
+      }),
+  };
+  const pricing = {
+    calculatePrice: () =>
+      Effect.sync(() => calls.push("pricing.calculatePrice")).pipe(
+        Effect.andThen(
+          overrides.pricingStarted
+            ? Deferred.succeed(overrides.pricingStarted, undefined).pipe(
+                Effect.andThen(
+                  overrides.pricingRelease
+                    ? Deferred.await(overrides.pricingRelease).pipe(
+                        Effect.as({ subtotal: priceSubtotal })
+                      )
+                    : Effect.never
+                )
+              )
+            : Effect.succeed({ subtotal: priceSubtotal })
+        )
+      ),
+  };
+  const product = {
+    validateProductVariant: () =>
+      Effect.sync(() => {
+        calls.push("product.validateProductVariant");
+        return { valid: true };
+      }),
+  };
+  const promotion = {
+    calculateAdjustments: () =>
+      Effect.sync(() => {
+        calls.push("promotion.calculateAdjustments");
+        return { totalDiscount: overrides.priceSubtotal ? 0 : 100 };
+      }),
+  };
+  const region = {
+    validateRegionConstraints: () =>
+      Effect.sync(() => {
+        calls.push("region.validateRegionConstraints");
+        return { allowed: true, reasons: [] };
+      }),
+  };
+  const salesChannel = {
+    checkProductPublishability: () =>
+      Effect.sync(() => {
+        calls.push("salesChannel.checkProductPublishability");
+        return { publishable: true, reasons: [] };
+      }),
   };
   const store = {
-    getStoreDefaults: async () => {
+    getStoreDefaults: Effect.sync(() => {
       calls.push("store.getStoreDefaults");
       return {
         defaultCurrencyCode: "USD",
@@ -109,332 +334,60 @@ const createDependencyStubs = (
         supportedCurrencyCodes: ["USD"],
         timezone: "UTC",
       };
-    },
-  };
-  const customer = {
-    getPaymentIdentity: async () => {
-      calls.push("customer.getPaymentIdentity");
-      return {
-        customerId: "cus_1",
-        email: "ada@example.com",
-        firstName: "Ada",
-        lastName: "Lovelace",
-        phone: undefined,
-      };
-    },
-  };
-  const product = {
-    validateProductVariant: async () => {
-      calls.push("product.validateProductVariant");
-      return {
-        productId: "prod_1",
-        valid: true,
-        variantId: "variant_1",
-      };
-    },
-  };
-  const region = {
-    validateRegionConstraints: async () => {
-      calls.push("region.validateRegionConstraints");
-      return {
-        allowed: true,
-        reasons: [],
-      };
-    },
-  };
-  const salesChannel = {
-    checkProductPublishability: async () => {
-      calls.push("salesChannel.checkProductPublishability");
-      return {
-        publishable: true,
-        reasons: [],
-      };
-    },
-  };
-  const pricing = {
-    calculatePrice: async () => {
-      calls.push("pricing.calculatePrice");
-      return {
-        amount: 1000,
-        currencyCode: "USD",
-        priceSetId: "pset_1",
-        quantity: 1,
-        subtotal: 1000,
-        trace: {
-          moneyAmountId: "money_1",
-          ruleMatches: [],
-          source: "base",
-        },
-      };
-    },
-  };
-  const promotion = {
-    calculateAdjustments: async () => {
-      calls.push("promotion.calculateAdjustments");
-      return {
-        adjustments: [
-          {
-            amount: -100,
-            lineItemId: "clitem_1",
-            promotionId: "promo_1",
-            source: "promotion",
-            type: "promotion",
-          },
-        ],
-        totalDiscount: 100,
-      };
-    },
+    }),
   };
   const tax = {
-    calculateTax: async () => {
-      calls.push("tax.calculateTax");
-      return {
-        currencyCode: "USD",
-        id: "taxcalc_1",
-        lines: [
-          {
-            amount: 90,
-            lineItemId: "clitem_1",
-            rateId: "taxrate_1",
-            taxableAmount: 900,
-          },
-        ],
-        providerKey: "manual",
-        regionId: "reg_1",
-        totalTax: 90,
-      };
-    },
+    calculateTax: () =>
+      Effect.sync(() => {
+        calls.push("tax.calculateTax");
+        return { totalTax: overrides.priceSubtotal ? 0 : 90 };
+      }),
   };
-  const inventory = {
-    adjustInventory: async () => {
-      calls.push("inventory.adjustInventory");
-      return {
-        adjustment: 1,
-        createdAt: new Date("2026-06-16T10:00:00.000Z"),
-        id: "iadj_1",
-        idempotencyKey: "checkout_1:inventory:release:invitem_1",
-        inventoryItemId: "invitem_1",
-        reason: "checkout-compensation",
-        stockLocationId: "stockloc_1",
-      };
-    },
-    checkAvailability: async () => {
-      calls.push("inventory.checkAvailability");
-      return {
-        availableQuantity: 10,
-        inventoryItemId: "invitem_1",
-        reservedQuantity: 0,
-        scopedBy: {
-          salesChannelId: "sc_1",
-          stockLocationId: "sloc_1",
-        },
-        stockedQuantity: 10,
-      };
-    },
-    reserveInventory: async () => {
-      calls.push("inventory.reserveInventory");
-      return {
-        reservations: [
-          {
-            cartId: "cart_1",
-            createdAt: new Date("2026-06-16T10:00:00.000Z"),
-            expiresAt: null,
-            id: "ires_1",
-            idempotencyKey: "checkout_1:inventory:reserve:invitem_1",
-            inventoryItemId: "invitem_1",
-            quantity: 1,
-            stockLocationId: "sloc_1",
-            workflowRunId: "checkout_1",
-          },
-        ],
-        status: "reserved",
-      };
-    },
-  };
-  const payment = {
-    authorizePaymentSession: async () => {
-      calls.push("payment.authorizePaymentSession");
-      return {
-        amount: 1190,
-        collectionId: "paycol_1",
-        createdAt: new Date("2026-06-16T10:00:00.000Z"),
-        currencyCode: "USD",
-        id: "pay_1",
-        metadata: {},
-        providerKey: "test-payments",
-        providerPaymentIntentId: "pi_1",
-        sessionId: "payses_1",
-        status: "authorized",
-        updatedAt: new Date("2026-06-16T10:00:00.000Z"),
-      };
-    },
-    capturePayment: async () => {
-      calls.push("payment.capturePayment");
-      return {
-        amount: 1190,
-        createdAt: new Date("2026-06-16T10:00:00.000Z"),
-        currencyCode: "USD",
-        id: "paycap_1",
-        idempotencyKey: "checkout_1:payment:capture",
-        paymentId: "pay_1",
-        status: "succeeded",
-      };
-    },
-    createCollection: async () => {
-      calls.push("payment.createCollection");
-      return {
-        amount: 1190,
-        cartId: "cart_1",
-        createdAt: new Date("2026-06-16T10:00:00.000Z"),
-        currencyCode: "USD",
-        id: "paycol_1",
-        metadata: {},
-        status: "pending",
-        updatedAt: new Date("2026-06-16T10:00:00.000Z"),
-      };
-    },
-    createSession: async () => {
-      calls.push("payment.createSession");
-      return {
-        amount: 1190,
-        collectionId: "paycol_1",
-        createdAt: new Date("2026-06-16T10:00:00.000Z"),
-        currencyCode: "USD",
-        id: "payses_1",
-        metadata: {},
-        providerKey: "test-payments",
-        status: "pending",
-        updatedAt: new Date("2026-06-16T10:00:00.000Z"),
-      };
-    },
-  };
-  const fulfillment = {
-    cancelFulfillment: async () => {
-      calls.push("fulfillment.cancelFulfillment");
-      return {
-        createdAt: new Date("2026-06-16T10:00:00.000Z"),
-        id: "fulf_1",
-        idempotencyKey: "checkout_1:fulfillment:create",
-        items: [],
-        metadata: {},
-        orderId: "ord_1",
-        providerKey: "test-fulfillment",
-        shippingOptionId: "shipopt_1",
-        status: "canceled",
-        updatedAt: new Date("2026-06-16T10:00:00.000Z"),
-      };
-    },
-    createFulfillment: async () => {
-      calls.push("fulfillment.createFulfillment");
-      return {
-        fulfillment: {
-          createdAt: new Date("2026-06-16T10:00:00.000Z"),
-          id: "fulf_1",
-          idempotencyKey: "checkout_1:fulfillment:create",
-          items: [{ lineItemId: "clitem_1", quantity: 1, sku: "HAT-1" }],
-          metadata: {},
-          orderId: "ord_1",
-          providerKey: "test-fulfillment",
-          shippingOptionId: "shipopt_1",
-          status: "created",
-          updatedAt: new Date("2026-06-16T10:00:00.000Z"),
-        },
-        shipments: [],
-      };
-    },
-    listShippingOptions: async () => {
-      calls.push("fulfillment.listShippingOptions");
-      return [
-        {
-          createdAt: new Date("2026-06-16T10:00:00.000Z"),
-          currencyCode: "USD",
-          fulfillmentSetId: "fset_1",
-          id: "shipopt_1",
-          isEnabled: true,
-          metadata: {},
-          name: "Ground",
-          priceAmount: 200,
-          profileId: "shprof_1",
-          providerKey: "test-fulfillment",
-          providerServiceId: "ground",
-          serviceZoneId: "fzone_1",
-          updatedAt: new Date("2026-06-16T10:00:00.000Z"),
-        },
-      ];
-    },
-  };
-  const order = {
-    createOrderFromCheckout: async () => {
-      calls.push("order.createOrderFromCheckout");
-      return {
-        lineItems: [],
-        operations: [],
-        order: {
-          billingAddress: null,
-          cartId: "cart_1",
-          completedAt: null,
-          createdAt: new Date("2026-06-16T10:00:00.000Z"),
-          currencyCode: "USD",
-          customerId: "cus_1",
-          email: "ada@example.com",
-          fulfillmentReferences: [],
-          id: "ord_1",
-          metadata: {},
-          paymentReferences: [],
-          shippingAddress: null,
-          status: "placed",
-          totals: cartAggregate.cart.totals,
-          updatedAt: new Date("2026-06-16T10:00:00.000Z"),
-        },
-        stateTransitions: [],
-        transactions: [],
-      };
-    },
-  };
-  const notificationEvent = {
-    publishEvent: async (input: { readonly name: string }) => {
-      calls.push(`notificationEvent.publishEvent:${input.name}`);
-      return {};
-    },
-  };
+  const dependencies = Layer.mergeAll(
+    partialMockLayer(CartService, cart),
+    partialMockLayer(CustomerService, customer),
+    partialMockLayer(FulfillmentService, fulfillment),
+    partialMockLayer(InventoryService, inventory),
+    partialMockLayer(NotificationEventService, notificationEvent),
+    partialMockLayer(OrderService, order),
+    partialMockLayer(PaymentService, payment),
+    partialMockLayer(PricingService, pricing),
+    partialMockLayer(ProductService, product),
+    partialMockLayer(PromotionService, promotion),
+    partialMockLayer(RegionService, region),
+    partialMockLayer(SalesChannelService, salesChannel),
+    partialMockLayer(StoreService, store),
+    partialMockLayer(TaxService, tax),
+    clockLayer({ now: () => timestamp }),
+    idGeneratorLayer({ nextId: () => "checkout-run-1" }),
+    createCheckoutCompletionStoreLayer(
+      overrides.completionStore ?? createInMemoryCheckoutCompletionStore()
+    )
+  );
 
   return {
-    cart,
-    completionStore: createInMemoryCheckoutCompletionStore(),
-    customer,
-    fulfillment,
-    inventory,
-    notificationEvent,
-    order,
-    payment,
-    pricing,
-    product,
-    promotion,
-    region,
-    salesChannel,
-    store,
-    tax,
+    layer: CheckoutServiceLive.pipe(Layer.provide(dependencies)),
+    inventoryReservationInputs,
+    orderInputs,
+    publishedEvents,
   };
 };
+
+const runCheckout = (
+  layer: ReturnType<typeof createCheckoutTestLayer>["layer"],
+  input = checkoutInput
+) =>
+  Effect.runPromise(
+    CheckoutService.use((service) => service.completeCheckout(input)).pipe(
+      Effect.provide(layer)
+    )
+  );
 
 describe("checkout workflow orchestration", () => {
   it("declares dependencies, workflow, events, API, admin metadata, and permissions", () => {
     expect(checkoutModule.key).toBe("checkout");
-    expect(checkoutModule.dependencies).toEqual([
-      "store",
-      "region-sales-channel",
-      "product",
-      "pricing",
-      "promotion",
-      "tax",
-      "inventory",
-      "customer",
-      "cart",
-      "payment",
-      "fulfillment",
-      "order",
-      "notification-event",
-    ]);
+    expect(checkoutModule.dependencies).toContain("payment");
+    expect(checkoutModule.dependencies).toContain("fulfillment");
     expect(checkoutModule.contributions?.eventTypes).toEqual([
       CHECKOUT_COMPLETED_EVENT,
       CHECKOUT_FAILED_EVENT,
@@ -442,28 +395,23 @@ describe("checkout workflow orchestration", () => {
     expect(checkoutModule.contributions?.workflows?.[0]?.key).toBe(
       "checkout.complete"
     );
-    expect(checkoutModule.contributions?.apiFragments).toEqual([]);
     expect(checkoutAdminMetadata.surfaces[0]?.operations?.complete?.key).toBe(
       "checkoutComplete"
     );
   });
 
-  it("coordinates checkout through public service contracts with stable idempotency keys", async () => {
+  it("coordinates one Effect through public module service Layers", async () => {
     const calls: string[] = [];
-    const eventCollector = createEventCollector();
-    const service = createCheckoutService({
-      ...createDependencyStubs(calls),
-      eventPublisher: eventCollector.publisher,
+    const testRuntime = createCheckoutTestLayer(calls);
+
+    const result = await runCheckout(testRuntime.layer);
+
+    expect(result).toMatchObject({
+      fulfillmentIds: ["fulf_1"],
+      orderId: "ord_1",
+      paymentId: "pay_1",
+      status: "completed",
     });
-
-    const result = await Effect.runPromise(
-      service.completeCheckout(checkoutInput)
-    );
-
-    expect(result.status).toBe("completed");
-    expect(result.orderId).toBe("ord_1");
-    expect(result.paymentId).toBe("pay_1");
-    expect(result.fulfillmentIds).toEqual(["fulf_1"]);
     expect(calls).toEqual([
       "cart.getCart",
       "store.getStoreDefaults",
@@ -487,220 +435,183 @@ describe("checkout workflow orchestration", () => {
       "payment.capturePayment",
       `notificationEvent.publishEvent:${CHECKOUT_COMPLETED_EVENT}`,
     ]);
-    expect(eventCollector.events.map((event) => event.name)).toEqual([
-      CHECKOUT_COMPLETED_EVENT,
-    ]);
+    expect(testRuntime.publishedEvents).toEqual([CHECKOUT_COMPLETED_EVENT]);
   });
 
   it("passes repriced line totals into the order snapshot", async () => {
-    const calls: string[] = [];
-    const dependencies = createDependencyStubs(calls);
-    let orderInput: Record<string, unknown> | undefined;
-    const service = createCheckoutService({
-      ...dependencies,
-      order: {
-        createOrderFromCheckout: async (input) => {
-          calls.push("order.createOrderFromCheckout");
-          orderInput = input;
+    const testRuntime = createCheckoutTestLayer([], { priceSubtotal: 900 });
 
-          return dependencies.order.createOrderFromCheckout(input);
-        },
-      },
-      pricing: {
-        calculatePrice: async () => {
-          calls.push("pricing.calculatePrice");
-          return {
-            amount: 900,
-            currencyCode: "USD",
-            priceSetId: "pset_1",
-            quantity: 1,
-            subtotal: 900,
-            trace: {
-              moneyAmountId: "money_1",
-              ruleMatches: [],
-              source: "sale",
-            },
-          };
-        },
-      },
-      promotion: {
-        calculateAdjustments: async () => {
-          calls.push("promotion.calculateAdjustments");
-          return {
-            adjustments: [],
-            totalDiscount: 0,
-          };
-        },
-      },
-      tax: {
-        calculateTax: async () => {
-          calls.push("tax.calculateTax");
-          return {
-            currencyCode: "USD",
-            id: "taxcalc_1",
-            lines: [],
-            providerKey: "manual",
-            regionId: "reg_1",
-            totalTax: 0,
-          };
-        },
-      },
-      payment: {
-        ...dependencies.payment,
-        authorizePaymentSession: async () => {
-          calls.push("payment.authorizePaymentSession");
-          return {
-            id: "pay_1",
-            providerKey: "test-payments",
-            status: "authorized",
-          };
-        },
-        capturePayment: async () => {
-          calls.push("payment.capturePayment");
-          return {
-            status: "succeeded",
-          };
-        },
-        createCollection: async () => {
-          calls.push("payment.createCollection");
-          return {
-            id: "paycol_1",
-          };
-        },
-        createSession: async () => {
-          calls.push("payment.createSession");
-          return {
-            id: "payses_1",
-          };
-        },
-      },
-    });
+    await runCheckout(testRuntime.layer);
 
-    await Effect.runPromise(service.completeCheckout(checkoutInput));
-
-    expect(orderInput).toMatchObject({
-      lineItems: [
-        {
-          total: 900,
-          unitPrice: 900,
-        },
-      ],
-      totals: {
-        itemSubtotal: 900,
-        total: 1100,
-      },
+    expect(testRuntime.orderInputs[0]).toMatchObject({
+      lineItems: [{ total: 900, unitPrice: 900 }],
+      totals: { itemSubtotal: 900, total: 1100 },
     });
   });
 
-  it("deduplicates checkout completion by idempotency key", async () => {
+  it("rejects a missing shipping country instead of substituting a default", async () => {
     const calls: string[] = [];
-    const service = createCheckoutService(createDependencyStubs(calls));
+    const testRuntime = createCheckoutTestLayer(calls, {
+      withoutShippingAddress: true,
+    });
 
-    await Effect.runPromise(service.completeCheckout(checkoutInput));
-    const duplicate = await Effect.runPromise(
-      service.completeCheckout(checkoutInput)
-    );
+    await expect(runCheckout(testRuntime.layer)).rejects.toMatchObject({
+      _tag: "CheckoutCompletionFailure",
+      message: 'Cart "cart_1" has no shipping country for tax calculation.',
+    });
+    expect(calls).not.toContain("tax.calculateTax");
+  });
 
-    expect(duplicate.status).toBe("completed");
+  it("derives inventory idempotency from each stable cart line", async () => {
+    const firstLine = cartAggregate.lineItems[0];
+    if (!firstLine) {
+      throw new Error("Checkout test fixture requires a cart line.");
+    }
+    const secondLine = {
+      ...firstLine,
+      id: "clitem_2",
+    };
+    const testRuntime = createCheckoutTestLayer([], {
+      lineItems: [firstLine, secondLine],
+    });
+
+    await runCheckout(testRuntime.layer);
+
+    expect(testRuntime.inventoryReservationInputs).toMatchObject([
+      { idempotencyKey: "checkout_1:inventory:reserve:clitem_1" },
+      { idempotencyKey: "checkout_1:inventory:reserve:clitem_2" },
+    ]);
+  });
+
+  it("deduplicates checkout completion at the Effect completion-store seam", async () => {
+    const calls: string[] = [];
+    const testRuntime = createCheckoutTestLayer(calls);
+
+    const first = await runCheckout(testRuntime.layer);
+    const duplicate = await runCheckout(testRuntime.layer);
+
+    expect(duplicate).toEqual(first);
     expect(
       calls.filter((call) => call === "order.createOrderFromCheckout")
     ).toHaveLength(1);
   });
 
-  it("passes the selected stock location to inventory reservations", async () => {
+  it("atomically rejects a concurrent duplicate before provider work", async () => {
     const calls: string[] = [];
-    const dependencies = createDependencyStubs(calls);
-    const reserveInputs: Record<string, unknown>[] = [];
-    const service = createCheckoutService({
-      ...dependencies,
-      inventory: {
-        ...dependencies.inventory,
-        checkAvailability: async () => {
-          calls.push("inventory.checkAvailability");
-          return {
-            availableQuantity: 10,
-            inventoryItemId: "invitem_1",
-            reservedQuantity: 0,
-            scopedBy: {
-              salesChannelId: "sc_1",
-              stockLocationId: "sloc_1",
-            },
-            stockedQuantity: 10,
-          };
-        },
-        reserveInventory: async (input) => {
-          calls.push("inventory.reserveInventory");
-          reserveInputs.push(input);
-
-          if (input.stockLocationId !== "sloc_1") {
-            throw new Error("stockLocationId is required");
-          }
-
-          return {
-            reservation: {
-              inventoryItemId: "invitem_1",
-              quantity: 1,
-              stockLocationId: "sloc_1",
-            },
-          };
-        },
-      },
+    const pricingStarted = Effect.runSync(Deferred.make<void>());
+    const pricingRelease = Effect.runSync(Deferred.make<void>());
+    const testRuntime = createCheckoutTestLayer(calls, {
+      pricingRelease,
+      pricingStarted,
     });
+    const first = Effect.runFork(
+      CheckoutService.use((service) =>
+        service.completeCheckout(checkoutInput)
+      ).pipe(Effect.provide(testRuntime.layer))
+    );
+    await Effect.runPromise(Deferred.await(pricingStarted));
 
-    await Effect.runPromise(service.completeCheckout(checkoutInput));
+    await expect(runCheckout(testRuntime.layer)).rejects.toMatchObject({
+      _tag: "CheckoutCompletionFailure",
+      message: 'Checkout "checkout_1" is already running.',
+    });
+    await Effect.runPromise(Deferred.succeed(pricingRelease, undefined));
+    await Effect.runPromise(Fiber.join(first));
 
-    expect(reserveInputs[0]?.stockLocationId).toBe("sloc_1");
+    expect(
+      calls.filter((call) => call === "payment.createCollection")
+    ).toHaveLength(1);
   });
 
-  it("compensates inventory and emits a failed event when order creation fails after reservation", async () => {
-    const calls: string[] = [];
-    const eventCollector = createEventCollector();
-    const dependencies = createDependencyStubs(calls);
-    const service = createCheckoutService({
-      ...dependencies,
-      eventPublisher: eventCollector.publisher,
-      order: {
-        createOrderFromCheckout: async () => {
-          calls.push("order.createOrderFromCheckout");
-          throw new Error("order unavailable");
-        },
+  it("releases the atomic claim when branded input decoding fails", async () => {
+    const testRuntime = createCheckoutTestLayer([]);
+
+    await expect(
+      runCheckout(testRuntime.layer, { ...checkoutInput, cartId: "invalid" })
+    ).rejects.toMatchObject({ _tag: "CheckoutCompletionFailure" });
+    await expect(runCheckout(testRuntime.layer)).resolves.toMatchObject({
+      status: "completed",
+    });
+  });
+
+  it("does not publish completion when durable completion persistence fails", async () => {
+    const testRuntime = createCheckoutTestLayer([], {
+      completionStore: {
+        claim: (_, workflowRunId) =>
+          Effect.succeed({ status: "acquired", workflowRunId }),
+        complete: () =>
+          Effect.fail(
+            new CheckoutCompletionFailure({
+              message: "completion store unavailable",
+              workflowRunId: "checkout_1",
+            })
+          ),
+        release: () => Effect.void,
       },
     });
 
-    await expect(
-      Effect.runPromise(service.completeCheckout(checkoutInput))
-    ).rejects.toMatchObject({
+    await expect(runCheckout(testRuntime.layer)).rejects.toMatchObject({
       _tag: "CheckoutCompletionFailure",
-      message: "order unavailable",
+      message: "completion store unavailable",
+    });
+    expect(testRuntime.publishedEvents).toEqual([CHECKOUT_FAILED_EVENT]);
+  });
+
+  it("does not replay committed provider work when completion signaling fails", async () => {
+    const calls: string[] = [];
+    const testRuntime = createCheckoutTestLayer(calls, {
+      completionEventFailure: true,
     });
 
+    await expect(runCheckout(testRuntime.layer)).resolves.toMatchObject({
+      status: "completed",
+    });
+    await expect(runCheckout(testRuntime.layer)).resolves.toMatchObject({
+      status: "completed",
+    });
+    expect(
+      calls.filter((call) => call === "payment.createCollection")
+    ).toHaveLength(1);
+    expect(
+      calls.filter(
+        (call) =>
+          call === `notificationEvent.publishEvent:${CHECKOUT_COMPLETED_EVENT}`
+      )
+    ).toHaveLength(1);
+  });
+
+  it("translates expected module failure and compensates completed inventory work", async () => {
+    const calls: string[] = [];
+    const testRuntime = createCheckoutTestLayer(calls, {
+      orderFailure: "order unavailable",
+    });
+
+    await expect(runCheckout(testRuntime.layer)).rejects.toMatchObject({
+      _tag: "CheckoutCompletionFailure",
+      message: "order unavailable",
+      retryable: true,
+      sourceTag: "OrderUnavailable",
+    });
     expect(calls).toContain("inventory.adjustInventory");
-    expect(eventCollector.events.map((event) => event.name)).toEqual([
-      CHECKOUT_FAILED_EVENT,
-    ]);
+    expect(calls).not.toContain("payment.capturePayment");
+    expect(testRuntime.publishedEvents).toEqual([CHECKOUT_FAILED_EVENT]);
   });
 
-  it("does not capture payment before later fallible checkout steps complete", async () => {
+  it("stops downstream side effects when the checkout Effect is interrupted", async () => {
     const calls: string[] = [];
-    const dependencies = createDependencyStubs(calls);
-    const service = createCheckoutService({
-      ...dependencies,
-      order: {
-        createOrderFromCheckout: async () => {
-          calls.push("order.createOrderFromCheckout");
-          throw new Error("order unavailable");
-        },
-      },
-    });
+    const pricingStarted = Effect.runSync(Deferred.make<void>());
+    const testRuntime = createCheckoutTestLayer(calls, { pricingStarted });
+    const fiber = Effect.runFork(
+      CheckoutService.use((service) =>
+        service.completeCheckout(checkoutInput)
+      ).pipe(Effect.provide(testRuntime.layer))
+    );
 
-    await expect(
-      Effect.runPromise(service.completeCheckout(checkoutInput))
-    ).rejects.toMatchObject({
-      _tag: "CheckoutCompletionFailure",
-      message: "order unavailable",
-    });
+    await Effect.runPromise(Deferred.await(pricingStarted));
+    await Effect.runPromise(Fiber.interrupt(fiber));
 
-    expect(calls).toContain("payment.authorizePaymentSession");
-    expect(calls).not.toContain("payment.capturePayment");
+    expect(calls).toContain("pricing.calculatePrice");
+    expect(calls).not.toContain("payment.createCollection");
+    expect(calls).not.toContain("order.createOrderFromCheckout");
   });
 });

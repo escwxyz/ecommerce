@@ -1,11 +1,12 @@
 export {
   CHECKOUT_COMPLETED_EVENT,
   CHECKOUT_FAILED_EVENT,
+  CheckoutCompletionStore,
   CheckoutService,
-  createCheckoutService,
+  CheckoutServiceLive,
+  createCheckoutCompletionStoreLayer,
   createCheckoutServiceLayer,
-  type CheckoutCompletionStore,
-  type CheckoutServiceDependencies,
+  type CheckoutCompletionClaim,
+  type CheckoutCompletionStoreShape,
   type CheckoutServiceShape,
-  type CreateCheckoutServiceOptions,
 } from "./checkout.service";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import {
@@ -43,7 +43,10 @@ const trackedFiles = (patterns: readonly string[]): readonly string[] => {
     throw new Error(result.stderr || "git ls-files failed");
   }
 
-  return result.stdout.split("\n").filter(Boolean);
+  return result.stdout
+    .split("\n")
+    .filter(Boolean)
+    .filter((path) => existsSync(join(repoRoot, path)));
 };
 
 const isBackendProductionSource = (path: string): boolean =>
