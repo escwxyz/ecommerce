@@ -4,6 +4,7 @@ import type { CheckoutCompletionResult } from "../domain";
 import { CheckoutCompletionFailure } from "../domain";
 import type {
   CheckoutCompletionClaim,
+  CheckoutCompletionEvent,
   CheckoutCompletionStoreShape,
 } from "../services";
 
@@ -22,6 +23,7 @@ export const createInMemoryCheckoutCompletionStore =
       string,
       | { readonly status: "running"; readonly workflowRunId: string }
       | {
+          readonly completionEvent: CheckoutCompletionEvent;
           readonly result: CheckoutCompletionResult;
           readonly status: "completed";
         }
@@ -57,12 +59,30 @@ export const createInMemoryCheckoutCompletionStore =
             workflowRunId,
           } as const);
         }),
-      complete: (input, result) =>
+      complete: (input, result, completionEvent) =>
         Effect.sync(() => {
           runs.set(createCheckoutCompletionKey(input), {
+            completionEvent,
             result,
             status: "completed",
           });
+        }),
+      markCompletionEventPersisted: (input, eventId) =>
+        Effect.sync(() => {
+          const key = createCheckoutCompletionKey(input);
+          const existing = runs.get(key);
+          if (
+            existing?.status === "completed" &&
+            existing.completionEvent.eventId === eventId
+          ) {
+            runs.set(key, {
+              ...existing,
+              completionEvent: {
+                ...existing.completionEvent,
+                status: "persisted",
+              },
+            });
+          }
         }),
       release: (input) =>
         Effect.sync(() => {

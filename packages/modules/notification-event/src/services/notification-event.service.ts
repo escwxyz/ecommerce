@@ -256,11 +256,12 @@ export const createNotificationEventService = ({
     listDispatches: repository.listDispatches,
     publishEvent: (input) =>
       Effect.gen(function* publishEventEffect() {
+        const { eventId, ...eventInput } = input;
         const emittedAt = clock.now();
         const envelope = createEventEnvelope({
-          ...input,
+          ...eventInput,
           emittedAt,
-          id: createPrefixedId(idGenerator, EVENT_ID_PREFIX),
+          id: eventId ?? createPrefixedId(idGenerator, EVENT_ID_PREFIX),
         });
         const outbox: EventOutboxRecord = {
           attempts: 0,

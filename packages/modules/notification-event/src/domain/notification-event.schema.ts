@@ -103,6 +103,7 @@ export const EventOutboxApiSchema = Schema.Struct({
 export const EventPublishInputSchema = Schema.Struct({
   causationId: Schema.optional(NotificationEventTrimmedStringSchema),
   correlationId: Schema.optional(NotificationEventTrimmedStringSchema),
+  eventId: Schema.optional(EventSerializedIdSchema),
   name: NotificationEventTrimmedStringSchema,
   payload: Schema.Unknown,
   sourceModule: NotificationEventTrimmedStringSchema,

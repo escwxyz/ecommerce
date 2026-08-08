@@ -114,7 +114,7 @@ const cartAggregate = {
 
 interface TestOverrides {
   readonly completionStore?: CheckoutCompletionStoreShape;
-  readonly completionEventFailure?: boolean;
+  readonly completionEventFailures?: number;
   readonly lineItems?: readonly (typeof cartAggregate.lineItems)[number][];
   readonly orderFailure?: string;
   readonly pricingRelease?: Deferred.Deferred<void>;
@@ -128,8 +128,12 @@ const createCheckoutTestLayer = (
   overrides: TestOverrides = {}
 ) => {
   const publishedEvents: string[] = [];
+  const completionEventInputs: Parameters<
+    NotificationEventServiceShape["publishEvent"]
+  >[0][] = [];
   const inventoryReservationInputs: unknown[] = [];
   const orderInputs: unknown[] = [];
+  let remainingCompletionEventFailures = overrides.completionEventFailures ?? 0;
   const priceSubtotal = overrides.priceSubtotal ?? 1000;
   const cart = {
     getCart: () =>
@@ -225,10 +229,14 @@ const createCheckoutTestLayer = (
     ) =>
       Effect.suspend(() => {
         calls.push(`notificationEvent.publishEvent:${input.name}`);
+        if (input.name === CHECKOUT_COMPLETED_EVENT) {
+          completionEventInputs.push(input);
+        }
         if (
-          overrides.completionEventFailure &&
+          remainingCompletionEventFailures > 0 &&
           input.name === CHECKOUT_COMPLETED_EVENT
         ) {
+          remainingCompletionEventFailures -= 1;
           return Effect.die(new Error("completion event unavailable"));
         }
         publishedEvents.push(input.name);
@@ -370,6 +378,7 @@ const createCheckoutTestLayer = (
     inventoryReservationInputs,
     orderInputs,
     publishedEvents,
+    completionEventInputs,
   };
 };
 
@@ -546,6 +555,7 @@ describe("checkout workflow orchestration", () => {
               workflowRunId: "checkout_1",
             })
           ),
+        markCompletionEventPersisted: () => Effect.void,
         release: () => Effect.void,
       },
     });
@@ -557,18 +567,24 @@ describe("checkout workflow orchestration", () => {
     expect(testRuntime.publishedEvents).toEqual([CHECKOUT_FAILED_EVENT]);
   });
 
-  it("does not replay committed provider work when completion signaling fails", async () => {
+  it("replays a pending completion event without repeating provider work", async () => {
     const calls: string[] = [];
     const testRuntime = createCheckoutTestLayer(calls, {
-      completionEventFailure: true,
+      completionEventFailures: 1,
     });
 
-    await expect(runCheckout(testRuntime.layer)).resolves.toMatchObject({
-      status: "completed",
-    });
-    await expect(runCheckout(testRuntime.layer)).resolves.toMatchObject({
-      status: "completed",
-    });
+    await expect(
+      runCheckout(testRuntime.layer, {
+        ...checkoutInput,
+        correlationId: "corr_original",
+      })
+    ).resolves.toMatchObject({ status: "completed" });
+    await expect(
+      runCheckout(testRuntime.layer, {
+        ...checkoutInput,
+        correlationId: "corr_retry",
+      })
+    ).resolves.toMatchObject({ status: "completed" });
     expect(
       calls.filter((call) => call === "payment.createCollection")
     ).toHaveLength(1);
@@ -577,7 +593,18 @@ describe("checkout workflow orchestration", () => {
         (call) =>
           call === `notificationEvent.publishEvent:${CHECKOUT_COMPLETED_EVENT}`
       )
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+    expect(testRuntime.publishedEvents).toEqual([CHECKOUT_COMPLETED_EVENT]);
+    expect(testRuntime.completionEventInputs).toEqual([
+      expect.objectContaining({
+        correlationId: "corr_original",
+        eventId: "evt_checkout_completed_workflow_checkout-run-1",
+      }),
+      expect.objectContaining({
+        correlationId: "corr_original",
+        eventId: "evt_checkout_completed_workflow_checkout-run-1",
+      }),
+    ]);
   });
 
   it("translates expected module failure and compensates completed inventory work", async () => {

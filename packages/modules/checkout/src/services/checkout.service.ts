@@ -86,10 +86,24 @@ export interface CheckoutServiceShape {
 export type CheckoutCompletionClaim =
   | { readonly status: "acquired"; readonly workflowRunId: string }
   | {
+      readonly completionEvent: CheckoutCompletionEvent;
       readonly result: CheckoutCompletionResult;
       readonly status: "completed";
     };
 
+/** Durable publication progress for Checkout's terminal completion event. */
+export interface CheckoutCompletionEvent {
+  readonly causationId?: string;
+  readonly correlationId?: string;
+  readonly eventId: string;
+  readonly status: "pending" | "persisted";
+}
+
+/**
+ * Persists Checkout's idempotency state. `complete` must atomically record the
+ * terminal result with its pending completion-event record so a later retry can
+ * replay durable outbox publication without replaying commerce side effects.
+ */
 export interface CheckoutCompletionStoreShape {
   readonly claim: (
     input: {
@@ -103,7 +117,16 @@ export interface CheckoutCompletionStoreShape {
       readonly cartId: string;
       readonly idempotencyKey: string;
     },
-    result: CheckoutCompletionResult
+    result: CheckoutCompletionResult,
+    completionEvent: CheckoutCompletionEvent
+  ) => EffectValue<void, CheckoutExpectedError>;
+  /** Marks the stable completion event as durably accepted by the event outbox. */
+  readonly markCompletionEventPersisted: (
+    input: {
+      readonly cartId: string;
+      readonly idempotencyKey: string;
+    },
+    eventId: string
   ) => EffectValue<void, CheckoutExpectedError>;
   readonly release: (input: {
     readonly cartId: string;
@@ -225,6 +248,9 @@ const createWorkflowRunId = (idGenerator: IdGeneratorServiceShape): string => {
   return id.startsWith("workflow_") ? id : `workflow_${id}`;
 };
 
+const createCompletionEventId = (workflowRunId: string): string =>
+  `evt_checkout_completed_${workflowRunId}`;
+
 const createCheckoutService = ({
   cart,
   clock,
@@ -265,21 +291,58 @@ const createCheckoutService = ({
   const publishEvent = (
     name: typeof CHECKOUT_COMPLETED_EVENT | typeof CHECKOUT_FAILED_EVENT,
     payload: unknown,
-    input: CompleteCheckoutInput,
-    workflowRunId: string
+    metadata: {
+      readonly cartId: string;
+      readonly causationId?: string;
+      readonly correlationId?: string;
+    },
+    workflowRunId: string,
+    eventId?: string
   ) =>
     asCheckoutEffect(
       notificationEvent.publishEvent({
-        causationId: input.causationId,
-        correlationId: input.correlationId,
+        causationId: metadata.causationId,
+        correlationId: metadata.correlationId,
+        ...(eventId ? { eventId } : {}),
         name,
         payload,
         sourceModule: "checkout",
-        subject: { id: input.cartId, type: "cart" },
+        subject: { id: metadata.cartId, type: "cart" },
         workflowRunId,
       }),
       workflowRunId
     ).pipe(Effect.asVoid);
+
+  const persistCompletionEvent = (
+    input: CompleteCheckoutInput,
+    completionEvent: CheckoutCompletionEvent,
+    result: CheckoutCompletionResult
+  ) =>
+    publishEvent(
+      CHECKOUT_COMPLETED_EVENT,
+      result,
+      {
+        cartId: result.cartId,
+        causationId: completionEvent.causationId,
+        correlationId: completionEvent.correlationId,
+      },
+      result.workflowRunId,
+      completionEvent.eventId
+    ).pipe(
+      Effect.andThen(
+        completionStore.markCompletionEventPersisted(
+          input,
+          completionEvent.eventId
+        )
+      ),
+      Effect.catchCause((cause) =>
+        Effect.logError("checkout.completion-event.pending", {
+          cause: Cause.pretty(cause),
+          eventId: completionEvent.eventId,
+          workflowRunId: result.workflowRunId,
+        })
+      )
+    );
 
   return {
     completeCheckout: (input) => {
@@ -300,6 +363,13 @@ const createCheckoutService = ({
           yield* Effect.annotateCurrentSpan({
             "commerce.checkout.workflow_run_id": claim.result.workflowRunId,
           });
+          if (claim.completionEvent.status === "pending") {
+            yield* persistCompletionEvent(
+              input,
+              claim.completionEvent,
+              claim.result
+            );
+          }
           return claim.result;
         }
 
@@ -827,9 +897,15 @@ const createCheckoutService = ({
               status: "completed",
               workflowRunId,
             };
-            yield* completionStore.complete(input, result);
+            const completionEvent: CheckoutCompletionEvent = {
+              causationId: input.causationId,
+              correlationId: input.correlationId,
+              eventId: createCompletionEventId(workflowRunId),
+              status: "pending",
+            };
+            yield* completionStore.complete(input, result, completionEvent);
 
-            return result;
+            return { completionEvent, result };
           }
         );
 
@@ -918,23 +994,13 @@ const createCheckoutService = ({
           )
         );
 
-        return yield* releasableProgram.pipe(
-          Effect.tap((result) =>
-            publishEvent(
-              CHECKOUT_COMPLETED_EVENT,
-              result,
-              input,
-              workflowRunId
-            ).pipe(
-              Effect.catchCause((cause) =>
-                Effect.logError("checkout.completion-event.failed", {
-                  cause: Cause.pretty(cause),
-                  workflowRunId,
-                })
-              )
-            )
-          )
+        const completed = yield* releasableProgram;
+        yield* persistCompletionEvent(
+          input,
+          completed.completionEvent,
+          completed.result
         );
+        return completed.result;
       }).pipe((checkoutEffect) =>
         withOperationTelemetry(checkoutEffect, {
           attributes: {

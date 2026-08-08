@@ -45,6 +45,38 @@ describe("notification event module foundation", () => {
     expect(published.outbox.status).toBe("pending");
   });
 
+  it("reuses a caller-supplied event ID as the durable outbox identity", async () => {
+    const repository = createInMemoryNotificationEventRepository();
+    const service = createNotificationEventService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["evt_generated"]),
+      notificationProviders: [],
+      repository,
+    });
+    const input = {
+      correlationId: "corr_replay",
+      eventId: "evt_checkout_completed_workflow_1",
+      name: "checkout.completed",
+      payload: { cartId: "cart_1" },
+      sourceModule: "checkout",
+      workflowRunId: "workflow_1",
+    };
+
+    const first = await Effect.runPromise(service.publishEvent(input));
+    const replay = await Effect.runPromise(service.publishEvent(input));
+    const pending = await Effect.runPromise(
+      repository.listPendingOutbox({
+        availableAt: new Date("2026-01-01T00:00:00.000Z"),
+        limit: 10,
+      })
+    );
+
+    expect(first.outbox.id).toBe(input.eventId);
+    expect(replay.outbox.id).toBe(input.eventId);
+    expect(pending).toMatchObject([{ id: input.eventId }]);
+    expect(pending).toHaveLength(1);
+  });
+
   it("moves exhausted event delivery attempts to a dead-letter record", async () => {
     const service = createNotificationEventService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
