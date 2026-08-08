@@ -28,6 +28,14 @@ Module state changes and their outbox events SHALL commit atomically, and workfl
 - **WHEN** the mutation requires downstream event delivery
 - **THEN** its outbox record MUST commit in the same local Effect SQL transaction
 
+#### Scenario: Checkout completion event publication is interrupted
+- **WHEN** Checkout records a terminal completion but its completion event has not yet been durably accepted by the outbox
+- **THEN** a retry MUST replay the stored completion event with the same event identity and MUST NOT repeat completed commerce side effects
+
+#### Scenario: Checkout terminal persistence is uncertain
+- **WHEN** terminal completion persistence fails after Checkout has invoked committed commerce side effects
+- **THEN** the completion claim MUST remain recoverable and uncertain, and retries MUST NOT reacquire the idempotency key or repeat those side effects
+
 ### Requirement: Workflow runtime remains adapter-based with Cloudflare primitives first
 Workflow contracts SHALL remain platform-neutral while Cloudflare Queues, Workflows, and Durable Objects provide the first production runtime Layers.
 

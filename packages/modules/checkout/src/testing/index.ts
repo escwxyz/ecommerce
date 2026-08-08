@@ -27,6 +27,11 @@ export const createInMemoryCheckoutCompletionStore =
           readonly result: CheckoutCompletionResult;
           readonly status: "completed";
         }
+      | {
+          readonly completionEvent: CheckoutCompletionEvent;
+          readonly result: CheckoutCompletionResult;
+          readonly status: "uncertain";
+        }
     >();
 
     return {
@@ -41,7 +46,10 @@ export const createInMemoryCheckoutCompletionStore =
         >(() => {
           const key = createCheckoutCompletionKey(input);
           const existing = runs.get(key);
-          if (existing?.status === "completed") {
+          if (
+            existing?.status === "completed" ||
+            existing?.status === "uncertain"
+          ) {
             return Effect.succeed(existing);
           }
           if (existing?.status === "running") {
@@ -65,6 +73,14 @@ export const createInMemoryCheckoutCompletionStore =
             completionEvent,
             result,
             status: "completed",
+          });
+        }),
+      markUncertain: (input, result, completionEvent) =>
+        Effect.sync(() => {
+          runs.set(createCheckoutCompletionKey(input), {
+            completionEvent,
+            result,
+            status: "uncertain",
           });
         }),
       markCompletionEventPersisted: (input, eventId) =>

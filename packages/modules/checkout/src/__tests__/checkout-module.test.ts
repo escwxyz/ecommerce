@@ -31,6 +31,7 @@ import {
   CheckoutService,
   CheckoutServiceLive,
   createCheckoutCompletionStoreLayer,
+  type CheckoutCompletionClaim,
   type CheckoutCompletionStoreShape,
 } from "../services";
 import { createInMemoryCheckoutCompletionStore } from "../testing";
@@ -543,11 +544,18 @@ describe("checkout workflow orchestration", () => {
     });
   });
 
-  it("does not publish completion when durable completion persistence fails", async () => {
-    const testRuntime = createCheckoutTestLayer([], {
+  it("retains an uncertain claim when terminal completion persistence fails", async () => {
+    const calls: string[] = [];
+    let uncertainClaim:
+      | Extract<CheckoutCompletionClaim, { readonly status: "uncertain" }>
+      | undefined;
+    let releaseCalls = 0;
+    const testRuntime = createCheckoutTestLayer(calls, {
       completionStore: {
         claim: (_, workflowRunId) =>
-          Effect.succeed({ status: "acquired", workflowRunId }),
+          Effect.succeed(
+            uncertainClaim ?? { status: "acquired", workflowRunId }
+          ),
         complete: () =>
           Effect.fail(
             new CheckoutCompletionFailure({
@@ -555,8 +563,19 @@ describe("checkout workflow orchestration", () => {
               workflowRunId: "checkout_1",
             })
           ),
+        markUncertain: (_, result, completionEvent) =>
+          Effect.sync(() => {
+            uncertainClaim = {
+              completionEvent,
+              result,
+              status: "uncertain",
+            };
+          }),
         markCompletionEventPersisted: () => Effect.void,
-        release: () => Effect.void,
+        release: () =>
+          Effect.sync(() => {
+            releaseCalls += 1;
+          }),
       },
     });
 
@@ -564,7 +583,18 @@ describe("checkout workflow orchestration", () => {
       _tag: "CheckoutCompletionFailure",
       message: "completion store unavailable",
     });
-    expect(testRuntime.publishedEvents).toEqual([CHECKOUT_FAILED_EVENT]);
+    await expect(runCheckout(testRuntime.layer)).rejects.toMatchObject({
+      _tag: "CheckoutCompletionFailure",
+      message: "Checkout completion persistence is uncertain.",
+    });
+    expect(releaseCalls).toBe(0);
+    expect(
+      calls.filter((call) => call === "payment.createCollection")
+    ).toHaveLength(1);
+    expect(
+      calls.filter((call) => call === "order.createOrderFromCheckout")
+    ).toHaveLength(1);
+    expect(testRuntime.publishedEvents).toEqual([]);
   });
 
   it("replays a pending completion event without repeating provider work", async () => {

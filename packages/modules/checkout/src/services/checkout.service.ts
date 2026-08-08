@@ -89,6 +89,11 @@ export type CheckoutCompletionClaim =
       readonly completionEvent: CheckoutCompletionEvent;
       readonly result: CheckoutCompletionResult;
       readonly status: "completed";
+    }
+  | {
+      readonly completionEvent: CheckoutCompletionEvent;
+      readonly result: CheckoutCompletionResult;
+      readonly status: "uncertain";
     };
 
 /** Durable publication progress for Checkout's terminal completion event. */
@@ -113,6 +118,19 @@ export interface CheckoutCompletionStoreShape {
     workflowRunId: string
   ) => EffectValue<CheckoutCompletionClaim, CheckoutExpectedError>;
   readonly complete: (
+    input: {
+      readonly cartId: string;
+      readonly idempotencyKey: string;
+    },
+    result: CheckoutCompletionResult,
+    completionEvent: CheckoutCompletionEvent
+  ) => EffectValue<void, CheckoutExpectedError>;
+  /**
+   * Records that terminal completion persistence could not be confirmed after
+   * commerce side effects completed. Adapters must retain this claim for
+   * recovery instead of allowing a new checkout run to acquire the key.
+   */
+  readonly markUncertain: (
     input: {
       readonly cartId: string;
       readonly idempotencyKey: string;
@@ -373,6 +391,18 @@ const createCheckoutService = ({
           return claim.result;
         }
 
+        if (claim.status === "uncertain") {
+          yield* Effect.annotateCurrentSpan({
+            "commerce.checkout.workflow_run_id": claim.result.workflowRunId,
+          });
+          return yield* new CheckoutCompletionFailure({
+            message: "Checkout completion persistence is uncertain.",
+            retryable: true,
+            sourceTag: "CheckoutCompletionUncertain",
+            workflowRunId: claim.result.workflowRunId,
+          });
+        }
+
         const { workflowRunId } = claim;
         yield* Effect.annotateCurrentSpan({
           "commerce.checkout.workflow_run_id": workflowRunId,
@@ -382,6 +412,7 @@ const createCheckoutService = ({
           fulfillmentIds: [],
           inventoryReservations: [],
         });
+        const terminalPersistenceUncertain = yield* Ref.make(false);
 
         const program = Effect.gen(
           // oxlint-disable-next-line eslint/complexity -- the ordered commerce policy remains local to Checkout
@@ -903,7 +934,29 @@ const createCheckoutService = ({
               eventId: createCompletionEventId(workflowRunId),
               status: "pending",
             };
-            yield* completionStore.complete(input, result, completionEvent);
+            yield* completionStore
+              .complete(input, result, completionEvent)
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.gen(function* markUncertainCompletionEffect() {
+                    yield* Ref.set(terminalPersistenceUncertain, true);
+                    yield* completionStore
+                      .markUncertain(input, result, completionEvent)
+                      .pipe(
+                        Effect.catchCause((markCause) =>
+                          Effect.logError(
+                            "checkout.completion-persistence.uncertain-mark.failed",
+                            {
+                              cause: Cause.pretty(markCause),
+                              workflowRunId,
+                            }
+                          )
+                        )
+                      );
+                    return yield* Effect.failCause(cause);
+                  })
+                )
+              );
 
             return { completionEvent, result };
           }
@@ -911,70 +964,81 @@ const createCheckoutService = ({
 
         const compensatedProgram = program.pipe(
           Effect.onError((cause) =>
-            Ref.get(state).pipe(
-              Effect.flatMap((failedState) =>
-                Effect.all(
-                  [
-                    ...failedState.fulfillmentIds
-                      .toReversed()
-                      .map((fulfillmentId) =>
-                        preserveCompensationProgress(
-                          asCheckoutEffect(
-                            fulfillment.cancelFulfillment({
-                              fulfillmentId,
-                              reason: "checkout-compensation",
-                            }),
-                            workflowRunId
-                          ),
-                          "fulfillment.cancel"
-                        )
-                      ),
-                    ...failedState.inventoryReservations
-                      .toReversed()
-                      .map((reservation) =>
-                        preserveCompensationProgress(
-                          asCheckoutEffect(
-                            inventory.adjustInventory({
-                              ...metadata,
-                              adjustment: reservation.quantity,
-                              idempotencyKey: `${input.idempotencyKey}:inventory:release:${reservation.reservationKey}`,
-                              inventoryItemId: reservation.inventoryItemId,
-                              reason: "restock",
-                              stockLocationId: reservation.stockLocationId,
-                            }),
-                            workflowRunId
-                          ),
-                          "inventory.release"
-                        )
-                      ),
-                    preserveCompensationProgress(
-                      (() => {
-                        const squashedCause = Cause.squash(cause);
-                        const checkoutFailure =
-                          squashedCause instanceof CheckoutCompletionFailure
-                            ? squashedCause
-                            : undefined;
+            Ref.get(terminalPersistenceUncertain).pipe(
+              Effect.flatMap((uncertain) => {
+                if (uncertain) {
+                  return Effect.logWarning(
+                    "checkout.completion-persistence.uncertain",
+                    { workflowRunId }
+                  );
+                }
 
-                        return publishEvent(
-                          CHECKOUT_FAILED_EVENT,
-                          {
-                            cartId: input.cartId,
-                            error: Cause.pretty(cause),
-                            outcome: operationOutcomeFromCause(cause),
-                            retryable: checkoutFailure?.retryable,
-                            sourceTag: checkoutFailure?.sourceTag,
-                            workflowRunId,
-                          },
-                          input,
-                          workflowRunId
-                        );
-                      })(),
-                      "event.publish-failed"
-                    ),
-                  ],
-                  { concurrency: 1, discard: true }
-                )
-              ),
+                return Ref.get(state).pipe(
+                  Effect.flatMap((failedState) =>
+                    Effect.all(
+                      [
+                        ...failedState.fulfillmentIds
+                          .toReversed()
+                          .map((fulfillmentId) =>
+                            preserveCompensationProgress(
+                              asCheckoutEffect(
+                                fulfillment.cancelFulfillment({
+                                  fulfillmentId,
+                                  reason: "checkout-compensation",
+                                }),
+                                workflowRunId
+                              ),
+                              "fulfillment.cancel"
+                            )
+                          ),
+                        ...failedState.inventoryReservations
+                          .toReversed()
+                          .map((reservation) =>
+                            preserveCompensationProgress(
+                              asCheckoutEffect(
+                                inventory.adjustInventory({
+                                  ...metadata,
+                                  adjustment: reservation.quantity,
+                                  idempotencyKey: `${input.idempotencyKey}:inventory:release:${reservation.reservationKey}`,
+                                  inventoryItemId: reservation.inventoryItemId,
+                                  reason: "restock",
+                                  stockLocationId: reservation.stockLocationId,
+                                }),
+                                workflowRunId
+                              ),
+                              "inventory.release"
+                            )
+                          ),
+                        preserveCompensationProgress(
+                          (() => {
+                            const squashedCause = Cause.squash(cause);
+                            const checkoutFailure =
+                              squashedCause instanceof CheckoutCompletionFailure
+                                ? squashedCause
+                                : undefined;
+
+                            return publishEvent(
+                              CHECKOUT_FAILED_EVENT,
+                              {
+                                cartId: input.cartId,
+                                error: Cause.pretty(cause),
+                                outcome: operationOutcomeFromCause(cause),
+                                retryable: checkoutFailure?.retryable,
+                                sourceTag: checkoutFailure?.sourceTag,
+                                workflowRunId,
+                              },
+                              input,
+                              workflowRunId
+                            );
+                          })(),
+                          "event.publish-failed"
+                        ),
+                      ],
+                      { concurrency: 1, discard: true }
+                    )
+                  )
+                );
+              }),
               Effect.catchCause(() => Effect.void)
             )
           )
@@ -982,14 +1046,20 @@ const createCheckoutService = ({
 
         const releasableProgram = compensatedProgram.pipe(
           Effect.onError(() =>
-            preserveCompensationProgress(
-              completionStore.release(input),
-              "completion-store.release"
-            ).pipe(
-              Effect.annotateLogs({
-                idempotencyKey: input.idempotencyKey,
-                workflowRunId,
-              })
+            Ref.get(terminalPersistenceUncertain).pipe(
+              Effect.flatMap((uncertain) =>
+                uncertain
+                  ? Effect.void
+                  : preserveCompensationProgress(
+                      completionStore.release(input),
+                      "completion-store.release"
+                    ).pipe(
+                      Effect.annotateLogs({
+                        idempotencyKey: input.idempotencyKey,
+                        workflowRunId,
+                      })
+                    )
+              )
             )
           )
         );
