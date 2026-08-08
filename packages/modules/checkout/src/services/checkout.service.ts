@@ -64,7 +64,7 @@ import {
   createTaxRegionIdEffect,
 } from "@ecommerce/tax";
 import type { TaxServiceShape } from "@ecommerce/tax";
-import { Cause, Context, Effect, Layer, Ref } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Ref } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 
 import type {
@@ -371,11 +371,33 @@ const createCheckoutService = ({
       });
 
       return Effect.gen(function* completeCheckoutEffect() {
+        const terminalPersistenceUncertain = yield* Ref.make(false);
         const proposedWorkflowRunId = createWorkflowRunId(idGenerator);
-        const claim = yield* completionStore.claim(
-          input,
-          proposedWorkflowRunId
+        const claim = yield* Effect.acquireRelease(
+          completionStore.claim(input, proposedWorkflowRunId),
+          (acquiredClaim, exit) => {
+            if (acquiredClaim.status !== "acquired" || Exit.isSuccess(exit)) {
+              return Effect.void;
+            }
+
+            return Ref.get(terminalPersistenceUncertain).pipe(
+              Effect.flatMap((uncertain) =>
+                uncertain
+                  ? Effect.void
+                  : preserveCompensationProgress(
+                      completionStore.release(input),
+                      "completion-store.release"
+                    ).pipe(
+                      Effect.annotateLogs({
+                        idempotencyKey: input.idempotencyKey,
+                        workflowRunId: acquiredClaim.workflowRunId,
+                      })
+                    )
+              )
+            );
+          }
         );
+        yield* Effect.yieldNow;
 
         if (claim.status === "completed") {
           yield* Effect.annotateCurrentSpan({
@@ -412,8 +434,6 @@ const createCheckoutService = ({
           fulfillmentIds: [],
           inventoryReservations: [],
         });
-        const terminalPersistenceUncertain = yield* Ref.make(false);
-
         const program = Effect.gen(
           // oxlint-disable-next-line eslint/complexity -- the ordered commerce policy remains local to Checkout
           function* orchestrateCheckoutEffect() {
@@ -1044,34 +1064,14 @@ const createCheckoutService = ({
           )
         );
 
-        const releasableProgram = compensatedProgram.pipe(
-          Effect.onError(() =>
-            Ref.get(terminalPersistenceUncertain).pipe(
-              Effect.flatMap((uncertain) =>
-                uncertain
-                  ? Effect.void
-                  : preserveCompensationProgress(
-                      completionStore.release(input),
-                      "completion-store.release"
-                    ).pipe(
-                      Effect.annotateLogs({
-                        idempotencyKey: input.idempotencyKey,
-                        workflowRunId,
-                      })
-                    )
-              )
-            )
-          )
-        );
-
-        const completed = yield* releasableProgram;
+        const completed = yield* compensatedProgram;
         yield* persistCompletionEvent(
           input,
           completed.completionEvent,
           completed.result
         );
         return completed.result;
-      }).pipe((checkoutEffect) =>
+      }).pipe(Effect.scoped, (checkoutEffect) =>
         withOperationTelemetry(checkoutEffect, {
           attributes: {
             cartId: input.cartId,

@@ -533,6 +533,36 @@ describe("checkout workflow orchestration", () => {
     ).toHaveLength(1);
   });
 
+  it("releases a claim when interrupted at the post-acquisition checkpoint", async () => {
+    const calls: string[] = [];
+    const claimAcquired = Effect.runSync(Deferred.make<void>());
+    const completionStore = createInMemoryCheckoutCompletionStore();
+    const testRuntime = createCheckoutTestLayer(calls, {
+      completionStore: {
+        ...completionStore,
+        claim: (input, workflowRunId) =>
+          completionStore
+            .claim(input, workflowRunId)
+            .pipe(Effect.tap(() => Deferred.succeed(claimAcquired, undefined))),
+      },
+    });
+    const fiber = Effect.runFork(
+      CheckoutService.use((service) =>
+        service.completeCheckout(checkoutInput)
+      ).pipe(Effect.provide(testRuntime.layer))
+    );
+
+    await Effect.runPromise(Deferred.await(claimAcquired));
+    await Effect.runPromise(Fiber.interrupt(fiber));
+
+    await expect(runCheckout(testRuntime.layer)).resolves.toMatchObject({
+      status: "completed",
+    });
+    expect(
+      calls.filter((call) => call === "payment.createCollection")
+    ).toHaveLength(1);
+  });
+
   it("releases the atomic claim when branded input decoding fails", async () => {
     const testRuntime = createCheckoutTestLayer([]);
 
