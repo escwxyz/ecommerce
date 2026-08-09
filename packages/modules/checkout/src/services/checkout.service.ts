@@ -886,20 +886,34 @@ const createCheckoutService = ({
 
             const toOrderLine = (
               calculated: (typeof calculatedLines)[number]
-            ) => ({
-              itemSnapshot: {
-                metadata: calculated.lineItem.metadata,
-                productId: calculated.lineItem.productId,
-                productTitle: calculated.lineItem.title,
-                sku: getMetadataString(calculated.lineItem.metadata, "sku"),
-                variantId: calculated.lineItem.variantId,
-                variantTitle: calculated.lineItem.title,
-              },
-              quantity: calculated.lineItem.quantity,
-              title: calculated.lineItem.title,
-              total: calculated.subtotal,
-              unitPrice: calculated.subtotal / calculated.lineItem.quantity,
-            });
+            ) => {
+              const unitPrice = Math.round(
+                calculated.subtotal / calculated.lineItem.quantity
+              );
+              const unitPriceRemainderMinorUnits =
+                calculated.subtotal - unitPrice * calculated.lineItem.quantity;
+
+              return {
+                itemSnapshot: {
+                  metadata: calculated.lineItem.metadata,
+                  productId: calculated.lineItem.productId,
+                  productTitle: calculated.lineItem.title,
+                  sku: getMetadataString(calculated.lineItem.metadata, "sku"),
+                  variantId: calculated.lineItem.variantId,
+                  variantTitle: calculated.lineItem.title,
+                },
+                ...(unitPriceRemainderMinorUnits === 0
+                  ? {}
+                  : {
+                      // The line total remains authoritative when equal unit pricing is inexact.
+                      metadata: { unitPriceRemainderMinorUnits },
+                    }),
+                quantity: calculated.lineItem.quantity,
+                title: calculated.lineItem.title,
+                total: calculated.subtotal,
+                unitPrice,
+              };
+            };
             const [firstCalculatedLine, ...remainingCalculatedLines] =
               calculatedLines;
             if (!firstCalculatedLine) {

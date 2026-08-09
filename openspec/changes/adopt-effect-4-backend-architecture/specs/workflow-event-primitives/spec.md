@@ -18,6 +18,10 @@ Checkout SHALL consume participating commerce modules through their public Effec
 - **WHEN** Checkout calculates a nonzero promotion discount for priced cart lines
 - **THEN** it MUST allocate the discount across those same lines before tax calculation, preserve the line identities, and reconcile the allocated tax bases to the discounted subtotal
 
+#### Scenario: Checkout stores an inexact unit-price division
+- **WHEN** a calculated checkout line total cannot be divided evenly by its quantity in minor currency units
+- **THEN** the Order line MUST retain that calculated total as authoritative, persist an integer rounded unit price, and record the signed division remainder in line metadata
+
 #### Scenario: Checkout fails after payment authorization
 - **WHEN** Checkout fails after authorizing a payment session and before capture
 - **THEN** it MUST void or cancel that authorization through a provider-backed, idempotent payment operation before releasing inventory reservations

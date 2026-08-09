@@ -473,6 +473,31 @@ describe("checkout workflow orchestration", () => {
     });
   });
 
+  it("stores an integer unit price and explicit remainder for an inexact line total", async () => {
+    const baseLineItem = cartAggregate.lineItems[0];
+    if (!baseLineItem) {
+      throw new Error("Checkout test fixture requires a cart line.");
+    }
+    const lineItem = { ...baseLineItem, quantity: 3 };
+    const testRuntime = createCheckoutTestLayer([], {
+      lineItems: [lineItem],
+      priceSubtotal: 1001,
+    });
+
+    await runCheckout(testRuntime.layer);
+
+    expect(testRuntime.orderInputs[0]).toMatchObject({
+      lineItems: [
+        {
+          metadata: { unitPriceRemainderMinorUnits: -1 },
+          quantity: 3,
+          total: 1001,
+          unitPrice: 334,
+        },
+      ],
+    });
+  });
+
   it("allocates a promotion discount across tax lines without changing line relationships", async () => {
     const firstLine = cartAggregate.lineItems[0];
     if (!firstLine) {
