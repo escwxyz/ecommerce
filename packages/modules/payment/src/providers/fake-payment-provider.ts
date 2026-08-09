@@ -37,6 +37,7 @@ export const createFakePaymentProvider = ({
       "checkout-sessions",
       "payment-intents",
       "captures",
+      "cancellations",
       "refunds",
       "webhooks",
     ],
@@ -48,6 +49,13 @@ export const createFakePaymentProvider = ({
         providerId: id,
         reusable: true,
         type: "card",
+      }),
+    cancelPaymentIntent: (input) =>
+      Effect.succeed({
+        amount: { amount: 0, currencyCode: "USD" },
+        id: input.paymentIntentId,
+        providerId: id,
+        status: "canceled",
       }),
     capturePaymentIntent: (input) =>
       Effect.succeed({

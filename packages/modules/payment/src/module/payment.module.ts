@@ -5,6 +5,7 @@ import { paymentAdminSurfaces } from "../admin";
 import { paymentPermissionList } from "../permissions";
 import {
   PAYMENT_AUTHORIZED_EVENT,
+  PAYMENT_CANCELED_EVENT,
   PAYMENT_CAPTURED_EVENT,
   PAYMENT_COLLECTION_CREATED_EVENT,
   PAYMENT_REFUNDED_EVENT,
@@ -26,6 +27,7 @@ export const paymentModule = defineCommerceModule({
       PAYMENT_COLLECTION_CREATED_EVENT,
       PAYMENT_SESSION_CREATED_EVENT,
       PAYMENT_AUTHORIZED_EVENT,
+      PAYMENT_CANCELED_EVENT,
       PAYMENT_CAPTURED_EVENT,
       PAYMENT_REFUNDED_EVENT,
       PAYMENT_WEBHOOK_APPLIED_EVENT,
@@ -38,6 +40,10 @@ export const paymentModule = defineCommerceModule({
       },
       {
         name: "payment.capture",
+        run: () => Effect.succeed({ output: null }),
+      },
+      {
+        name: "payment.cancel-authorization",
         run: () => Effect.succeed({ output: null }),
       },
       {

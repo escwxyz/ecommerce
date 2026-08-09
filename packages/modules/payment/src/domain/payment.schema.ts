@@ -288,6 +288,11 @@ export const CapturePaymentInputSchema = Schema.Struct({
   paymentId: PaymentIdSchema,
 });
 
+export const CancelPaymentInputSchema = Schema.Struct({
+  idempotencyKey: PaymentTrimmedStringSchema,
+  paymentId: PaymentIdSchema,
+});
+
 export const PaymentRefundSchema = Schema.Struct({
   amount: PaymentNonNegativeIntegerSchema,
   createdAt: Schema.Date,

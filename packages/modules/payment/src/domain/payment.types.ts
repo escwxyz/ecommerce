@@ -5,6 +5,7 @@ import type { PaymentExpectedError } from "./payment.errors";
 import type {
   AttachPaymentMethodInputSchema,
   AuthorizePaymentSessionInputSchema,
+  CancelPaymentInputSchema,
   CapturePaymentInputSchema,
   CreatePaymentAccountHolderInputSchema,
   CreatePaymentCollectionInputSchema,
@@ -64,6 +65,7 @@ export type CreatePaymentSessionInput =
   typeof CreatePaymentSessionInputSchema.Type;
 export type AuthorizePaymentSessionInput =
   typeof AuthorizePaymentSessionInputSchema.Type;
+export type CancelPaymentInput = typeof CancelPaymentInputSchema.Type;
 export type CapturePaymentInput = typeof CapturePaymentInputSchema.Type;
 export type RefundPaymentInput = typeof RefundPaymentInputSchema.Type;
 export type CreatePaymentAccountHolderInput =

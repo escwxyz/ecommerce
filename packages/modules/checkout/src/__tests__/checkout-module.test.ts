@@ -11,6 +11,7 @@ import type { NotificationEventServiceShape } from "@ecommerce/notification-even
 import { OrderService } from "@ecommerce/order";
 import type { OrderServiceShape } from "@ecommerce/order";
 import { PaymentService } from "@ecommerce/payment";
+import type { PaymentServiceShape } from "@ecommerce/payment";
 import { PricingService } from "@ecommerce/pricing";
 import { ProductService } from "@ecommerce/product";
 import { PromotionService } from "@ecommerce/promotion";
@@ -137,6 +138,9 @@ const createCheckoutTestLayer = (
   >[0][] = [];
   const inventoryReservationInputs: unknown[] = [];
   const orderInputs: unknown[] = [];
+  const paymentCancellationInputs: Parameters<
+    PaymentServiceShape["cancelPayment"]
+  >[0][] = [];
   const taxInputs: Parameters<TaxServiceShape["calculateTax"]>[0][] = [];
   let remainingCompletionEventFailures = overrides.completionEventFailures ?? 0;
   const priceSubtotal = overrides.priceSubtotal ?? 1000;
@@ -275,6 +279,18 @@ const createCheckoutTestLayer = (
           status: "authorized",
         };
       }),
+    cancelPayment: (
+      input: Parameters<PaymentServiceShape["cancelPayment"]>[0]
+    ) =>
+      Effect.sync(() => {
+        calls.push("payment.cancelPayment");
+        paymentCancellationInputs.push(input);
+        return {
+          id: input.paymentId,
+          providerKey: "test-payments",
+          status: "canceled",
+        };
+      }),
     capturePayment: () =>
       Effect.sync(() => {
         calls.push("payment.capturePayment");
@@ -391,6 +407,7 @@ const createCheckoutTestLayer = (
     layer: CheckoutServiceLive.pipe(Layer.provide(dependencies)),
     inventoryReservationInputs,
     orderInputs,
+    paymentCancellationInputs,
     publishedEvents,
     completionEventInputs,
     taxInputs,
@@ -481,7 +498,7 @@ describe("checkout workflow orchestration", () => {
     const lineItem = { ...baseLineItem, quantity: 3 };
     const testRuntime = createCheckoutTestLayer([], {
       lineItems: [lineItem],
-      priceSubtotal: 1001,
+      priceSubtotal: 100,
     });
 
     await runCheckout(testRuntime.layer);
@@ -489,10 +506,10 @@ describe("checkout workflow orchestration", () => {
     expect(testRuntime.orderInputs[0]).toMatchObject({
       lineItems: [
         {
-          metadata: { unitPriceRemainderMinorUnits: -1 },
+          metadata: { unitPriceRemainderMinorUnits: 1 },
           quantity: 3,
-          total: 1001,
-          unitPrice: 334,
+          total: 100,
+          unitPrice: 33,
         },
       ],
     });
@@ -573,6 +590,32 @@ describe("checkout workflow orchestration", () => {
     ).toHaveLength(1);
   });
 
+  it("releases only a pre-orchestration completion claim", async () => {
+    const completionStore = createInMemoryCheckoutCompletionStore();
+    const claim = await Effect.runPromise(
+      completionStore.claim(checkoutInput, "workflow_claim-1")
+    );
+
+    expect(claim).toEqual({
+      status: "pre-orchestration",
+      workflowRunId: "workflow_claim-1",
+    });
+    await Effect.runPromise(
+      completionStore.beginOrchestration(checkoutInput, "workflow_claim-1")
+    );
+    await Effect.runPromise(completionStore.release(checkoutInput));
+
+    await expect(
+      Effect.runPromise(
+        completionStore.claim(checkoutInput, "workflow_claim-2")
+      )
+    ).rejects.toMatchObject({
+      _tag: "CheckoutCompletionFailure",
+      message: 'Checkout "checkout_1" is already running.',
+      workflowRunId: "workflow_claim-1",
+    });
+  });
+
   it("atomically rejects a concurrent duplicate before provider work", async () => {
     const calls: string[] = [];
     const pricingStarted = Effect.runSync(Deferred.make<void>());
@@ -604,9 +647,18 @@ describe("checkout workflow orchestration", () => {
     const calls: string[] = [];
     const claimAcquired = Effect.runSync(Deferred.make<void>());
     const completionStore = createInMemoryCheckoutCompletionStore();
+    let orchestrationStarts = 0;
     const testRuntime = createCheckoutTestLayer(calls, {
       completionStore: {
         ...completionStore,
+        beginOrchestration: (input, workflowRunId) =>
+          Effect.sync(() => {
+            orchestrationStarts += 1;
+          }).pipe(
+            Effect.andThen(
+              completionStore.beginOrchestration(input, workflowRunId)
+            )
+          ),
         claim: (input, workflowRunId) =>
           completionStore
             .claim(input, workflowRunId)
@@ -628,6 +680,7 @@ describe("checkout workflow orchestration", () => {
     expect(
       calls.filter((call) => call === "payment.createCollection")
     ).toHaveLength(1);
+    expect(orchestrationStarts).toBe(1);
   });
 
   it("releases the atomic claim when branded input decoding fails", async () => {
@@ -641,28 +694,39 @@ describe("checkout workflow orchestration", () => {
     });
   });
 
-  it("retains an uncertain claim when terminal completion persistence fails", async () => {
+  it("recovers an uncertain claim without repeating commerce side effects", async () => {
     const calls: string[] = [];
-    let uncertainClaim:
-      | Extract<CheckoutCompletionClaim, { readonly status: "uncertain" }>
-      | undefined;
+    let storedClaim: CheckoutCompletionClaim | undefined;
+    let completeAttempts = 0;
     let releaseCalls = 0;
     const testRuntime = createCheckoutTestLayer(calls, {
       completionStore: {
         claim: (_, workflowRunId) =>
           Effect.succeed(
-            uncertainClaim ?? { status: "acquired", workflowRunId }
+            storedClaim ?? { status: "pre-orchestration", workflowRunId }
           ),
-        complete: () =>
-          Effect.fail(
-            new CheckoutCompletionFailure({
-              message: "completion store unavailable",
-              workflowRunId: "checkout_1",
-            })
-          ),
+        beginOrchestration: () => Effect.void,
+        complete: (_, result, completionEvent) =>
+          Effect.suspend(() => {
+            completeAttempts += 1;
+            if (completeAttempts === 1) {
+              return Effect.fail(
+                new CheckoutCompletionFailure({
+                  message: "completion store unavailable",
+                  workflowRunId: "checkout_1",
+                })
+              );
+            }
+            storedClaim = {
+              completionEvent,
+              result,
+              status: "completed",
+            };
+            return Effect.void;
+          }),
         markUncertain: (_, result, completionEvent) =>
           Effect.sync(() => {
-            uncertainClaim = {
+            storedClaim = {
               completionEvent,
               result,
               status: "uncertain",
@@ -680,9 +744,8 @@ describe("checkout workflow orchestration", () => {
       _tag: "CheckoutCompletionFailure",
       message: "completion store unavailable",
     });
-    await expect(runCheckout(testRuntime.layer)).rejects.toMatchObject({
-      _tag: "CheckoutCompletionFailure",
-      message: "Checkout completion persistence is uncertain.",
+    await expect(runCheckout(testRuntime.layer)).resolves.toMatchObject({
+      status: "completed",
     });
     expect(releaseCalls).toBe(0);
     expect(
@@ -691,7 +754,16 @@ describe("checkout workflow orchestration", () => {
     expect(
       calls.filter((call) => call === "order.createOrderFromCheckout")
     ).toHaveLength(1);
-    expect(testRuntime.publishedEvents).toEqual([]);
+    expect(testRuntime.publishedEvents).toEqual([CHECKOUT_COMPLETED_EVENT]);
+    expect(testRuntime.completionEventInputs).toEqual([
+      expect.objectContaining({
+        eventId: "evt_checkout_completed_workflow_checkout-run-1",
+        payload: expect.objectContaining({
+          orderId: "ord_1",
+          workflowRunId: "workflow_checkout-run-1",
+        }),
+      }),
+    ]);
   });
 
   it("replays a pending completion event without repeating provider work", async () => {
@@ -747,6 +819,20 @@ describe("checkout workflow orchestration", () => {
       sourceTag: "OrderUnavailable",
     });
     expect(calls).toContain("inventory.adjustInventory");
+    expect(
+      testRuntime.paymentCancellationInputs.map((input) => ({
+        idempotencyKey: input.idempotencyKey,
+        paymentId: String(input.paymentId),
+      }))
+    ).toEqual([
+      {
+        idempotencyKey: "checkout_1:payment:cancel-authorization",
+        paymentId: "pay_1",
+      },
+    ]);
+    expect(calls.indexOf("payment.cancelPayment")).toBeLessThan(
+      calls.indexOf("inventory.adjustInventory")
+    );
     expect(calls).not.toContain("payment.capturePayment");
     expect(testRuntime.publishedEvents).toEqual([CHECKOUT_FAILED_EVENT]);
   });

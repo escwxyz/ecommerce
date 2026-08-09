@@ -39,7 +39,7 @@ import {
   PaymentService,
   createPaymentMethodIdEffect,
 } from "@ecommerce/payment";
-import type { PaymentServiceShape } from "@ecommerce/payment";
+import type { PaymentId, PaymentServiceShape } from "@ecommerce/payment";
 import { PricingService, createPriceSetIdEffect } from "@ecommerce/pricing";
 import type { PricingServiceShape } from "@ecommerce/pricing";
 import { ProductService, createProductIdEffect } from "@ecommerce/product";
@@ -84,7 +84,7 @@ export interface CheckoutServiceShape {
 }
 
 export type CheckoutCompletionClaim =
-  | { readonly status: "acquired"; readonly workflowRunId: string }
+  | { readonly status: "pre-orchestration"; readonly workflowRunId: string }
   | {
       readonly completionEvent: CheckoutCompletionEvent;
       readonly result: CheckoutCompletionResult;
@@ -95,6 +95,10 @@ export type CheckoutCompletionClaim =
       readonly result: CheckoutCompletionResult;
       readonly status: "uncertain";
     };
+
+export type CheckoutCompletionState =
+  | CheckoutCompletionClaim
+  | { readonly status: "orchestration"; readonly workflowRunId: string };
 
 /** Durable publication progress for Checkout's terminal completion event. */
 export interface CheckoutCompletionEvent {
@@ -117,6 +121,14 @@ export interface CheckoutCompletionStoreShape {
     },
     workflowRunId: string
   ) => EffectValue<CheckoutCompletionClaim, CheckoutExpectedError>;
+  /** Atomically transitions the owned claim into orchestration. */
+  readonly beginOrchestration: (
+    input: {
+      readonly cartId: string;
+      readonly idempotencyKey: string;
+    },
+    workflowRunId: string
+  ) => EffectValue<void, CheckoutExpectedError>;
   readonly complete: (
     input: {
       readonly cartId: string;
@@ -146,6 +158,7 @@ export interface CheckoutCompletionStoreShape {
     },
     eventId: string
   ) => EffectValue<void, CheckoutExpectedError>;
+  /** Releases only a claim that has not transitioned into orchestration. */
   readonly release: (input: {
     readonly cartId: string;
     readonly idempotencyKey: string;
@@ -164,6 +177,7 @@ export const CheckoutService = Context.Service<CheckoutServiceShape>(
 );
 
 interface CheckoutRunState {
+  readonly authorizedPaymentId?: PaymentId;
   readonly fulfillmentIds: readonly FulfillmentId[];
   readonly inventoryReservations: readonly {
     readonly inventoryItemId: InventoryItemId;
@@ -171,6 +185,7 @@ interface CheckoutRunState {
     readonly reservationKey: string;
     readonly stockLocationId: StockLocationId;
   }[];
+  readonly paymentCaptured: boolean;
 }
 
 const getMetadataString = (
@@ -405,17 +420,24 @@ const createCheckoutService = ({
 
       return Effect.gen(function* completeCheckoutEffect() {
         const terminalPersistenceUncertain = yield* Ref.make(false);
+        const orchestrationStarted = yield* Ref.make(false);
         const proposedWorkflowRunId = createWorkflowRunId(idGenerator);
         const claim = yield* Effect.acquireRelease(
           completionStore.claim(input, proposedWorkflowRunId),
           (acquiredClaim, exit) => {
-            if (acquiredClaim.status !== "acquired" || Exit.isSuccess(exit)) {
+            if (
+              acquiredClaim.status !== "pre-orchestration" ||
+              Exit.isSuccess(exit)
+            ) {
               return Effect.void;
             }
 
-            return Ref.get(terminalPersistenceUncertain).pipe(
-              Effect.flatMap((uncertain) =>
-                uncertain
+            return Effect.all([
+              Ref.get(orchestrationStarted),
+              Ref.get(terminalPersistenceUncertain),
+            ]).pipe(
+              Effect.flatMap(([started, uncertain]) =>
+                started || uncertain
                   ? Effect.void
                   : preserveCompensationProgress(
                       completionStore.release(input),
@@ -450,12 +472,19 @@ const createCheckoutService = ({
           yield* Effect.annotateCurrentSpan({
             "commerce.checkout.workflow_run_id": claim.result.workflowRunId,
           });
-          return yield* new CheckoutCompletionFailure({
-            message: "Checkout completion persistence is uncertain.",
-            retryable: true,
-            sourceTag: "CheckoutCompletionUncertain",
-            workflowRunId: claim.result.workflowRunId,
-          });
+          yield* completionStore.complete(
+            input,
+            claim.result,
+            claim.completionEvent
+          );
+          if (claim.completionEvent.status === "pending") {
+            yield* persistCompletionEvent(
+              input,
+              claim.completionEvent,
+              claim.result
+            );
+          }
+          return claim.result;
         }
 
         const { workflowRunId } = claim;
@@ -463,9 +492,23 @@ const createCheckoutService = ({
           "commerce.checkout.workflow_run_id": workflowRunId,
         });
         const metadata = buildMetadata(input, workflowRunId);
+        const cartId = yield* asCheckoutEffect(
+          createCartIdEffect(input.cartId),
+          workflowRunId
+        );
+        const shippingOptionId = yield* asCheckoutEffect(
+          createShippingOptionIdEffect(input.shippingOptionId),
+          workflowRunId
+        );
+        yield* Effect.uninterruptible(
+          completionStore
+            .beginOrchestration(input, workflowRunId)
+            .pipe(Effect.andThen(Ref.set(orchestrationStarted, true)))
+        );
         const state = yield* Ref.make<CheckoutRunState>({
           fulfillmentIds: [],
           inventoryReservations: [],
+          paymentCaptured: false,
         });
         const program = Effect.gen(
           // oxlint-disable-next-line eslint/complexity -- the ordered commerce policy remains local to Checkout
@@ -475,14 +518,6 @@ const createCheckoutService = ({
               "commerce.checkout.started_at": startedAt.toISOString(),
               "commerce.checkout.workflow_run_id": workflowRunId,
             });
-            const cartId = yield* asCheckoutEffect(
-              createCartIdEffect(input.cartId),
-              workflowRunId
-            );
-            const shippingOptionId = yield* asCheckoutEffect(
-              createShippingOptionIdEffect(input.shippingOptionId),
-              workflowRunId
-            );
             const aggregate = yield* asCheckoutEffect(
               cart.getCart(cartId),
               workflowRunId
@@ -883,6 +918,10 @@ const createCheckoutService = ({
               }),
               workflowRunId
             );
+            yield* Ref.update(state, (current) => ({
+              ...current,
+              authorizedPaymentId: authorizedPayment.id,
+            }));
 
             const toOrderLine = (
               calculated: (typeof calculatedLines)[number]
@@ -989,6 +1028,10 @@ const createCheckoutService = ({
                 }),
                 workflowRunId
               );
+              yield* Ref.update(state, (current) => ({
+                ...current,
+                paymentCaptured: true,
+              }));
             }
 
             const completedState = yield* Ref.get(state);
@@ -1063,6 +1106,21 @@ const createCheckoutService = ({
                               "fulfillment.cancel"
                             )
                           ),
+                        ...(failedState.authorizedPaymentId &&
+                        !failedState.paymentCaptured
+                          ? [
+                              preserveCompensationProgress(
+                                asCheckoutEffect(
+                                  payment.cancelPayment({
+                                    idempotencyKey: `${input.idempotencyKey}:payment:cancel-authorization`,
+                                    paymentId: failedState.authorizedPaymentId,
+                                  }),
+                                  workflowRunId
+                                ),
+                                "payment.cancel-authorization"
+                              ),
+                            ]
+                          : []),
                         ...failedState.inventoryReservations
                           .toReversed()
                           .map((reservation) =>

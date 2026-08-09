@@ -13,8 +13,13 @@ describe("payment module", () => {
     expect(paymentModule.key).toBe("payment");
     expect(paymentModule.schema?.tables).toEqual([]);
     expect(contributions.eventTypes).toContain("payment.authorized");
+    expect(contributions.eventTypes).toContain("payment.canceled");
     expect(contributions.workflowSteps?.map((step) => step.name)).toEqual(
-      expect.arrayContaining(["payment.authorize-session", "payment.capture"])
+      expect.arrayContaining([
+        "payment.authorize-session",
+        "payment.cancel-authorization",
+        "payment.capture",
+      ])
     );
     expect(contributions.apiFragments).toEqual([]);
     expect(contributions.adminSurfaces?.[0]?.label).toBe("Payments");

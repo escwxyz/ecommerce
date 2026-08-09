@@ -8,6 +8,7 @@ export {
   createCheckoutServiceLayer,
   type CheckoutCompletionClaim,
   type CheckoutCompletionEvent,
+  type CheckoutCompletionState,
   type CheckoutCompletionStoreShape,
   type CheckoutServiceShape,
 } from "./checkout.service";

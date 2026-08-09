@@ -16,21 +16,46 @@ Checkout SHALL consume participating commerce modules through their public Effec
 
 #### Scenario: Checkout taxes a promotion-discounted cart
 - **WHEN** Checkout calculates a nonzero promotion discount for priced cart lines
-- **THEN** it MUST allocate the discount across those same lines before tax calculation, preserve the line identities, and reconcile the allocated tax bases to the discounted subtotal
+- **THEN** the discounted line subtotals MUST be the authoritative tax basis
+- **AND THEN** Checkout MUST allocate the discount across those same lines before tax calculation, preserve each line identity and quantity, and reconcile the allocated tax bases exactly to the discounted cart subtotal
 
 #### Scenario: Checkout stores an inexact unit-price division
 - **WHEN** a calculated checkout line total cannot be divided evenly by its quantity in minor currency units
-- **THEN** the Order line MUST retain that calculated total as authoritative, persist an integer rounded unit price, and record the signed division remainder in line metadata
+- **THEN** the Order line MUST retain that calculated total as authoritative and persist `Math.round(total / quantity)` as its integer unit price, using nearest-integer rounding with half values toward positive infinity
+- **AND THEN** line metadata MUST record `unitPriceRemainderMinorUnits = total - (roundedUnitPrice * quantity)` as a signed integer so `total = (unitPrice * quantity) + unitPriceRemainderMinorUnits`
+- **AND THEN** a total of `100` with quantity `3` MUST persist unit price `33` and remainder `1`
 
 #### Scenario: Checkout fails after payment authorization
 - **WHEN** Checkout fails after authorizing a payment session and before capture
 - **THEN** it MUST void or cancel that authorization through a provider-backed, idempotent payment operation before releasing inventory reservations
 - **AND THEN** the operation MUST accept the authorization payment identifier and a dedicated compensation idempotency key
-
-> **Current capability gap:** `PaymentService` and `PaymentProvider` expose capture and refund operations but no authorization void/cancel operation. Checkout cannot safely compensate an uncaptured authorization until that contract is added; a refund is not a substitute.
+- **AND THEN** Checkout MUST NOT mark compensation complete unless the provider confirms the authorization is canceled; a refund is not a substitute for canceling an uncaptured authorization
 
 ### Requirement: Workflow runs support idempotent execution state
 Workflow runtimes SHALL persist step attempts and outcomes so replay after interruption does not duplicate completed side effects.
+
+The durable Checkout claim SHALL use these states and transitions:
+
+| State | Meaning | Allowed transitions |
+| --- | --- | --- |
+| `pre-orchestration` | The idempotency key is owned, but no commerce orchestration has started. | `orchestration`, or release to no claim. |
+| `orchestration` | Commerce orchestration has durably started for the stored workflow run. | `completed` after terminal result and completion event are persisted together, or `uncertain` when that terminal persistence cannot be confirmed. |
+| `completed` | The terminal result and stable completion-event identity and payload are durable. | Remains `completed`; pending event publication may advance only the event status to persisted. |
+| `uncertain` | Commerce side effects completed, but terminal result persistence was not confirmed. The state retains the same result and completion-event identity and payload. | `completed` after retry confirms terminal persistence, using the existing claim. |
+
+Release SHALL be legal only from `pre-orchestration`. The adapter MUST reject or ignore release from `orchestration`, `completed`, or `uncertain`.
+
+#### Scenario: Checkout begins orchestration
+- **WHEN** Checkout has decoded pre-orchestration inputs and is ready to invoke its first commerce operation
+- **THEN** it MUST durably transition the owned claim from `pre-orchestration` to `orchestration` before invoking that operation
+
+#### Scenario: Checkout releases before orchestration
+- **WHEN** Checkout is interrupted or input decoding fails while its claim remains `pre-orchestration`
+- **THEN** it MUST release the claim only after verifying orchestration never started
+
+#### Scenario: Checkout retry finds orchestration in progress
+- **WHEN** a retry finds an `orchestration` claim
+- **THEN** it MUST preserve the existing workflow run identity and resume through persisted workflow step outcomes rather than reacquire the idempotency key or start a new run
 
 #### Scenario: Workflow resumes after interruption
 - **WHEN** persisted state shows that a step completed
@@ -49,11 +74,12 @@ Module state changes and their outbox events SHALL commit atomically, and workfl
 
 #### Scenario: Checkout terminal persistence is uncertain
 - **WHEN** terminal completion persistence fails after Checkout has invoked committed commerce side effects
-- **THEN** the completion claim MUST remain recoverable and uncertain, and retries MUST NOT reacquire the idempotency key or repeat those side effects
+- **THEN** the completion claim MUST retain the result plus the stable completion-event identity and payload in `uncertain`
+- **AND THEN** a retry MUST find that same claim, persist it as `completed`, and publish the retained pending event without reacquiring the idempotency key or repeating commerce side effects
 
 #### Scenario: Checkout is interrupted after acquiring its claim
 - **WHEN** cancellation arrives after Checkout acquires its idempotency claim but before it starts orchestration
-- **THEN** cleanup MUST release the claim so a later checkout can acquire it
+- **THEN** cleanup MUST verify the claim is still `pre-orchestration` and release it so a later checkout can acquire it
 
 ### Requirement: Workflow runtime remains adapter-based with Cloudflare primitives first
 Workflow contracts SHALL remain platform-neutral while Cloudflare Queues, Workflows, and Durable Objects provide the first production runtime Layers.

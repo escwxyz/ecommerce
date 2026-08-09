@@ -13,6 +13,7 @@ import { nanoid } from "nanoid";
 import type {
   AttachPaymentMethodInput,
   AuthorizePaymentSessionInput,
+  CancelPaymentInput,
   CapturePaymentInput,
   CreatePaymentAccountHolderInput,
   CreatePaymentCollectionInput,
@@ -65,6 +66,7 @@ export const PAYMENT_COLLECTION_CREATED_EVENT =
   "payment.collection-created" as const;
 export const PAYMENT_SESSION_CREATED_EVENT = "payment.session-created" as const;
 export const PAYMENT_AUTHORIZED_EVENT = "payment.authorized" as const;
+export const PAYMENT_CANCELED_EVENT = "payment.canceled" as const;
 export const PAYMENT_CAPTURED_EVENT = "payment.captured" as const;
 export const PAYMENT_REFUNDED_EVENT = "payment.refunded" as const;
 export const PAYMENT_WEBHOOK_APPLIED_EVENT = "payment.webhook-applied" as const;
@@ -78,6 +80,9 @@ export interface PaymentServiceShape {
   ) => EffectValue<PaymentMethod, PaymentExpectedError>;
   readonly authorizePaymentSession: (
     input: AuthorizePaymentSessionInput
+  ) => EffectValue<Payment, PaymentExpectedError>;
+  readonly cancelPayment: (
+    input: CancelPaymentInput
   ) => EffectValue<Payment, PaymentExpectedError>;
   readonly capturePayment: (
     input: CapturePaymentInput
@@ -453,6 +458,55 @@ export const createPaymentService = ({
           session,
           status: getPaymentStatusFromProvider(intent.status),
         });
+      }),
+    cancelPayment: (input) =>
+      Effect.gen(function* cancelPaymentEffect() {
+        const payment = yield* repository.findPaymentById(input.paymentId);
+
+        if (!payment) {
+          return yield* new PaymentNotFound({ paymentId: input.paymentId });
+        }
+        if (payment.status === "canceled") {
+          return payment;
+        }
+        if (payment.status !== "authorized") {
+          return yield* new PaymentValidationFailure({
+            message: `Payment "${payment.id}" cannot be canceled from status "${payment.status}".`,
+          });
+        }
+
+        const provider = yield* requireProvider(
+          providerRegistry,
+          payment.providerKey
+        );
+        const canceledIntent = yield* provider
+          .cancelPaymentIntent({
+            correlation: providerCorrelation(input.idempotencyKey),
+            idempotencyKey: input.idempotencyKey,
+            paymentIntentId: payment.providerPaymentIntentId,
+          })
+          .pipe(
+            Effect.mapError(() =>
+              mapProviderFailure("Payment authorization cancellation failed.")
+            )
+          );
+
+        if (canceledIntent.status !== "canceled") {
+          return yield* new PaymentValidationFailure({
+            message: `Payment provider did not cancel payment "${payment.id}".`,
+          });
+        }
+
+        const canceledPayment: Payment = {
+          ...payment,
+          status: "canceled",
+          updatedAt: clock.now(),
+        };
+        yield* updateCollectionStatus(
+          yield* requireCollection(repository, payment.collectionId),
+          "canceled"
+        );
+        return yield* repository.savePayment(canceledPayment);
       }),
     capturePayment: (input) =>
       Effect.gen(function* capturePaymentEffect() {
