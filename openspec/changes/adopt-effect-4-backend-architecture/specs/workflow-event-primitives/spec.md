@@ -18,6 +18,13 @@ Checkout SHALL consume participating commerce modules through their public Effec
 - **WHEN** Checkout calculates a nonzero promotion discount for priced cart lines
 - **THEN** it MUST allocate the discount across those same lines before tax calculation, preserve the line identities, and reconcile the allocated tax bases to the discounted subtotal
 
+#### Scenario: Checkout fails after payment authorization
+- **WHEN** Checkout fails after authorizing a payment session and before capture
+- **THEN** it MUST void or cancel that authorization through a provider-backed, idempotent payment operation before releasing inventory reservations
+- **AND THEN** the operation MUST accept the authorization payment identifier and a dedicated compensation idempotency key
+
+> **Current capability gap:** `PaymentService` and `PaymentProvider` expose capture and refund operations but no authorization void/cancel operation. Checkout cannot safely compensate an uncaptured authorization until that contract is added; a refund is not a substitute.
+
 ### Requirement: Workflow runs support idempotent execution state
 Workflow runtimes SHALL persist step attempts and outcomes so replay after interruption does not duplicate completed side effects.
 
