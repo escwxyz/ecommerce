@@ -20,6 +20,7 @@ import {
 } from "@ecommerce/region-sales-channel";
 import { StoreService } from "@ecommerce/store";
 import { TaxService } from "@ecommerce/tax";
+import type { TaxServiceShape } from "@ecommerce/tax";
 import { Context, Deferred, Effect, Fiber, Layer } from "effect";
 
 import { checkoutAdminMetadata } from "../admin";
@@ -118,9 +119,11 @@ interface TestOverrides {
   readonly completionEventFailures?: number;
   readonly lineItems?: readonly (typeof cartAggregate.lineItems)[number][];
   readonly orderFailure?: string;
+  readonly priceSubtotals?: readonly number[];
   readonly pricingRelease?: Deferred.Deferred<void>;
   readonly priceSubtotal?: number;
   readonly pricingStarted?: Deferred.Deferred<void>;
+  readonly promotionDiscount?: number;
   readonly withoutShippingAddress?: boolean;
 }
 
@@ -134,8 +137,10 @@ const createCheckoutTestLayer = (
   >[0][] = [];
   const inventoryReservationInputs: unknown[] = [];
   const orderInputs: unknown[] = [];
+  const taxInputs: Parameters<TaxServiceShape["calculateTax"]>[0][] = [];
   let remainingCompletionEventFailures = overrides.completionEventFailures ?? 0;
   const priceSubtotal = overrides.priceSubtotal ?? 1000;
+  let priceCalculationIndex = 0;
   const cart = {
     getCart: () =>
       Effect.sync(() => {
@@ -287,22 +292,26 @@ const createCheckoutTestLayer = (
       }),
   };
   const pricing = {
-    calculatePrice: () =>
-      Effect.sync(() => calls.push("pricing.calculatePrice")).pipe(
+    calculatePrice: () => {
+      const calculatedSubtotal =
+        overrides.priceSubtotals?.[priceCalculationIndex++] ?? priceSubtotal;
+
+      return Effect.sync(() => calls.push("pricing.calculatePrice")).pipe(
         Effect.andThen(
           overrides.pricingStarted
             ? Deferred.succeed(overrides.pricingStarted, undefined).pipe(
                 Effect.andThen(
                   overrides.pricingRelease
                     ? Deferred.await(overrides.pricingRelease).pipe(
-                        Effect.as({ subtotal: priceSubtotal })
+                        Effect.as({ subtotal: calculatedSubtotal })
                       )
                     : Effect.never
                 )
               )
-            : Effect.succeed({ subtotal: priceSubtotal })
+            : Effect.succeed({ subtotal: calculatedSubtotal })
         )
-      ),
+      );
+    },
   };
   const product = {
     validateProductVariant: () =>
@@ -315,7 +324,10 @@ const createCheckoutTestLayer = (
     calculateAdjustments: () =>
       Effect.sync(() => {
         calls.push("promotion.calculateAdjustments");
-        return { totalDiscount: overrides.priceSubtotal ? 0 : 100 };
+        return {
+          totalDiscount:
+            overrides.promotionDiscount ?? (overrides.priceSubtotal ? 0 : 100),
+        };
       }),
   };
   const region = {
@@ -346,9 +358,10 @@ const createCheckoutTestLayer = (
     }),
   };
   const tax = {
-    calculateTax: () =>
+    calculateTax: (input: Parameters<TaxServiceShape["calculateTax"]>[0]) =>
       Effect.sync(() => {
         calls.push("tax.calculateTax");
+        taxInputs.push(input);
         return { totalTax: overrides.priceSubtotal ? 0 : 90 };
       }),
   };
@@ -380,6 +393,7 @@ const createCheckoutTestLayer = (
     orderInputs,
     publishedEvents,
     completionEventInputs,
+    taxInputs,
   };
 };
 
@@ -456,6 +470,34 @@ describe("checkout workflow orchestration", () => {
     expect(testRuntime.orderInputs[0]).toMatchObject({
       lineItems: [{ total: 900, unitPrice: 900 }],
       totals: { itemSubtotal: 900, total: 1100 },
+    });
+  });
+
+  it("allocates a promotion discount across tax lines without changing line relationships", async () => {
+    const firstLine = cartAggregate.lineItems[0];
+    if (!firstLine) {
+      throw new Error("Checkout test fixture requires a cart line.");
+    }
+    const secondLine = { ...firstLine, id: "clitem_2" };
+    const testRuntime = createCheckoutTestLayer([], {
+      lineItems: [firstLine, secondLine],
+      priceSubtotals: [600, 400],
+      promotionDiscount: -250,
+    });
+
+    await runCheckout(testRuntime.layer);
+
+    expect(testRuntime.taxInputs).toMatchObject([
+      {
+        items: [
+          { id: "clitem_1", quantity: 1, subtotal: 450 },
+          { id: "clitem_2", quantity: 1, subtotal: 300 },
+        ],
+      },
+    ]);
+    expect(testRuntime.orderInputs[0]).toMatchObject({
+      lineItems: [{ total: 600 }, { total: 400 }],
+      totals: { discountTotal: 250, itemSubtotal: 1000, subtotal: 750 },
     });
   });
 

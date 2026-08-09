@@ -14,6 +14,10 @@ Checkout SHALL consume participating commerce modules through their public Effec
 - **WHEN** a caller invokes `CheckoutService.completeCheckout`
 - **THEN** sequencing, typed expected-error translation, idempotency, event publication, interruption, and compensation MUST remain inside that Effect
 
+#### Scenario: Checkout taxes a promotion-discounted cart
+- **WHEN** Checkout calculates a nonzero promotion discount for priced cart lines
+- **THEN** it MUST allocate the discount across those same lines before tax calculation, preserve the line identities, and reconcile the allocated tax bases to the discounted subtotal
+
 ### Requirement: Workflow runs support idempotent execution state
 Workflow runtimes SHALL persist step attempts and outcomes so replay after interruption does not duplicate completed side effects.
 

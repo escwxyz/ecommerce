@@ -269,6 +269,39 @@ const createWorkflowRunId = (idGenerator: IdGeneratorServiceShape): string => {
 const createCompletionEventId = (workflowRunId: string): string =>
   `evt_checkout_completed_${workflowRunId}`;
 
+const allocateDiscountedLineSubtotals = <Line>(
+  calculatedLines: readonly {
+    readonly lineItem: Line;
+    readonly subtotal: number;
+  }[],
+  totalDiscount: number
+) => {
+  const itemSubtotal = calculatedLines.reduce(
+    (total, line) => total + Math.max(line.subtotal, 0),
+    0
+  );
+  let remainingDiscount = Math.min(Math.abs(totalDiscount), itemSubtotal);
+  let remainingSubtotal = itemSubtotal;
+
+  return calculatedLines.map((line, index) => {
+    const subtotal = Math.max(line.subtotal, 0);
+    const isFinalLine = index === calculatedLines.length - 1;
+    let lineDiscount = 0;
+    if (isFinalLine) {
+      lineDiscount = Math.min(remainingDiscount, subtotal);
+    } else if (remainingSubtotal > 0) {
+      lineDiscount = Math.min(
+        subtotal,
+        Math.floor((remainingDiscount * subtotal) / remainingSubtotal)
+      );
+    }
+
+    remainingDiscount -= lineDiscount;
+    remainingSubtotal -= subtotal;
+    return { ...line, subtotal: subtotal - lineDiscount };
+  });
+};
+
 const createCheckoutService = ({
   cart,
   clock,
@@ -626,6 +659,15 @@ const createCheckoutService = ({
               }),
               workflowRunId
             );
+            const discountedLines = allocateDiscountedLineSubtotals(
+              calculatedLines,
+              promotionResult.totalDiscount
+            );
+            const discountedSubtotal = discountedLines.reduce(
+              (sum, calculated) => sum + calculated.subtotal,
+              0
+            );
+            const discountTotal = itemSubtotal - discountedSubtotal;
             const taxRegionValue = getMetadataString(
               aggregate.cart.metadata,
               "taxRegionId"
@@ -650,7 +692,7 @@ const createCheckoutService = ({
             }
             // oxlint-disable unicorn/no-array-method-this-argument -- Effect.forEach is not Array.forEach
             const taxItems = yield* Effect.forEach(
-              calculatedLines,
+              discountedLines,
               ({ lineItem, subtotal }) =>
                 Effect.gen(function* createTaxLineEffect() {
                   const taxCategoryValue = getMetadataString(
@@ -710,15 +752,11 @@ const createCheckoutService = ({
               );
             }
 
-            const discountedSubtotal = Math.max(
-              itemSubtotal - promotionResult.totalDiscount,
-              0
-            );
             const shippingTotal = shippingOption.priceAmount ?? 0;
             const totals = {
-              adjustmentTotal: -promotionResult.totalDiscount,
+              adjustmentTotal: -discountTotal,
               currencyCode: aggregate.cart.currencyCode,
-              discountTotal: promotionResult.totalDiscount,
+              discountTotal,
               giftCardTotal: aggregate.cart.totals.giftCardTotal,
               itemSubtotal,
               shippingTotal,
