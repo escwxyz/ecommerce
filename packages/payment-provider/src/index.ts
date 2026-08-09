@@ -7,6 +7,7 @@ export type PaymentProviderCapability =
   | "checkout-sessions"
   | "payment-intents"
   | "captures"
+  | "cancellations"
   | "refunds"
   | "subscriptions"
   | "invoices"
@@ -110,6 +111,12 @@ export interface PaymentProviderIntent {
 
 export interface CapturePaymentProviderIntentInput {
   readonly amount?: PaymentProviderMoney;
+  readonly correlation?: PaymentProviderCorrelationContext;
+  readonly idempotencyKey: string;
+  readonly paymentIntentId: string;
+}
+
+export interface CancelPaymentProviderIntentInput {
   readonly correlation?: PaymentProviderCorrelationContext;
   readonly idempotencyKey: string;
   readonly paymentIntentId: string;
@@ -246,6 +253,9 @@ export interface PaymentProvider {
     input: AttachPaymentProviderMethodInput
   ) => PaymentProviderEffect<PaymentProviderPaymentMethod>;
   readonly capabilities: readonly PaymentProviderCapability[];
+  readonly cancelPaymentIntent: (
+    input: CancelPaymentProviderIntentInput
+  ) => PaymentProviderEffect<PaymentProviderIntent>;
   readonly capturePaymentIntent: (
     input: CapturePaymentProviderIntentInput
   ) => PaymentProviderEffect<PaymentProviderIntent>;
@@ -277,6 +287,7 @@ export const definePaymentProvider = <const Provider extends PaymentProvider>(
 type PromisePaymentProvider = Omit<
   PaymentProvider,
   | "attachPaymentMethod"
+  | "cancelPaymentIntent"
   | "capturePaymentIntent"
   | "createCheckoutSession"
   | "createCustomer"
@@ -288,6 +299,9 @@ type PromisePaymentProvider = Omit<
   readonly attachPaymentMethod: (
     input: AttachPaymentProviderMethodInput
   ) => Promise<PaymentProviderPaymentMethod>;
+  readonly cancelPaymentIntent: (
+    input: CancelPaymentProviderIntentInput
+  ) => Promise<PaymentProviderIntent>;
   readonly capturePaymentIntent: (
     input: CapturePaymentProviderIntentInput
   ) => Promise<PaymentProviderIntent>;
@@ -336,6 +350,11 @@ export const createPaymentProviderFromPromiseProvider = (
         try: () => provider.attachPaymentMethod(input),
       }),
     capabilities: provider.capabilities,
+    cancelPaymentIntent: (input) =>
+      Effect.tryPromise({
+        catch: () => toProviderFailure(provider.id, "authorization cancel"),
+        try: () => provider.cancelPaymentIntent(input),
+      }),
     capturePaymentIntent: (input) =>
       Effect.tryPromise({
         catch: () => toProviderFailure(provider.id, "capture"),

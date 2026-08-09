@@ -108,6 +108,50 @@ describe("payment Effect service", () => {
     ).resolves.toMatchObject({ status: "authorized" });
   });
 
+  it("idempotently cancels an authorized payment through its provider", async () => {
+    const { repository, service } = createPaymentTestKit();
+    await Effect.runPromise(service.registerProvider("fake"));
+    const collection = await Effect.runPromise(
+      service.createCollection({
+        amount: 1200,
+        cartId: "cart_cancel",
+        currencyCode: "usd",
+      })
+    );
+    const session = await Effect.runPromise(
+      service.createSession({
+        collectionId: collection.id,
+        idempotencyKey: "session_cancel",
+        providerKey: "fake",
+      })
+    );
+    const payment = await Effect.runPromise(
+      service.authorizePaymentSession({
+        idempotencyKey: "authorize_cancel",
+        sessionId: session.id,
+      })
+    );
+
+    const canceled = await Effect.runPromise(
+      service.cancelPayment({
+        idempotencyKey: "checkout_1:payment:cancel-authorization",
+        paymentId: payment.id,
+      })
+    );
+    const duplicate = await Effect.runPromise(
+      service.cancelPayment({
+        idempotencyKey: "checkout_1:payment:cancel-authorization",
+        paymentId: payment.id,
+      })
+    );
+
+    expect(canceled.status).toBe("canceled");
+    expect(duplicate.id).toBe(canceled.id);
+    await expect(
+      Effect.runPromise(repository.findCollectionById(collection.id))
+    ).resolves.toMatchObject({ status: "canceled" });
+  });
+
   it("maps provider webhook events into normalized payment actions", async () => {
     const { provider, service } = createPaymentTestKit();
     const occurredAt = new Date("2026-01-01T00:00:00.000Z");

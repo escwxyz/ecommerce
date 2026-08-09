@@ -14,6 +14,7 @@ describe("payment provider foundation", () => {
         "checkout-sessions",
         "payment-intents",
         "captures",
+        "cancellations",
         "refunds",
         "webhooks",
       ],
@@ -36,6 +37,16 @@ describe("payment provider foundation", () => {
           id: input.paymentIntentId,
           providerId: "fake-provider",
           status: "captured",
+        }),
+      cancelPaymentIntent: (input) =>
+        Effect.succeed({
+          amount: {
+            amount: 1000,
+            currencyCode: "USD",
+          },
+          id: input.paymentIntentId,
+          providerId: "fake-provider",
+          status: "canceled",
         }),
       createCheckoutSession: (input) =>
         Effect.succeed({
@@ -114,6 +125,12 @@ describe("payment provider foundation", () => {
         idempotencyKey: "intent:cart_1",
       })
     );
+    const canceledIntent = await Effect.runPromise(
+      provider.cancelPaymentIntent({
+        idempotencyKey: "checkout_1:payment:cancel-authorization",
+        paymentIntentId: intent.id,
+      })
+    );
     const webhook = await Effect.runPromise(
       provider.parseWebhook({
         headers: {
@@ -124,6 +141,10 @@ describe("payment provider foundation", () => {
     );
 
     expect(provider.capabilities).toContain("refunds");
+    expect(canceledIntent).toMatchObject({
+      id: "pi_1",
+      status: "canceled",
+    });
     expect(intent).toMatchObject({
       customerId: "cus_1",
       providerId: "fake-provider",

@@ -80,6 +80,43 @@ task:
     TypeScript target seeing `Array.prototype.toSorted` from
     `@ecommerce/core`.
 
+## Effect-native Checkout follow-up (2026-08-06)
+
+- `bun run --cwd packages/modules/checkout check-types`
+  - Result: passed.
+- `bun run --cwd packages/modules/checkout test`
+  - Result: 14 pass, 0 fail.
+  - Coverage: public Effect service composition, repricing, idempotency, typed
+    failure compensation, interruption, atomic concurrent claims, explicit
+    tax-region inputs, per-line Inventory idempotency, and terminal completion
+    persistence/signaling failure.
+- `bun run --cwd packages/modules/payment check-types && bun run --cwd packages/modules/payment test`
+  - Result: typecheck passed; 7 tests passed.
+- `bun run --cwd packages/modules/fulfillment check-types && bun run --cwd packages/modules/fulfillment test`
+  - Result: typecheck passed; 6 tests passed.
+- `bun run --cwd packages/api test`
+  - Result: 65 pass, 0 fail.
+- `bun run --cwd apps/server check-types && bun run --cwd apps/server test`
+  - Result: typecheck passed; 32 tests passed.
+- `bun run --cwd packages/core test`
+  - Result: 124 pass, 0 fail.
+- `bun x turbo check-types --filter=!web`
+  - Result: 26/26 backend typecheck tasks successful.
+- `bun run test`
+  - Result: 24/24 workspace test tasks successful.
+- `bun run build`
+  - Result: 2/2 build tasks successful.
+  - Notes: the existing `cloudflare:workers` externalization and web chunk-size
+    warnings remain non-fatal.
+- Targeted `oxlint` and `oxfmt` verification for the changed Checkout, Payment,
+  Fulfillment, server boundary-test, and core boundary-test files passed.
+- `openspec status --change "adopt-effect-4-backend-architecture"`
+  - Result: 4/4 artifacts complete.
+
+Production checkout remains intentionally disabled until terminal provider
+Layers and a durable `CheckoutCompletionStore` adapter are registered in the
+deployment composition root.
+
 ## Requirement coverage
 
 The following requirements are covered by implementation plus the verification

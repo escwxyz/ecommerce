@@ -51,4 +51,32 @@ describe("checkout module import boundaries", () => {
 
     expect(violations).toEqual([]);
   });
+
+  it("keeps checkout orchestration on one Effect execution model", async () => {
+    const checkoutServiceSource = await Bun.file(
+      new URL("../services/checkout.service.ts", import.meta.url)
+    ).text();
+    const paymentServiceSource = await Bun.file(
+      new URL(
+        "../../../payment/src/services/payment.service.ts",
+        import.meta.url
+      )
+    ).text();
+    const fulfillmentServiceSource = await Bun.file(
+      new URL(
+        "../../../fulfillment/src/services/fulfillment.service.ts",
+        import.meta.url
+      )
+    ).text();
+
+    expect(checkoutServiceSource).not.toContain("Promise<");
+    expect(checkoutServiceSource).not.toContain("Effect.runPromise");
+    expect(checkoutServiceSource).not.toMatch(/Checkout\w+Contract/);
+    expect(paymentServiceSource).not.toContain(
+      "createPaymentPromiseServiceFromEffectService"
+    );
+    expect(fulfillmentServiceSource).not.toContain(
+      "createFulfillmentPromiseServiceFromEffectService"
+    );
+  });
 });

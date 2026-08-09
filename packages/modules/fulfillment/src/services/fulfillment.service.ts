@@ -641,32 +641,3 @@ export const createFulfillmentService = ({
 export const createFulfillmentServiceLayer = (
   service: FulfillmentServiceShape
 ) => Layer.succeed(FulfillmentService, service);
-
-/** Temporary Promise facade until checkout consumes FulfillmentService directly. */
-export const createFulfillmentPromiseServiceFromEffectService = (
-  service: FulfillmentServiceShape
-) => ({
-  cancelFulfillment: (input: CancelFulfillmentInput) =>
-    Effect.runPromise(service.cancelFulfillment(input)),
-  createFulfillment: (input: CreateFulfillmentInput) =>
-    Effect.runPromise(service.createFulfillment(input)),
-  createFulfillmentSet: (input: CreateFulfillmentSetInput) =>
-    Effect.runPromise(service.createFulfillmentSet(input)),
-  createServiceZone: (input: CreateServiceZoneInput) =>
-    Effect.runPromise(service.createServiceZone(input)),
-  createShippingOption: (input: CreateShippingOptionInput) =>
-    Effect.runPromise(service.createShippingOption(input)),
-  createShippingProfile: (input: CreateShippingProfileInput) =>
-    Effect.runPromise(service.createShippingProfile(input)),
-  getFulfillmentDetail: (id: FulfillmentId) =>
-    Effect.runPromise(service.getFulfillmentDetail(id)),
-  listFulfillments: () => Effect.runPromise(service.listFulfillments),
-  listShippingOptions: (input?: ShippingOptionLookupInput) =>
-    Effect.runPromise(service.listShippingOptions(input)),
-  rateShippingOption: (shippingOptionId: ShippingOptionId) =>
-    Effect.runPromise(service.rateShippingOption(shippingOptionId)),
-  registerProvider: (providerKey: string) =>
-    Effect.runPromise(service.registerProvider(providerKey)),
-  trackShipment: (input: TrackShipmentInput) =>
-    Effect.runPromise(service.trackShipment(input)),
-});

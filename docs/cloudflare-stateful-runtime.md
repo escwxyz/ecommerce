@@ -198,14 +198,15 @@ following module summary remains useful:
 - Payment has no Durable Object or actor-local state owner yet; PostgreSQL is
   authoritative for the migrated payment slice. Provider calls remain behind the
   Effect-native payment-provider boundary rather than actor-local state.
-- Checkout now has an Effect-facing service and admin Effect HTTP contract, but
-  the server golden-path composition still uses temporary checkout-only Promise
-  facades over cart, promotion, tax, fulfillment, payment, order, and
-  notification-event until checkout accepts migrated Effect service
-  dependencies directly.
-  The legacy checkout Zod/oRPC package surface and server oRPC route have been
-  removed; the credential-free golden path exercises the composed Effect
-  checkout service directly.
+- Checkout orchestration consumes migrated module services directly through an
+  Effect Layer. The server-owned Promise facades and development seed
+  substitutions are gone, and deterministic tests exercise success, failure,
+  idempotency, compensation, and interruption through one
+  `CheckoutService.completeCheckout` Effect. The in-memory completion store is
+  test-only and implements atomic claim/complete/release behavior; production
+  still requires a durable adapter before exposing the checkout HTTP
+  contribution. Clock and identifier services remain explicit Layer
+  requirements.
 - Order has no Durable Object or actor-local state owner yet. PostgreSQL is
   authoritative for order records, line items, transactions, transitions, and
   post-purchase operations; the Effect Worker foundation currently uses an

@@ -7,6 +7,8 @@ export class CheckoutCompletionFailure extends Schema.TaggedErrorClass<CheckoutC
   "CheckoutCompletionFailure",
   {
     message: CheckoutTrimmedStringSchema,
+    retryable: Schema.optional(Schema.Boolean),
+    sourceTag: Schema.optional(CheckoutTrimmedStringSchema),
     workflowRunId: CheckoutTrimmedStringSchema,
   }
 ) {}
