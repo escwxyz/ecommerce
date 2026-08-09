@@ -27,6 +27,10 @@ import {
   KeyedActorCommandSchema,
   KeyedActorService,
 } from "@ecommerce/core/stateful";
+import {
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
+} from "@ecommerce/core/testing";
 import { createNotificationEventService } from "@ecommerce/notification-event";
 import {
   createFakeNotificationProvider,
@@ -114,6 +118,17 @@ const createFakeWorkflowBinding = () => {
     setStatus: (id: string, status: InstanceStatus) => {
       statuses.set(id, status);
     },
+  };
+};
+
+const createCartMutationPersistence = () => {
+  const outbox = createInMemoryOutbox();
+
+  return {
+    outboxWriter: outbox.writer,
+    transactionBoundary: createInMemoryTransactionBoundary({
+      resources: [outbox],
+    }),
   };
 };
 
@@ -430,6 +445,7 @@ describe("cloudflare cart cache adapter", () => {
       scope: createVisitorCartScope("visitor_1"),
     });
     const service = createCartService({
+      ...createCartMutationPersistence(),
       actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
@@ -493,6 +509,7 @@ describe("cloudflare cart cache adapter", () => {
       scope: createVisitorCartScope("visitor_1"),
     });
     const seedService = createCartService({
+      ...createCartMutationPersistence(),
       actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["cart_seed", "evt_seed"]),
@@ -530,6 +547,7 @@ describe("cloudflare cart cache adapter", () => {
       scope: createVisitorCartScope("visitor_2"),
     });
     const failingService = createCartService({
+      ...createCartMutationPersistence(),
       actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["cart_fail", "evt_fail"]),
@@ -561,6 +579,7 @@ describe("cloudflare cart cache adapter", () => {
       scope: createVisitorCartScope("visitor_write_through"),
     });
     const service = createCartService({
+      ...createCartMutationPersistence(),
       actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
@@ -614,6 +633,7 @@ describe("cloudflare cart cache adapter", () => {
       scope: createSystemCartScope(),
     });
     const visitorService = createCartService({
+      ...createCartMutationPersistence(),
       actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["cart_owner", "evt_owner"]),
@@ -704,6 +724,7 @@ describe("cloudflare cart cache adapter", () => {
       scope: createVisitorCartScope("visitor_3"),
     });
     const service = createCartService({
+      ...createCartMutationPersistence(),
       actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-06-16T10:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([

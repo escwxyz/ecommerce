@@ -2,11 +2,11 @@ import {
   RepositoryConflict,
   RepositoryDecodeFailure,
   RepositoryUnavailable,
+  TransactionalMutationFailure,
 } from "@ecommerce/core";
 import {
   StoreCurrencyListEmpty,
   StoreDefaultCurrencyUnsupported,
-  StoreEventPublishFailure,
   StoreInvalidIdentifier,
 } from "@ecommerce/store/domain/store.errors";
 import {
@@ -38,18 +38,17 @@ const storePersistenceErrors = [
   RepositoryConflict.pipe(HttpApiSchema.status(409)),
   RepositoryDecodeFailure.pipe(HttpApiSchema.status(503)),
   RepositoryUnavailable.pipe(HttpApiSchema.status(503)),
+  TransactionalMutationFailure.pipe(HttpApiSchema.status(503)),
 ] as const;
 
 export const storeWriteErrors = [
   EffectHttpForbidden,
-  StoreEventPublishFailure.pipe(HttpApiSchema.status(503)),
   ...storeDomainValidationErrors,
   ...storePersistenceErrors,
 ] as const;
 
 export const storeReadErrors = [
   EffectHttpForbidden,
-  StoreEventPublishFailure.pipe(HttpApiSchema.status(503)),
   ...storeDomainValidationErrors,
   ...storePersistenceErrors,
 ] as const;

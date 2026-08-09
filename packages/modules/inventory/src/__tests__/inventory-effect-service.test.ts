@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import {
-  createEventCollector,
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -13,11 +14,10 @@ import { createInventoryService } from "../services";
 
 describe("inventory Effect service", () => {
   it("creates scoped stock and reserves it idempotently", async () => {
-    const eventCollector = createEventCollector();
+    const outbox = createInMemoryOutbox();
     const service = createInventoryService({
       actorService: createInMemoryInventoryActorService(),
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-      eventPublisher: eventCollector.publisher,
       idGenerator: createSequenceIdGenerator([
         "iitem_hat",
         "sloc_main",
@@ -25,7 +25,11 @@ describe("inventory Effect service", () => {
         "ires_hat",
         "evt_reserved",
       ]),
+      outboxWriter: outbox.writer,
       repository: createInMemoryInventoryRepository(),
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+      }),
     });
 
     const item = await Effect.runPromise(
@@ -72,12 +76,13 @@ describe("inventory Effect service", () => {
     expect(reservation.availability.availableQuantity).toBe(1);
     expect(duplicate.duplicate).toBe(true);
     expect(duplicate.reservation.id).toBe(reservation.reservation.id);
-    expect(eventCollector.events.map((event) => event.name)).toEqual([
+    expect(outbox.records.map((record) => record.event.name)).toEqual([
       "inventory.reserved",
     ]);
   });
 
   it("returns typed failures for missing levels and insufficient stock", async () => {
+    const outbox = createInMemoryOutbox();
     const service = createInventoryService({
       actorService: createInMemoryInventoryActorService(),
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
@@ -87,7 +92,11 @@ describe("inventory Effect service", () => {
         "ilvl_hat",
         "ires_hat",
       ]),
+      outboxWriter: outbox.writer,
       repository: createInMemoryInventoryRepository(),
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+      }),
     });
     const item = await Effect.runPromise(
       service.createInventoryItem({

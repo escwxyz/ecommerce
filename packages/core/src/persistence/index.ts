@@ -1,7 +1,6 @@
 /* eslint-disable max-classes-per-file -- persistence errors are one shared schema-backed vocabulary */
 
-import { Context, Layer, Schema } from "effect";
-import type { Effect } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 
 import type { CommerceEventEnvelope } from "../events/index";
 
@@ -272,3 +271,111 @@ export const outboxWriterLayer = (service: OutboxWriterService) =>
 /** Creates a Layer for an outbox claiming implementation. */
 export const outboxClaimerLayer = (service: OutboxClaimerService) =>
   Layer.succeed(OutboxClaimerService, service);
+
+/** Stable commerce topic used by module-owned transactional event intent. */
+export const COMMERCE_EVENTS_OUTBOX_TOPIC = "commerce.events" as const;
+
+/**
+ * Module-facing persistence failure for an atomic mutation.
+ *
+ * Adapter failures are intentionally collapsed at this seam so callers do not
+ * depend on transaction or outbox implementation details. Defects and
+ * interruptions are not mapped because they are not values in the Effect error
+ * channel.
+ */
+export class TransactionalMutationFailure extends Schema.TaggedErrorClass<TransactionalMutationFailure>()(
+  "TransactionalMutationFailure",
+  {
+    moduleName: Schema.NonEmptyString,
+    operation: Schema.NonEmptyString,
+    stage: Schema.Literals(["outbox", "transaction"]),
+  }
+) {}
+
+export interface ExecuteTransactionalMutationOptions<A, E, R> {
+  readonly effect: Effect.Effect<A, E, R | CurrentTransactionService>;
+  readonly moduleName: string;
+  readonly operation: string;
+  readonly outboxMessages: (value: A) => readonly OutboxMessage[];
+  readonly outboxWriter: OutboxWriterService;
+  readonly transactionBoundary: TransactionBoundaryService;
+}
+
+const toTransactionalMutationFailure = ({
+  stage,
+  moduleName,
+  operation,
+}: {
+  readonly stage: "outbox" | "transaction";
+  readonly moduleName: string;
+  readonly operation: string;
+}): TransactionalMutationFailure =>
+  new TransactionalMutationFailure({
+    moduleName,
+    operation,
+    stage,
+  });
+
+/**
+ * Commits a module state change and all of its outbox intent in one local
+ * transaction without exposing an adapter transaction handle.
+ */
+export const executeTransactionalMutation = <A, E, R>({
+  effect,
+  moduleName,
+  operation,
+  outboxMessages,
+  outboxWriter,
+  transactionBoundary,
+}: ExecuteTransactionalMutationOptions<A, E, R>): Effect.Effect<
+  A,
+  | Exclude<E, OutboxPersistenceFailure | TransactionFailure>
+  | TransactionalMutationFailure,
+  R
+> => {
+  const mutation = transactionBoundary
+    .withTransaction<A, E | OutboxPersistenceFailure, R>(
+      Effect.gen(function* executeTransactionalMutationEffect() {
+        const value = yield* effect;
+        const messages = outboxMessages(value);
+
+        for (const message of messages) {
+          yield* outboxWriter.enqueue(message);
+        }
+
+        return value;
+      }),
+      { name: `${moduleName}.${operation}` }
+    )
+    .pipe(
+      // Effect maps typed failures synchronously; this is not a Node callback API.
+      // oxlint-disable-next-line promise/prefer-await-to-callbacks
+      Effect.mapError((error) => {
+        if (error instanceof OutboxPersistenceFailure) {
+          return toTransactionalMutationFailure({
+            moduleName,
+            operation,
+            stage: "outbox",
+          });
+        }
+
+        if (error instanceof TransactionFailure) {
+          return toTransactionalMutationFailure({
+            moduleName,
+            operation,
+            stage: "transaction",
+          });
+        }
+
+        return error;
+      })
+    );
+
+  // The two adapter failures above are fully translated at the module seam.
+  return mutation as Effect.Effect<
+    A,
+    | Exclude<E, OutboxPersistenceFailure | TransactionFailure>
+    | TransactionalMutationFailure,
+    R
+  >;
+};

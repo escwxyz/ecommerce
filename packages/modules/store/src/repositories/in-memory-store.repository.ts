@@ -1,3 +1,4 @@
+import type { InMemoryTransactionResource } from "@ecommerce/core/testing";
 import { Effect, Layer, Ref } from "effect";
 
 import type { StoreRepository, StoreSettings } from "../domain";
@@ -34,3 +35,18 @@ export const createResettableInMemoryStoreRepository =
 
 export const createInMemoryStoreRepositoryLayer = () =>
   Layer.succeed(StoreRepositoryService, createInMemoryStoreRepository());
+
+/** Captures and restores Store state for the deterministic transaction adapter. */
+export const storeRepositoryTransactionResource = (
+  repository: ResettableStoreRepository
+): InMemoryTransactionResource => ({
+  captureRollback: repository.snapshot.pipe(
+    Effect.map((snapshot) =>
+      snapshot === null
+        ? repository.reset
+        : repository
+            .saveStoreSettings(snapshot)
+            .pipe(Effect.orDie, Effect.asVoid)
+    )
+  ),
+});

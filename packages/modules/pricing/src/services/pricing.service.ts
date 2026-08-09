@@ -1,12 +1,17 @@
 import type {
   ClockServiceShape,
-  EventPublisherServiceShape,
   IdGeneratorServiceShape,
+  OutboxMessage,
+  OutboxWriterServiceShape,
+  TransactionBoundaryServiceShape,
 } from "@ecommerce/core";
 import {
+  COMMERCE_EVENTS_OUTBOX_TOPIC,
   ClockService,
-  EventPublisherService,
   IdGeneratorService,
+  OutboxWriterService,
+  TransactionBoundaryService,
+  executeTransactionalMutation,
 } from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
 import { Context, Effect, Layer } from "effect";
@@ -105,9 +110,10 @@ export const PricingService = Context.Service<PricingServiceShape>(
 
 export interface CreatePricingServiceOptions {
   readonly clock?: ClockServiceShape;
-  readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
+  readonly outboxWriter: OutboxWriterServiceShape;
   readonly repository: PricingRepository;
+  readonly transactionBoundary: TransactionBoundaryServiceShape;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -116,12 +122,6 @@ const createDefaultClock = (): ClockServiceShape => ({
 
 const createDefaultIdGenerator = (): IdGeneratorServiceShape => ({
   nextId: () => nanoid(),
-});
-
-const createNoopEventPublisher = (): EventPublisherServiceShape => ({
-  publish: () => {
-    // Pricing events are optional until a runtime event bus is composed.
-  },
 });
 
 const normalizeCurrencyCode = (currencyCode: string): string =>
@@ -133,18 +133,6 @@ const createId = (prefix: string, idGenerator: IdGeneratorServiceShape) => {
   const rawId = idGenerator.nextId();
   return rawId.startsWith(prefix) ? rawId : `${prefix}${rawId}`;
 };
-
-const publishEvent = (
-  eventPublisher: EventPublisherServiceShape,
-  envelope: Parameters<EventPublisherServiceShape["publish"]>[0]
-) =>
-  Effect.tryPromise({
-    catch: () =>
-      new PricingValidationFailure({
-        message: "Pricing event publication failed.",
-      }),
-    try: () => Promise.resolve(eventPublisher.publish(envelope)),
-  }).pipe(Effect.asVoid);
 
 const getPriceListIsActive = (
   priceList: PriceListRecord,
@@ -289,241 +277,291 @@ const findBestAmount = ({
 
 export const createPricingService = ({
   clock = createDefaultClock(),
-  eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
+  outboxWriter,
   repository,
-}: CreatePricingServiceOptions): PricingServiceShape => ({
-  calculatePrice: (input) =>
-    Effect.gen(function* calculatePriceEffect() {
-      const now = clock.now();
-      const priceSet = yield* repository.findPriceSetById(input.priceSetId);
+  transactionBoundary,
+}: CreatePricingServiceOptions): PricingServiceShape => {
+  const transactionalPricingMutation = <A>(
+    operation: string,
+    effect: EffectValue<A, PricingServiceFailure>,
+    outboxMessages: (value: A) => readonly OutboxMessage[] = () => []
+  ) =>
+    executeTransactionalMutation({
+      effect,
+      moduleName: "pricing",
+      operation,
+      outboxMessages,
+      outboxWriter,
+      transactionBoundary,
+    });
 
-      if (!priceSet) {
-        return yield* new PricingPriceSetNotFound({
-          priceSetId: input.priceSetId,
-        });
-      }
+  return {
+    calculatePrice: (input) =>
+      transactionalPricingMutation(
+        "calculatePrice",
+        Effect.gen(function* calculatePriceEffect() {
+          const now = clock.now();
+          const priceSet = yield* repository.findPriceSetById(input.priceSetId);
 
-      const selection = yield* findBestAmount({ input, now, repository });
+          if (!priceSet) {
+            return yield* new PricingPriceSetNotFound({
+              priceSetId: input.priceSetId,
+            });
+          }
 
-      if (!selection) {
-        return yield* new PricingNoMatchingPrice({
-          currencyCode: normalizeCurrencyCode(input.currencyCode),
-          priceSetId: input.priceSetId,
-        });
-      }
+          const selection = yield* findBestAmount({ input, now, repository });
 
-      const calculatedPrice = createCalculatedPrice({
-        amount: selection.amount,
-        input: {
-          ...input,
-          currencyCode: normalizeCurrencyCode(input.currencyCode),
-        },
-        ruleMatches: selection.ruleMatches,
-        source: selection.amount.priceListId ? "price-list" : "base",
-      });
+          if (!selection) {
+            return yield* new PricingNoMatchingPrice({
+              currencyCode: normalizeCurrencyCode(input.currencyCode),
+              priceSetId: input.priceSetId,
+            });
+          }
 
-      yield* publishEvent(
-        eventPublisher,
-        createEventEnvelope({
-          id: createId("evt_", idGenerator),
-          name: PRICE_CALCULATED_EVENT,
-          payload: {
-            amount: calculatedPrice.amount,
-            currencyCode: calculatedPrice.currencyCode,
-            priceSetId: calculatedPrice.priceSetId,
-            quantity: calculatedPrice.quantity,
-            source: calculatedPrice.trace.source,
-            subtotal: calculatedPrice.subtotal,
-          } satisfies PriceCalculatedEventPayload,
-          sourceModule: "pricing",
-          subject: {
-            id: calculatedPrice.priceSetId,
-            type: "price-set",
-          },
-        })
-      );
-
-      return calculatedPrice;
-    }),
-  createCurrency: (input) =>
-    Effect.gen(function* createCurrencyEffect() {
-      const code = normalizeCurrencyCode(input.code);
-      const name = normalizeText(input.name);
-
-      if (!code || !name) {
-        return yield* new PricingValidationFailure({
-          message: "Currency code and name are required.",
-        });
-      }
-
-      const existing = yield* repository.findCurrencyByCode(code);
-
-      if (existing) {
-        return yield* new PricingCurrencyConflict({ currencyCode: code });
-      }
-
-      const now = clock.now();
-      const currency: CurrencyRecord = {
-        code,
-        createdAt: now,
-        id: yield* createCurrencyIdEffect(
-          createId(CURRENCY_ID_PREFIX, idGenerator)
-        ),
-        name,
-        precision: input.precision ?? 2,
-        updatedAt: now,
-      };
-
-      return yield* repository.saveCurrency(currency);
-    }),
-  createMoneyAmount: (input) =>
-    Effect.gen(function* createMoneyAmountEffect() {
-      const currencyCode = normalizeCurrencyCode(input.currencyCode);
-      const priceSet = yield* repository.findPriceSetById(input.priceSetId);
-
-      if (!priceSet) {
-        return yield* new PricingPriceSetNotFound({
-          priceSetId: input.priceSetId,
-        });
-      }
-
-      if (input.priceListId) {
-        const priceList = yield* repository.findPriceListById(
-          input.priceListId
-        );
-
-        if (!priceList) {
-          return yield* new PricingPriceListNotFound({
-            priceListId: input.priceListId,
+          const calculatedPrice = createCalculatedPrice({
+            amount: selection.amount,
+            input: {
+              ...input,
+              currencyCode: normalizeCurrencyCode(input.currencyCode),
+            },
+            ruleMatches: selection.ruleMatches,
+            source: selection.amount.priceListId ? "price-list" : "base",
           });
+
+          return calculatedPrice;
+        }),
+        (calculatedPrice) => {
+          const event = createEventEnvelope({
+            id: createId("evt_", idGenerator),
+            name: PRICE_CALCULATED_EVENT,
+            payload: {
+              amount: calculatedPrice.amount,
+              currencyCode: calculatedPrice.currencyCode,
+              priceSetId: calculatedPrice.priceSetId,
+              quantity: calculatedPrice.quantity,
+              source: calculatedPrice.trace.source,
+              subtotal: calculatedPrice.subtotal,
+            } satisfies PriceCalculatedEventPayload,
+            sourceModule: "pricing",
+            subject: {
+              id: calculatedPrice.priceSetId,
+              type: "price-set",
+            },
+          });
+
+          return [
+            {
+              event,
+              idempotencyKey: `${event.name}:${calculatedPrice.priceSetId}:${calculatedPrice.currencyCode}:${calculatedPrice.quantity}:${calculatedPrice.subtotal}`,
+              topic: COMMERCE_EVENTS_OUTBOX_TOPIC,
+            },
+          ];
         }
-      }
+      ),
+    createCurrency: (input) =>
+      transactionalPricingMutation(
+        "createCurrency",
+        Effect.gen(function* createCurrencyEffect() {
+          const code = normalizeCurrencyCode(input.code);
+          const name = normalizeText(input.name);
 
-      const now = clock.now();
-      const amount: MoneyAmountRecord = {
-        amount: input.amount,
-        createdAt: now,
-        currencyCode,
-        id: yield* createMoneyAmountIdEffect(
-          createId(MONEY_AMOUNT_ID_PREFIX, idGenerator)
-        ),
-        priceListId: input.priceListId ?? null,
-        priceSetId: input.priceSetId,
-        rules: input.rules ?? {},
-        updatedAt: now,
-      };
+          if (!code || !name) {
+            return yield* new PricingValidationFailure({
+              message: "Currency code and name are required.",
+            });
+          }
 
-      return yield* repository.saveMoneyAmount(amount);
-    }),
-  createPriceList: (input) =>
-    Effect.gen(function* createPriceListEffect() {
-      const title = normalizeText(input.title);
+          const existing = yield* repository.findCurrencyByCode(code);
 
-      if (!title) {
-        return yield* new PricingValidationFailure({
-          message: "Price list title is required.",
-        });
-      }
+          if (existing) {
+            return yield* new PricingCurrencyConflict({ currencyCode: code });
+          }
 
-      const now = clock.now();
-      const priceList: PriceListRecord = {
-        createdAt: now,
-        description: input.description?.trim() || null,
-        endsAt: input.endsAt ?? null,
-        id: yield* createPriceListIdEffect(
-          createId(PRICE_LIST_ID_PREFIX, idGenerator)
-        ),
-        startsAt: input.startsAt ?? null,
-        status: input.status ?? "draft",
-        title,
-        updatedAt: now,
-      };
+          const now = clock.now();
+          const currency: CurrencyRecord = {
+            code,
+            createdAt: now,
+            id: yield* createCurrencyIdEffect(
+              createId(CURRENCY_ID_PREFIX, idGenerator)
+            ),
+            name,
+            precision: input.precision ?? 2,
+            updatedAt: now,
+          };
 
-      return yield* repository.savePriceList(priceList);
-    }),
-  createPricePreference: (input) =>
-    Effect.gen(function* createPricePreferenceEffect() {
-      const now = clock.now();
-
-      return yield* repository.savePricePreference({
-        attribute: normalizeText(input.attribute),
-        createdAt: now,
-        currencyCode: normalizeCurrencyCode(input.currencyCode),
-        id: yield* createPricePreferenceIdEffect(
-          createId(PRICE_PREFERENCE_ID_PREFIX, idGenerator)
-        ),
-        updatedAt: now,
-        value: normalizeText(input.value),
-      });
-    }),
-  createPriceRule: (input) =>
-    Effect.gen(function* createPriceRuleEffect() {
-      const priceList = yield* repository.findPriceListById(input.priceListId);
-
-      if (!priceList) {
-        return yield* new PricingPriceListNotFound({
-          priceListId: input.priceListId,
-        });
-      }
-
-      const now = clock.now();
-      const rule: PriceRuleRecord = {
-        attribute: normalizeText(input.attribute),
-        createdAt: now,
-        id: yield* createPriceRuleIdEffect(
-          createId(PRICE_RULE_ID_PREFIX, idGenerator)
-        ),
-        priceListId: input.priceListId,
-        updatedAt: now,
-        value: normalizeText(input.value),
-      };
-
-      return yield* repository.savePriceRule(rule);
-    }),
-  createPriceSet: (input) =>
-    Effect.gen(function* createPriceSetEffect() {
-      const title = normalizeText(input.title);
-
-      if (!title) {
-        return yield* new PricingValidationFailure({
-          message: "Price set title is required.",
-        });
-      }
-
-      const now = clock.now();
-      const priceSet: PriceSetRecord = {
-        createdAt: now,
-        id: yield* createPriceSetIdEffect(
-          createId(PRICE_SET_ID_PREFIX, idGenerator)
-        ),
-        metadata: input.metadata ?? {},
-        title,
-        updatedAt: now,
-      };
-      const saved = yield* repository.savePriceSet(priceSet);
-
-      yield* publishEvent(
-        eventPublisher,
-        createEventEnvelope({
-          id: createId("evt_", idGenerator),
-          name: PRICE_SET_CREATED_EVENT,
-          payload: {
-            id: saved.id,
-            title: saved.title,
-          } satisfies PriceSetCreatedEventPayload,
-          sourceModule: "pricing",
-          subject: {
-            id: saved.id,
-            type: "price-set",
-          },
+          return yield* repository.saveCurrency(currency);
         })
-      );
+      ),
+    createMoneyAmount: (input) =>
+      transactionalPricingMutation(
+        "createMoneyAmount",
+        Effect.gen(function* createMoneyAmountEffect() {
+          const currencyCode = normalizeCurrencyCode(input.currencyCode);
+          const priceSet = yield* repository.findPriceSetById(input.priceSetId);
 
-      return saved;
-    }),
-  listCurrencies: repository.listCurrencies,
-});
+          if (!priceSet) {
+            return yield* new PricingPriceSetNotFound({
+              priceSetId: input.priceSetId,
+            });
+          }
+
+          if (input.priceListId) {
+            const priceList = yield* repository.findPriceListById(
+              input.priceListId
+            );
+
+            if (!priceList) {
+              return yield* new PricingPriceListNotFound({
+                priceListId: input.priceListId,
+              });
+            }
+          }
+
+          const now = clock.now();
+          const amount: MoneyAmountRecord = {
+            amount: input.amount,
+            createdAt: now,
+            currencyCode,
+            id: yield* createMoneyAmountIdEffect(
+              createId(MONEY_AMOUNT_ID_PREFIX, idGenerator)
+            ),
+            priceListId: input.priceListId ?? null,
+            priceSetId: input.priceSetId,
+            rules: input.rules ?? {},
+            updatedAt: now,
+          };
+
+          return yield* repository.saveMoneyAmount(amount);
+        })
+      ),
+    createPriceList: (input) =>
+      transactionalPricingMutation(
+        "createPriceList",
+        Effect.gen(function* createPriceListEffect() {
+          const title = normalizeText(input.title);
+
+          if (!title) {
+            return yield* new PricingValidationFailure({
+              message: "Price list title is required.",
+            });
+          }
+
+          const now = clock.now();
+          const priceList: PriceListRecord = {
+            createdAt: now,
+            description: input.description?.trim() || null,
+            endsAt: input.endsAt ?? null,
+            id: yield* createPriceListIdEffect(
+              createId(PRICE_LIST_ID_PREFIX, idGenerator)
+            ),
+            startsAt: input.startsAt ?? null,
+            status: input.status ?? "draft",
+            title,
+            updatedAt: now,
+          };
+
+          return yield* repository.savePriceList(priceList);
+        })
+      ),
+    createPricePreference: (input) =>
+      transactionalPricingMutation(
+        "createPricePreference",
+        Effect.gen(function* createPricePreferenceEffect() {
+          const now = clock.now();
+
+          return yield* repository.savePricePreference({
+            attribute: normalizeText(input.attribute),
+            createdAt: now,
+            currencyCode: normalizeCurrencyCode(input.currencyCode),
+            id: yield* createPricePreferenceIdEffect(
+              createId(PRICE_PREFERENCE_ID_PREFIX, idGenerator)
+            ),
+            updatedAt: now,
+            value: normalizeText(input.value),
+          });
+        })
+      ),
+    createPriceRule: (input) =>
+      transactionalPricingMutation(
+        "createPriceRule",
+        Effect.gen(function* createPriceRuleEffect() {
+          const priceList = yield* repository.findPriceListById(
+            input.priceListId
+          );
+
+          if (!priceList) {
+            return yield* new PricingPriceListNotFound({
+              priceListId: input.priceListId,
+            });
+          }
+
+          const now = clock.now();
+          const rule: PriceRuleRecord = {
+            attribute: normalizeText(input.attribute),
+            createdAt: now,
+            id: yield* createPriceRuleIdEffect(
+              createId(PRICE_RULE_ID_PREFIX, idGenerator)
+            ),
+            priceListId: input.priceListId,
+            updatedAt: now,
+            value: normalizeText(input.value),
+          };
+
+          return yield* repository.savePriceRule(rule);
+        })
+      ),
+    createPriceSet: (input) =>
+      transactionalPricingMutation(
+        "createPriceSet",
+        Effect.gen(function* createPriceSetEffect() {
+          const title = normalizeText(input.title);
+
+          if (!title) {
+            return yield* new PricingValidationFailure({
+              message: "Price set title is required.",
+            });
+          }
+
+          const now = clock.now();
+          const priceSet: PriceSetRecord = {
+            createdAt: now,
+            id: yield* createPriceSetIdEffect(
+              createId(PRICE_SET_ID_PREFIX, idGenerator)
+            ),
+            metadata: input.metadata ?? {},
+            title,
+            updatedAt: now,
+          };
+          return yield* repository.savePriceSet(priceSet);
+        }),
+        (saved) => {
+          const event = createEventEnvelope({
+            id: createId("evt_", idGenerator),
+            name: PRICE_SET_CREATED_EVENT,
+            payload: {
+              id: saved.id,
+              title: saved.title,
+            } satisfies PriceSetCreatedEventPayload,
+            sourceModule: "pricing",
+            subject: {
+              id: saved.id,
+              type: "price-set",
+            },
+          });
+
+          return [
+            {
+              event,
+              idempotencyKey: `${event.name}:${saved.id}`,
+              topic: COMMERCE_EVENTS_OUTBOX_TOPIC,
+            },
+          ];
+        }
+      ),
+    listCurrencies: repository.listCurrencies,
+  };
+};
 
 export const createPricingRepositoryLayer = (repository: PricingRepository) =>
   Layer.succeed(PricingRepositoryService, repository);
@@ -537,20 +575,16 @@ export const createPricingServiceFromDependenciesLayer = () =>
     Effect.gen(function* createPricingServiceFromDependenciesEffect() {
       const clock = yield* ClockService;
       const idGenerator = yield* IdGeneratorService;
+      const outboxWriter = yield* OutboxWriterService;
       const repository = yield* PricingRepositoryService;
-      const eventPublisher = yield* Effect.serviceOption(
-        EventPublisherService
-      ).pipe(
-        Effect.map((option) =>
-          option._tag === "Some" ? option.value : undefined
-        )
-      );
+      const transactionBoundary = yield* TransactionBoundaryService;
 
       return createPricingService({
         clock,
-        eventPublisher,
         idGenerator,
+        outboxWriter,
         repository,
+        transactionBoundary,
       });
     })
   );

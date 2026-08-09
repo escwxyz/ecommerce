@@ -29,6 +29,27 @@ const runtimeNeutralCloudflareSpecifiers = [
 
 const serverOnlyStorefrontSdkSpecifier = "@ecommerce/storefront-sdk/cloudflare";
 
+const transactionalMutationServicePaths = [
+  "packages/modules/cart/src/services/cart.service.ts",
+  "packages/modules/fulfillment/src/services/fulfillment.service.ts",
+  "packages/modules/inventory/src/services/inventory.service.ts",
+  "packages/modules/order/src/services/order.service.ts",
+  "packages/modules/pricing/src/services/pricing.service.ts",
+  "packages/modules/promotion/src/services/promotion.service.ts",
+  "packages/modules/store/src/services/store.service.ts",
+  "packages/modules/tax/src/services/tax.service.ts",
+] as const;
+
+const transactionalMutationTestKitPaths = [
+  "packages/modules/cart/src/testing/cart-test-kit.ts",
+  "packages/modules/fulfillment/src/testing/fulfillment-test-kit.ts",
+  "packages/modules/inventory/src/testing/inventory-test-kit.ts",
+  "packages/modules/order/src/testing/order-test-kit.ts",
+  "packages/modules/pricing/src/testing/pricing-test-kit.ts",
+  "packages/modules/promotion/src/testing/promotion-test-kit.ts",
+  "packages/modules/tax/src/testing/tax-test-kit.ts",
+] as const;
+
 const productionSourcePattern = /\.(?:ts|tsx|mts|cts)$/u;
 const packageManifestPattern = /(?:^|\/)package\.json$/u;
 const testPathPattern = /(?:^|\/)(?:__tests__\/|[^/]+\.(?:test|spec)\.)/u;
@@ -213,6 +234,38 @@ describe("repository backend boundary gates", () => {
           )
           .map((specifier) => ({ path, specifier }));
       });
+
+    expect(violations).toEqual([]);
+  });
+
+  it("rejects the temporary direct event publisher from migrated mutation services", () => {
+    const violations = transactionalMutationServicePaths.flatMap((path) => {
+      const source = readFileSync(join(repoRoot, path), "utf8");
+      const reasons: string[] = [];
+
+      if (source.includes("EventPublisherService")) {
+        reasons.push("imports the temporary EventPublisherService");
+      }
+
+      if (source.includes("eventPublisher")) {
+        reasons.push("retains a direct eventPublisher dependency");
+      }
+
+      if (!source.includes("executeTransactionalMutation")) {
+        reasons.push("does not own a transactional mutation boundary");
+      }
+
+      return reasons.map((reason) => ({ path, reason }));
+    });
+
+    expect(violations).toEqual([]);
+  });
+
+  it("keeps deterministic module test kits transactionally equivalent to production", () => {
+    const violations = transactionalMutationTestKitPaths.filter((path) => {
+      const source = readFileSync(join(repoRoot, path), "utf8");
+      return !source.includes("resources: [repository, outbox]");
+    });
 
     expect(violations).toEqual([]);
   });

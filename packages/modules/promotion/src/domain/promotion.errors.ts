@@ -1,4 +1,7 @@
-import type { RepositoryFailure } from "@ecommerce/core";
+import type {
+  RepositoryFailure,
+  TransactionalMutationFailure,
+} from "@ecommerce/core";
 /* eslint-disable max-classes-per-file -- promotion expected failures form one schema-backed module vocabulary */
 import { Schema } from "effect";
 
@@ -51,4 +54,5 @@ export type PromotionExpectedError =
   | PromotionNotFound
   | PromotionUnsupportedUsageLimitScope
   | PromotionValidationFailure
-  | RepositoryFailure;
+  | RepositoryFailure
+  | TransactionalMutationFailure;

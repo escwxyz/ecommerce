@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
+import {
+  CurrentTransactionService,
+  TransactionBoundaryService,
+} from "@ecommerce/core";
 import { Effect, Layer, Redacted } from "effect";
 
 import {
@@ -9,6 +13,7 @@ import {
   createPostgresClientLayer,
   createPostgresDatabaseLayer,
   createPostgresDrizzleLayer,
+  createPostgresTransactionBoundaryLayer,
   createPostgresPoolConfig,
   drizzleRawTextTypeOids,
   postgresAdapterTarget,
@@ -82,5 +87,24 @@ describe("Effect PostgreSQL and Drizzle Layers", () => {
     );
 
     expect(Effect.isEffect(program)).toBe(true);
+  });
+
+  it("provides runtime-neutral transaction metadata through the PostgreSQL boundary", () => {
+    const program = TransactionBoundaryService.use((boundary) =>
+      boundary.withTransaction(
+        CurrentTransactionService.use((transaction) =>
+          Effect.succeed({
+            adapter: transaction.adapter,
+            transactionId: transaction.transactionId,
+          })
+        )
+      )
+    );
+    const layer = createPostgresTransactionBoundaryLayer({
+      nextTransactionId: Effect.succeed("transaction_postgres"),
+      now: Effect.succeed(new Date("2026-01-01T00:00:00.000Z")),
+    });
+
+    expect(Effect.isEffect(program.pipe(Effect.provide(layer)))).toBe(true);
   });
 });

@@ -20,6 +20,7 @@ import {
   RepositoryConflict,
   RepositoryDecodeFailure,
   RepositoryUnavailable,
+  TransactionalMutationFailure,
 } from "@ecommerce/core";
 import { Schema } from "effect";
 import {
@@ -49,6 +50,7 @@ const cartPersistenceErrors = [
   RepositoryConflict.pipe(HttpApiSchema.status(409)),
   RepositoryDecodeFailure.pipe(HttpApiSchema.status(503)),
   RepositoryUnavailable.pipe(HttpApiSchema.status(503)),
+  TransactionalMutationFailure.pipe(HttpApiSchema.status(503)),
 ] as const;
 
 export const cartReadErrors = [

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -18,6 +20,15 @@ import { createCartService } from "../services";
 import { createInMemoryCartActiveCache } from "../testing";
 
 const clock = createStaticClock(new Date("2026-01-01T00:00:00.000Z"));
+const createMutationPersistence = () => {
+  const outbox = createInMemoryOutbox();
+  return {
+    outboxWriter: outbox.writer,
+    transactionBoundary: createInMemoryTransactionBoundary({
+      resources: [outbox],
+    }),
+  };
+};
 
 describe("cart Effect active cache repository", () => {
   it("caches visitor carts and syncs accepted mutations to the projection repository", async () => {
@@ -28,6 +39,7 @@ describe("cart Effect active cache repository", () => {
       scope: createVisitorCartScope("visitor_1"),
     });
     const service = createCartService({
+      ...createMutationPersistence(),
       actorService: createInMemoryCartActorService(),
       clock,
       idGenerator: createSequenceIdGenerator([
@@ -65,6 +77,7 @@ describe("cart Effect active cache repository", () => {
   it("hydrates a missing cache entry from the projection repository", async () => {
     const projection = createResettableInMemoryCartRepository();
     const service = createCartService({
+      ...createMutationPersistence(),
       actorService: createInMemoryCartActorService(),
       clock,
       idGenerator: createSequenceIdGenerator(["cart_seed", "evt_seed"]),
@@ -108,6 +121,7 @@ describe("cart Effect active cache repository", () => {
       scope: createCustomerCartScope("cus_2"),
     });
     const visitorService = createCartService({
+      ...createMutationPersistence(),
       actorService: createInMemoryCartActorService(),
       clock,
       idGenerator: createSequenceIdGenerator(["cart_claim", "evt_claim"]),

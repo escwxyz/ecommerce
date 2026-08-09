@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -57,20 +59,19 @@ const checkoutInput = {
 
 describe("order module foundation", () => {
   it("creates orders from checkout snapshots through the Effect service contract", async () => {
-    const published: unknown[] = [];
+    const outbox = createInMemoryOutbox();
     const service = createOrderService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-      eventPublisher: {
-        publish: async (event) => {
-          published.push(event);
-        },
-      },
       idGenerator: createSequenceIdGenerator([
         "ord_1",
         "ordli_1",
         "evt_placed",
       ]),
+      outboxWriter: outbox.writer,
       repository: createInMemoryOrderRepository(),
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+      }),
     });
 
     const created = await Effect.runPromise(
@@ -89,7 +90,7 @@ describe("order module foundation", () => {
       variantId: "variant_1",
     });
     expect(created.order.paymentReferences[0]?.paymentId).toBe("pay_1");
-    expect(published).toMatchObject([
+    expect(outbox.records.map((record) => record.event)).toMatchObject([
       {
         name: ORDER_PLACED_EVENT,
         sourceModule: "order",
@@ -103,10 +104,15 @@ describe("order module foundation", () => {
 
   it("keeps stored snapshots isolated from returned aggregate mutations", async () => {
     const repository = createInMemoryOrderRepository();
+    const outbox = createInMemoryOutbox();
     const service = createOrderService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["ord_1", "ordli_1", "evt_1"]),
+      outboxWriter: outbox.writer,
       repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+      }),
     });
 
     const created = await Effect.runPromise(
@@ -138,21 +144,20 @@ describe("order module foundation", () => {
   });
 
   it("transitions order status and publishes state events", async () => {
-    const published: unknown[] = [];
+    const outbox = createInMemoryOutbox();
     const service = createOrderService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-      eventPublisher: {
-        publish: async (event) => {
-          published.push(event);
-        },
-      },
       idGenerator: createSequenceIdGenerator([
         "ord_1",
         "ordli_1",
         "evt_placed",
         "evt_transition",
       ]),
+      outboxWriter: outbox.writer,
       repository: createInMemoryOrderRepository(),
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+      }),
     });
     const created = await Effect.runPromise(
       service.createOrderFromCheckout(checkoutInput)
@@ -169,29 +174,28 @@ describe("order module foundation", () => {
 
     expect(transitioned.order.status).toBe("completed");
     expect(transitioned.stateTransitions).toHaveLength(2);
-    expect(published).toMatchObject([
+    expect(outbox.records.map((record) => record.event)).toMatchObject([
       { name: ORDER_PLACED_EVENT },
       { name: ORDER_STATUS_TRANSITIONED_EVENT },
     ]);
   });
 
   it("rejects conflicting transition idempotency reuse before mutating order state", async () => {
-    const published: unknown[] = [];
+    const outbox = createInMemoryOutbox();
     const repository = createInMemoryOrderRepository();
     const service = createOrderService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-      eventPublisher: {
-        publish: async (event) => {
-          published.push(event);
-        },
-      },
       idGenerator: createSequenceIdGenerator([
         "ord_1",
         "ordli_1",
         "evt_placed",
         "evt_transition",
       ]),
+      outboxWriter: outbox.writer,
       repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+      }),
     });
     const created = await Effect.runPromise(
       service.createOrderFromCheckout(checkoutInput)
@@ -225,7 +229,7 @@ describe("order module foundation", () => {
       },
       stateTransitions: [{ toStatus: "placed" }, { toStatus: "completed" }],
     });
-    expect(published).toMatchObject([
+    expect(outbox.records.map((record) => record.event)).toMatchObject([
       { name: ORDER_PLACED_EVENT },
       { name: ORDER_STATUS_TRANSITIONED_EVENT },
     ]);

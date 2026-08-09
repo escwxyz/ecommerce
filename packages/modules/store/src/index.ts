@@ -7,7 +7,6 @@ export {
   StoreDefaultCurrencyUnsupported,
   StoreDefaultsApiRecordSchema,
   StoreDefaultsSchema,
-  StoreEventPublishFailure,
   StoreIdSchema,
   StoreIdentifierSchema,
   StoreInvalidIdentifier,

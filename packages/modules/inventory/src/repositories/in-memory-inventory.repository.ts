@@ -1,3 +1,4 @@
+import type { InMemoryTransactionResource } from "@ecommerce/core/testing";
 import { Effect, Layer } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 
@@ -18,7 +19,8 @@ import {
   InventoryValidationFailure,
 } from "../domain";
 
-export interface ResettableInventoryRepository extends InventoryRepository {
+export interface ResettableInventoryRepository
+  extends InventoryRepository, InMemoryTransactionResource {
   readonly clear: EffectValue<void, never>;
 }
 
@@ -74,6 +76,50 @@ export class InMemoryInventoryRepository implements ResettableInventoryRepositor
     InventoryReservationRecord
   >();
   readonly #stockLocations = new Map<string, StockLocationRecord>();
+
+  readonly captureRollback = Effect.sync(() => {
+    const adjustmentEvents = new Map(this.#adjustmentEvents);
+    const adjustmentEventIdempotency = new Map(
+      this.#adjustmentEventIdempotency
+    );
+    const items = new Map(this.#items);
+    const levels = new Map(this.#levels);
+    const reservations = new Map(this.#reservations);
+    const reservationIdempotency = new Map(this.#reservationIdempotency);
+    const stockLocations = new Map(this.#stockLocations);
+
+    return Effect.sync(() => {
+      InMemoryInventoryRepository.#restoreMap(
+        this.#adjustmentEvents,
+        adjustmentEvents
+      );
+      InMemoryInventoryRepository.#restoreMap(
+        this.#adjustmentEventIdempotency,
+        adjustmentEventIdempotency
+      );
+      InMemoryInventoryRepository.#restoreMap(this.#items, items);
+      InMemoryInventoryRepository.#restoreMap(this.#levels, levels);
+      InMemoryInventoryRepository.#restoreMap(this.#reservations, reservations);
+      InMemoryInventoryRepository.#restoreMap(
+        this.#reservationIdempotency,
+        reservationIdempotency
+      );
+      InMemoryInventoryRepository.#restoreMap(
+        this.#stockLocations,
+        stockLocations
+      );
+    });
+  });
+
+  static #restoreMap<Key, Value>(
+    target: Map<Key, Value>,
+    snapshot: Map<Key, Value>
+  ) {
+    target.clear();
+    for (const entry of snapshot) {
+      target.set(...entry);
+    }
+  }
 
   readonly clear = Effect.sync(() => {
     this.#adjustmentEvents.clear();

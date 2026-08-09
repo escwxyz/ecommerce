@@ -1,3 +1,4 @@
+import type { InMemoryTransactionResource } from "@ecommerce/core/testing";
 import { Effect, Layer } from "effect";
 
 import type {
@@ -61,7 +62,8 @@ const cloneAggregate = (aggregate: OrderAggregate): OrderAggregate => ({
   })),
 });
 
-export interface ResettableOrderRepository extends OrderRepository {
+export interface ResettableOrderRepository
+  extends OrderRepository, InMemoryTransactionResource {
   readonly clear: Effect.Effect<void>;
 }
 
@@ -73,6 +75,39 @@ export class InMemoryOrderRepository implements ResettableOrderRepository {
     string,
     OrderStateTransitionRecord
   >();
+
+  readonly captureRollback = Effect.sync(() => {
+    const aggregates = new Map(this.#aggregates);
+    const orderIdempotency = new Map(this.#orderIdempotency);
+    const transactionIdempotency = new Map(this.#transactionIdempotency);
+    const transitionIdempotency = new Map(this.#transitionIdempotency);
+
+    return Effect.sync(() => {
+      InMemoryOrderRepository.#restoreMap(this.#aggregates, aggregates);
+      InMemoryOrderRepository.#restoreMap(
+        this.#orderIdempotency,
+        orderIdempotency
+      );
+      InMemoryOrderRepository.#restoreMap(
+        this.#transactionIdempotency,
+        transactionIdempotency
+      );
+      InMemoryOrderRepository.#restoreMap(
+        this.#transitionIdempotency,
+        transitionIdempotency
+      );
+    });
+  });
+
+  static #restoreMap<Key, Value>(
+    target: Map<Key, Value>,
+    snapshot: Map<Key, Value>
+  ) {
+    target.clear();
+    for (const entry of snapshot) {
+      target.set(...entry);
+    }
+  }
 
   readonly clear = Effect.sync(() => {
     this.#aggregates.clear();

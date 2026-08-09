@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import {
-  createEventCollector,
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -20,10 +21,9 @@ import { createTaxService } from "../services";
 describe("tax Effect service", () => {
   it("calculates tax lines from provider-backed configuration without owning region policy", async () => {
     const repository = createResettableInMemoryTaxRepository();
-    const eventCollector = createEventCollector();
+    const outbox = createInMemoryOutbox();
     const service = createTaxService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-      eventPublisher: eventCollector.publisher,
       idGenerator: createSequenceIdGenerator([
         "txprov_manual",
         "evt_provider",
@@ -37,8 +37,12 @@ describe("tax Effect service", () => {
         "txcalc_cart_1",
         "evt_calculated",
       ]),
+      outboxWriter: outbox.writer,
       providers: [manualTaxProvider],
       repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+      }),
     });
 
     const providerConfig = await Effect.runPromise(
@@ -115,7 +119,7 @@ describe("tax Effect service", () => {
     expect(result).not.toHaveProperty("currency");
     expect(result).not.toHaveProperty("marketId");
     expect(result).not.toHaveProperty("salesChannelId");
-    expect(eventCollector.events.map((event) => event.name)).toEqual([
+    expect(outbox.records.map((record) => record.event.name)).toEqual([
       "tax.provider-configured",
       "tax.category-created",
       "tax.region-created",
@@ -126,6 +130,7 @@ describe("tax Effect service", () => {
 
   it("uses replaceable provider contracts for calculation", async () => {
     const repository = createResettableInMemoryTaxRepository();
+    const outbox = createInMemoryOutbox();
     const service = createTaxService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
@@ -133,6 +138,7 @@ describe("tax Effect service", () => {
         "txreg_custom",
         "txcalc_custom",
       ]),
+      outboxWriter: outbox.writer,
       providers: [
         {
           calculateTax: (_input, context) =>
@@ -153,6 +159,9 @@ describe("tax Effect service", () => {
         },
       ],
       repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+      }),
     });
 
     const providerConfig = await Effect.runPromise(

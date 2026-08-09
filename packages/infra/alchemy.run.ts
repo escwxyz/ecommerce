@@ -165,6 +165,13 @@ export const statefulCoordinator = Cloudflare.DurableObject(
 
 export const cartCache = Cloudflare.DurableObject("CartCacheDurableObject");
 
+export const commerceEventQueue = Cloudflare.Queues.Queue(
+  "CommerceEventQueue",
+  {
+    name: "commerce-events",
+  }
+);
+
 export const notificationEventQueue = Cloudflare.Queues.Queue(
   "NotificationEventQueue",
   {
@@ -185,19 +192,20 @@ export const notificationEventRealtime = Cloudflare.DurableObject(
 
 export const notificationEventOutboxDrainCrons = ["* * * * *"] as const;
 
-type NotificationEventQueueEnv = Record<
+type RuntimeQueueEnv = Record<
   string,
-  typeof notificationEventDeadLetterQueue | typeof notificationEventQueue
+  | typeof commerceEventQueue
+  | typeof notificationEventDeadLetterQueue
+  | typeof notificationEventQueue
 >;
 
-export const getNotificationEventQueueEnv = (
-  dev: boolean
-): NotificationEventQueueEnv => {
+export const getNotificationEventQueueEnv = (dev: boolean): RuntimeQueueEnv => {
   if (dev) {
     return {};
   }
 
   return {
+    COMMERCE_EVENT_QUEUE: commerceEventQueue,
     NOTIFICATION_EVENT_DEAD_LETTER_QUEUE: notificationEventDeadLetterQueue,
     NOTIFICATION_EVENT_QUEUE: notificationEventQueue,
   };

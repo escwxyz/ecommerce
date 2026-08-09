@@ -1,13 +1,19 @@
 import type {
   ClockServiceShape,
-  EventPublisherServiceShape,
   IdGeneratorServiceShape,
+  OutboxWriterServiceShape,
+  TransactionBoundaryServiceShape,
+  CurrentTransactionService,
 } from "@ecommerce/core";
 import {
+  COMMERCE_EVENTS_OUTBOX_TOPIC,
   ClockService,
-  EventPublisherService,
   IdGeneratorService,
+  OutboxWriterService,
+  TransactionBoundaryService,
+  executeTransactionalMutation,
 } from "@ecommerce/core";
+import type { CommerceEventEnvelope } from "@ecommerce/core/events";
 import { createEventEnvelope } from "@ecommerce/core/events";
 import {
   KeyedActorCommandSchema,
@@ -101,9 +107,10 @@ export const InventoryService = Context.Service<InventoryServiceShape>(
 export interface CreateInventoryServiceOptions {
   readonly actorService: KeyedActorService;
   readonly clock?: ClockServiceShape;
-  readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
+  readonly outboxWriter: OutboxWriterServiceShape;
   readonly repository: InventoryRepository;
+  readonly transactionBoundary: TransactionBoundaryServiceShape;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -114,12 +121,6 @@ const createDefaultIdGenerator = (): IdGeneratorServiceShape => ({
   nextId: () => nanoid(),
 });
 
-const createNoopEventPublisher = (): EventPublisherServiceShape => ({
-  publish: () => {
-    // Inventory events are optional until a runtime event bus is composed.
-  },
-});
-
 const normalizeText = (value: string): string => value.trim();
 
 const createId = (prefix: string, idGenerator: IdGeneratorServiceShape) => {
@@ -128,16 +129,17 @@ const createId = (prefix: string, idGenerator: IdGeneratorServiceShape) => {
 };
 
 const publishEvent = (
-  eventPublisher: EventPublisherServiceShape,
-  envelope: Parameters<EventPublisherServiceShape["publish"]>[0]
+  outboxWriter: OutboxWriterServiceShape,
+  envelope: CommerceEventEnvelope,
+  idempotencyKey: string
 ) =>
-  Effect.tryPromise({
-    catch: () =>
-      new InventoryValidationFailure({
-        message: "Inventory event publication failed.",
-      }),
-    try: () => Promise.resolve(eventPublisher.publish(envelope)),
-  }).pipe(Effect.asVoid);
+  outboxWriter
+    .enqueue({
+      event: envelope,
+      idempotencyKey: `${envelope.name}:${idempotencyKey}`,
+      topic: COMMERCE_EVENTS_OUTBOX_TOPIC,
+    })
+    .pipe(Effect.asVoid);
 
 const coordinateInventory = (
   actorService: KeyedActorService,
@@ -220,29 +222,16 @@ const createAggregateScopedBy = ({
     : {}),
 });
 
-const waitForDuplicateReservationReplay = (
-  repository: InventoryRepository,
-  idempotencyKey: string
-): EffectValue<InventoryReservationRecord | null, InventoryServiceFailure> =>
-  repository.findReservationByIdempotencyKey(idempotencyKey);
-
-const waitForDuplicateAdjustmentReplay = (
-  repository: InventoryRepository,
-  idempotencyKey: string
-): EffectValue<
-  InventoryAdjustmentEventRecord | null,
-  InventoryServiceFailure
-> => repository.findAdjustmentEventByIdempotencyKey(idempotencyKey);
-
 export const createInventoryService = ({
   actorService,
   clock = createDefaultClock(),
-  eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
+  outboxWriter,
   repository,
+  transactionBoundary,
 }: CreateInventoryServiceOptions): InventoryServiceShape => {
-  const service: InventoryServiceShape = {
-    adjustInventory: (input) =>
+  const service = {
+    adjustInventory: (input: AdjustInventoryInput) =>
       Effect.gen(function* adjustInventoryEffect() {
         const inventoryItemId = yield* createInventoryItemIdEffect(
           input.inventoryItemId
@@ -257,28 +246,6 @@ export const createInventoryService = ({
 
         if (duplicateEvent) {
           return duplicateEvent;
-        }
-
-        const coordination = yield* coordinateInventory(
-          actorService,
-          input,
-          "adjustInventory",
-          "inventory-adjustment"
-        );
-
-        if (coordination.duplicate) {
-          const coordinatedEvent = yield* waitForDuplicateAdjustmentReplay(
-            repository,
-            input.idempotencyKey
-          );
-
-          if (coordinatedEvent) {
-            return coordinatedEvent;
-          }
-
-          return yield* new InventoryValidationFailure({
-            message: "Duplicate adjustment is still being coordinated.",
-          });
         }
 
         const level = yield* repository.findLevel(
@@ -326,7 +293,7 @@ export const createInventoryService = ({
         const saved = yield* repository.saveAdjustmentEvent(eventRecord);
 
         yield* publishEvent(
-          eventPublisher,
+          outboxWriter,
           createEventEnvelope({
             causationId: input.causationId,
             correlationId: input.correlationId,
@@ -344,12 +311,13 @@ export const createInventoryService = ({
               type: "inventory-item",
             },
             workflowRunId: input.workflowRunId,
-          })
+          }),
+          input.idempotencyKey
         );
 
         return saved;
       }),
-    checkAvailability: (input) =>
+    checkAvailability: (input: InventoryAvailabilityInput) =>
       Effect.gen(function* checkAvailabilityEffect() {
         const inventoryItemId = yield* createInventoryItemIdEffect(
           input.inventoryItemId
@@ -427,7 +395,7 @@ export const createInventoryService = ({
           }
         );
       }),
-    createInventoryItem: (input) =>
+    createInventoryItem: (input: CreateInventoryItemInput) =>
       Effect.gen(function* createInventoryItemEffect() {
         const sku = normalizeText(input.sku);
         const title = normalizeText(input.title);
@@ -452,7 +420,7 @@ export const createInventoryService = ({
 
         return yield* repository.saveInventoryItem(item);
       }),
-    createStockLocation: (input) =>
+    createStockLocation: (input: CreateStockLocationInput) =>
       Effect.gen(function* createStockLocationEffect() {
         const name = normalizeText(input.name);
 
@@ -476,7 +444,7 @@ export const createInventoryService = ({
 
         return yield* repository.saveStockLocation(location);
       }),
-    reserveInventory: (input) =>
+    reserveInventory: (input: ReserveInventoryInput) =>
       Effect.gen(function* reserveInventoryEffect() {
         const inventoryItemId = yield* createInventoryItemIdEffect(
           input.inventoryItemId
@@ -501,40 +469,6 @@ export const createInventoryService = ({
             duplicate: true,
             reservation: duplicateReservation,
           };
-        }
-
-        const coordination = yield* coordinateInventory(
-          actorService,
-          input,
-          "reserveInventory",
-          "inventory-reservation"
-        );
-
-        if (coordination.duplicate) {
-          const coordinatedReservation =
-            yield* waitForDuplicateReservationReplay(
-              repository,
-              input.idempotencyKey
-            );
-
-          if (coordinatedReservation) {
-            const coordinatedAvailability = yield* service.checkAvailability({
-              inventoryItemId,
-              salesChannelId: input.salesChannelId,
-              stockLocationId,
-            });
-
-            return {
-              availability: coordinatedAvailability,
-              duplicate: true,
-              reservation: coordinatedReservation,
-            };
-          }
-
-          return yield* new InventoryValidationFailure({
-            message:
-              "Duplicate reservation was not persisted before replay timeout.",
-          });
         }
 
         const level = yield* repository.findLevel(
@@ -593,7 +527,7 @@ export const createInventoryService = ({
         }
 
         yield* publishEvent(
-          eventPublisher,
+          outboxWriter,
           createEventEnvelope({
             causationId: input.causationId,
             correlationId: input.correlationId,
@@ -611,7 +545,8 @@ export const createInventoryService = ({
               type: "inventory-item",
             },
             workflowRunId: input.workflowRunId,
-          })
+          }),
+          input.idempotencyKey
         );
 
         return {
@@ -620,7 +555,7 @@ export const createInventoryService = ({
           reservation: saved,
         };
       }),
-    setInventoryLevel: (input) =>
+    setInventoryLevel: (input: SetInventoryLevelInput) =>
       Effect.gen(function* setInventoryLevelEffect() {
         const inventoryItemId = yield* createInventoryItemIdEffect(
           input.inventoryItemId
@@ -661,7 +596,65 @@ export const createInventoryService = ({
       }),
   };
 
-  return service;
+  const transactionalInventoryMutation = <A, E>(
+    operation: string,
+    effect: EffectValue<A, E, CurrentTransactionService>
+  ) =>
+    executeTransactionalMutation<A, E, never>({
+      effect,
+      moduleName: "inventory",
+      operation,
+      outboxMessages: () => [],
+      outboxWriter,
+      transactionBoundary,
+    });
+
+  return {
+    ...service,
+    adjustInventory: (input) =>
+      transactionalInventoryMutation(
+        "adjustInventory",
+        service.adjustInventory(input)
+      ).pipe(
+        Effect.tap(() =>
+          coordinateInventory(
+            actorService,
+            input,
+            "adjustInventory",
+            "inventory-adjustment"
+          ).pipe(Effect.ignore)
+        )
+      ),
+    createInventoryItem: (input) =>
+      transactionalInventoryMutation(
+        "createInventoryItem",
+        service.createInventoryItem(input)
+      ),
+    createStockLocation: (input) =>
+      transactionalInventoryMutation(
+        "createStockLocation",
+        service.createStockLocation(input)
+      ),
+    reserveInventory: (input) =>
+      transactionalInventoryMutation(
+        "reserveInventory",
+        service.reserveInventory(input)
+      ).pipe(
+        Effect.tap(() =>
+          coordinateInventory(
+            actorService,
+            input,
+            "reserveInventory",
+            "inventory-reservation"
+          ).pipe(Effect.ignore)
+        )
+      ),
+    setInventoryLevel: (input) =>
+      transactionalInventoryMutation(
+        "setInventoryLevel",
+        service.setInventoryLevel(input)
+      ),
+  };
 };
 
 export const createInventoryRepositoryLayer = (
@@ -678,21 +671,17 @@ export const createInventoryServiceFromDependenciesLayer = () =>
       const actorService = yield* KeyedActorService;
       const clock = yield* ClockService;
       const idGenerator = yield* IdGeneratorService;
+      const outboxWriter = yield* OutboxWriterService;
       const repository = yield* InventoryRepositoryService;
-      const eventPublisher = yield* Effect.serviceOption(
-        EventPublisherService
-      ).pipe(
-        Effect.map((option) =>
-          option._tag === "Some" ? option.value : undefined
-        )
-      );
+      const transactionBoundary = yield* TransactionBoundaryService;
 
       return createInventoryService({
         actorService,
         clock,
-        eventPublisher,
         idGenerator,
+        outboxWriter,
         repository,
+        transactionBoundary,
       });
     })
   );

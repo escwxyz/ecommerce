@@ -1,3 +1,8 @@
+import {
+  CurrentTransactionService,
+  TransactionBoundaryService,
+  TransactionFailure,
+} from "@ecommerce/core/persistence";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import { Context, Effect, Layer } from "effect";
 import type { Effect as EffectValue, Success } from "effect/Effect";
@@ -65,3 +70,68 @@ export const createPostgresDrizzleLayer = (config?: PostgresDrizzleConfig) =>
     PostgresDrizzleService,
     Effect.map(PgDrizzle.makeWithDefaults(config), createPostgresDrizzleService)
   );
+
+export interface PostgresTransactionBoundaryLayerOptions {
+  readonly nextTransactionId?: Effect.Effect<string>;
+  readonly now?: Effect.Effect<Date>;
+}
+
+const defaultTransactionId = Effect.sync(
+  () => `transaction_${crypto.randomUUID()}`
+);
+const defaultTransactionNow = Effect.sync(() => new Date());
+
+/**
+ * Adapts Drizzle's scoped PostgreSQL transaction to the runtime-neutral
+ * transaction boundary consumed by commerce application services.
+ */
+export const createPostgresTransactionBoundaryLayer = ({
+  nextTransactionId = defaultTransactionId,
+  now = defaultTransactionNow,
+}: PostgresTransactionBoundaryLayerOptions = {}) =>
+  Layer.effect(
+    TransactionBoundaryService,
+    PostgresDrizzleService.use((service) =>
+      Effect.succeed(
+        TransactionBoundaryService.of({
+          withTransaction: (effect) => {
+            let transactionStarted = false;
+
+            return service
+              .withTransaction(() =>
+                Effect.gen(function* postgresTransactionBoundaryEffect() {
+                  transactionStarted = true;
+                  const transactionId = yield* nextTransactionId;
+                  const startedAt = yield* now;
+
+                  return yield* effect.pipe(
+                    Effect.provideService(
+                      CurrentTransactionService,
+                      CurrentTransactionService.of({
+                        adapter: "postgres",
+                        startedAt,
+                        transactionId,
+                      })
+                    )
+                  );
+                })
+              )
+              .pipe(
+                Effect.catchTag("SqlError", () =>
+                  Effect.fail(
+                    new TransactionFailure({
+                      adapter: "postgres",
+                      operation: transactionStarted ? "commit" : "begin",
+                    })
+                  )
+                )
+              );
+          },
+        })
+      )
+    )
+  );
+
+/** Production PostgreSQL transaction boundary with runtime identifiers. */
+export const PostgresTransactionBoundaryLayer =
+  createPostgresTransactionBoundaryLayer();

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import {
-  createEventCollector,
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -50,10 +51,9 @@ const createShippingOptionFixture = async (
 describe("fulfillment Effect service", () => {
   it("runs shipping option, fulfillment, tracking, and cancel operations through a fake provider", async () => {
     const provider = createFakeFulfillmentProvider();
-    const eventCollector = createEventCollector();
+    const outbox = createInMemoryOutbox();
     const service = createFulfillmentService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-      eventPublisher: eventCollector.publisher,
       idGenerator: createSequenceIdGenerator([
         "fulfprov_fake",
         "fset_default",
@@ -63,8 +63,12 @@ describe("fulfillment Effect service", () => {
         "fulf_order_1",
         "ship_order_1",
       ]),
+      outboxWriter: outbox.writer,
       providerRegistry: createFulfillmentProviderRegistry([provider]),
       repository: createResettableInMemoryFulfillmentRepository(),
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+      }),
     });
     const shippingOption = await createShippingOptionFixture(service);
     const options = await Effect.runPromise(
@@ -121,7 +125,7 @@ describe("fulfillment Effect service", () => {
     expect(duplicate.fulfillment.id).toBe(detail.fulfillment.id);
     expect(tracked?.status).toBe("delivered");
     expect(canceled.status).toBe("canceled");
-    expect(eventCollector.events.map((event) => event.name)).toEqual([
+    expect(outbox.records.map((record) => record.event.name)).toEqual([
       "fulfillment.set-created",
       "fulfillment.shipping-option-created",
       "fulfillment.created",

@@ -1,3 +1,4 @@
+import type { InMemoryTransactionResource } from "@ecommerce/core/testing";
 import { Layer, Effect } from "effect";
 
 import type {
@@ -12,7 +13,8 @@ import type {
 } from "../domain";
 import { TaxRepositoryService } from "../domain";
 
-export interface ResettableTaxRepository extends TaxRepository {
+export interface ResettableTaxRepository
+  extends TaxRepository, InMemoryTransactionResource {
   readonly clear: Effect.Effect<void>;
 }
 
@@ -51,6 +53,30 @@ export class InMemoryTaxRepository implements ResettableTaxRepository {
   readonly #providerConfigs = new Map<string, TaxProviderConfigRecord>();
   readonly #rates = new Map<string, TaxRateRecord>();
   readonly #regions = new Map<string, TaxRegionRecord>();
+
+  readonly captureRollback = Effect.sync(() => {
+    const categories = new Map(this.#categories);
+    const providerConfigs = new Map(this.#providerConfigs);
+    const rates = new Map(this.#rates);
+    const regions = new Map(this.#regions);
+
+    return Effect.sync(() => {
+      InMemoryTaxRepository.#restoreMap(this.#categories, categories);
+      InMemoryTaxRepository.#restoreMap(this.#providerConfigs, providerConfigs);
+      InMemoryTaxRepository.#restoreMap(this.#rates, rates);
+      InMemoryTaxRepository.#restoreMap(this.#regions, regions);
+    });
+  });
+
+  static #restoreMap<Key, Value>(
+    target: Map<Key, Value>,
+    snapshot: Map<Key, Value>
+  ) {
+    target.clear();
+    for (const entry of snapshot) {
+      target.set(...entry);
+    }
+  }
 
   readonly clear = Effect.sync(() => {
     this.#categories.clear();

@@ -9,6 +9,7 @@ import {
 
 const createBindings = () => ({
   cartCache: {} as DurableObjectNamespace,
+  commerceEventQueue: {} as Queue,
   notificationEventRealtime: {} as DurableObjectNamespace,
   notificationEventQueue: {} as Queue,
   postgres: {
@@ -21,6 +22,7 @@ const createBindings = () => ({
 describe("production commerce runtime composition", () => {
   for (const binding of [
     "cartCache",
+    "commerceEventQueue",
     "notificationEventQueue",
     "notificationEventRealtime",
     "postgres",
@@ -137,6 +139,20 @@ describe("production commerce runtime composition", () => {
     });
 
     expect(composition.diagnostics.adapters.notifications).toBe("disabled");
+  });
+
+  it("drains committed commerce outbox records through the commerce queue", async () => {
+    const productionSource = await Bun.file(
+      new URL("../production-commerce-runtime.ts", import.meta.url)
+    ).text();
+    const workerSource = await Bun.file(
+      new URL("../index.ts", import.meta.url)
+    ).text();
+
+    expect(productionSource).toContain("deliverOutboxBatch");
+    expect(productionSource).toContain("COMMERCE_EVENTS_OUTBOX_TOPIC");
+    expect(productionSource).toContain("createCloudflareQueuePublisherLayer");
+    expect(workerSource).toContain("composition.drainCommerceEventOutbox()");
   });
 
   it("rejects a missing or invalid runtime mode", () => {

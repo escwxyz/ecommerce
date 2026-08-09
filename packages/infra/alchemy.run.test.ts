@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import * as Infrastructure from "./alchemy.run";
 import Stack, {
   cartCache,
+  commerceEventQueue,
   database,
   notificationEventDeadLetterQueue,
   notificationEventOutboxDrainCrons,
@@ -79,6 +80,7 @@ describe("notification event queue bindings", () => {
     }
 
     expect(getNotificationEventQueueEnv(false)).toEqual({
+      COMMERCE_EVENT_QUEUE: commerceEventQueue,
       NOTIFICATION_EVENT_DEAD_LETTER_QUEUE: notificationEventDeadLetterQueue,
       NOTIFICATION_EVENT_QUEUE: notificationEventQueue,
     });

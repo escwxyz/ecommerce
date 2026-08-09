@@ -1,3 +1,4 @@
+import type { InMemoryTransactionResource } from "@ecommerce/core/testing";
 import { Effect, Layer } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 
@@ -14,7 +15,8 @@ import type {
 } from "../domain";
 import { PromotionRepositoryService } from "../domain";
 
-export interface ResettablePromotionRepository extends PromotionRepository {
+export interface ResettablePromotionRepository
+  extends PromotionRepository, InMemoryTransactionResource {
   clear(): void;
 }
 
@@ -57,6 +59,32 @@ export class InMemoryPromotionRepository implements ResettablePromotionRepositor
   readonly #redemptions = new Map<string, PromotionRedemptionRecord>();
   readonly #rules = new Map<string, PromotionRuleRecord>();
   readonly #usageLimits = new Map<string, PromotionUsageLimitRecord>();
+
+  readonly captureRollback = Effect.sync(() => {
+    const campaigns = new Map(this.#campaigns);
+    const promotions = new Map(this.#promotions);
+    const redemptions = new Map(this.#redemptions);
+    const rules = new Map(this.#rules);
+    const usageLimits = new Map(this.#usageLimits);
+
+    return Effect.sync(() => {
+      InMemoryPromotionRepository.#restoreMap(this.#campaigns, campaigns);
+      InMemoryPromotionRepository.#restoreMap(this.#promotions, promotions);
+      InMemoryPromotionRepository.#restoreMap(this.#redemptions, redemptions);
+      InMemoryPromotionRepository.#restoreMap(this.#rules, rules);
+      InMemoryPromotionRepository.#restoreMap(this.#usageLimits, usageLimits);
+    });
+  });
+
+  static #restoreMap<Key, Value>(
+    target: Map<Key, Value>,
+    snapshot: Map<Key, Value>
+  ) {
+    target.clear();
+    for (const entry of snapshot) {
+      target.set(...entry);
+    }
+  }
 
   clear(): void {
     this.#campaigns.clear();

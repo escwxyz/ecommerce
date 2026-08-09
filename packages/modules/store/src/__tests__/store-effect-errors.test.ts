@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -13,7 +15,10 @@ import {
   StoreInvalidIdentifier,
   createStoreId,
 } from "../domain";
-import { createInMemoryStoreRepository } from "../repositories";
+import {
+  createResettableInMemoryStoreRepository,
+  storeRepositoryTransactionResource,
+} from "../repositories";
 import { createStoreService } from "../services";
 
 describe("store schema-backed expected errors", () => {
@@ -48,10 +53,16 @@ describe("store schema-backed expected errors", () => {
     const failure = new StoreCurrencyListEmpty({
       reason: "no-supported-currencies",
     });
+    const repository = createResettableInMemoryStoreRepository();
+    const outbox = createInMemoryOutbox();
     const service = createStoreService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["store_1"]),
-      repository: createInMemoryStoreRepository(),
+      outboxWriter: outbox.writer,
+      repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [storeRepositoryTransactionResource(repository), outbox],
+      }),
     });
 
     expect(Schema.encodeSync(StoreCurrencyListEmpty)(failure)).toEqual({

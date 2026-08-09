@@ -1,3 +1,4 @@
+import type { InMemoryTransactionResource } from "@ecommerce/core/testing";
 import { Effect, Layer } from "effect";
 
 import type {
@@ -20,7 +21,8 @@ import type {
 } from "../domain";
 import { FulfillmentRepositoryService } from "../domain";
 
-export interface ResettableFulfillmentRepository extends FulfillmentRepository {
+export interface ResettableFulfillmentRepository
+  extends FulfillmentRepository, InMemoryTransactionResource {
   readonly clear: Effect.Effect<void>;
 }
 
@@ -90,6 +92,66 @@ export class InMemoryFulfillmentRepository implements ResettableFulfillmentRepos
   readonly #shipments = new Map<string, ShipmentRecord>();
   readonly #shippingOptions = new Map<string, ShippingOption>();
   readonly #shippingProfiles = new Map<string, ShippingProfile>();
+
+  readonly captureRollback = Effect.sync(() => {
+    const fulfillmentSets = new Map(this.#fulfillmentSets);
+    const fulfillments = new Map(this.#fulfillments);
+    const fulfillmentsByIdempotencyKey = new Map(
+      this.#fulfillmentsByIdempotencyKey
+    );
+    const providerRecords = new Map(this.#providerRecords);
+    const returnShipmentLinks = new Map(this.#returnShipmentLinks);
+    const serviceZones = new Map(this.#serviceZones);
+    const shipments = new Map(this.#shipments);
+    const shippingOptions = new Map(this.#shippingOptions);
+    const shippingProfiles = new Map(this.#shippingProfiles);
+
+    return Effect.sync(() => {
+      InMemoryFulfillmentRepository.#restoreMap(
+        this.#fulfillmentSets,
+        fulfillmentSets
+      );
+      InMemoryFulfillmentRepository.#restoreMap(
+        this.#fulfillments,
+        fulfillments
+      );
+      InMemoryFulfillmentRepository.#restoreMap(
+        this.#fulfillmentsByIdempotencyKey,
+        fulfillmentsByIdempotencyKey
+      );
+      InMemoryFulfillmentRepository.#restoreMap(
+        this.#providerRecords,
+        providerRecords
+      );
+      InMemoryFulfillmentRepository.#restoreMap(
+        this.#returnShipmentLinks,
+        returnShipmentLinks
+      );
+      InMemoryFulfillmentRepository.#restoreMap(
+        this.#serviceZones,
+        serviceZones
+      );
+      InMemoryFulfillmentRepository.#restoreMap(this.#shipments, shipments);
+      InMemoryFulfillmentRepository.#restoreMap(
+        this.#shippingOptions,
+        shippingOptions
+      );
+      InMemoryFulfillmentRepository.#restoreMap(
+        this.#shippingProfiles,
+        shippingProfiles
+      );
+    });
+  });
+
+  static #restoreMap<Key, Value>(
+    target: Map<Key, Value>,
+    snapshot: Map<Key, Value>
+  ) {
+    target.clear();
+    for (const entry of snapshot) {
+      target.set(...entry);
+    }
+  }
 
   readonly clear = Effect.sync(() => {
     this.#fulfillmentSets.clear();

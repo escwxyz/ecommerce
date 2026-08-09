@@ -12,6 +12,7 @@ import {
   taxEffectHttpApiContribution,
 } from "@ecommerce/api";
 import { createAuth } from "@ecommerce/auth";
+import type { CommerceQueueMessage } from "@ecommerce/core";
 import { env } from "@ecommerce/env/server";
 import type { NotificationEventQueueMessage } from "@ecommerce/platform-cloudflare";
 import { CartCacheDurableObject } from "@ecommerce/platform-cloudflare/cart-cache-do";
@@ -29,6 +30,7 @@ interface CommerceServerEnv {
   readonly BETTER_AUTH_SECRET: string;
   readonly BETTER_AUTH_URL: string;
   readonly CART_CACHE: DurableObjectNamespace;
+  readonly COMMERCE_EVENT_QUEUE?: Queue<CommerceQueueMessage>;
   readonly COMMERCE_RUNTIME_MODE: "development" | "production";
   readonly CORS_ORIGIN: string;
   readonly DB: D1Database;
@@ -49,6 +51,7 @@ export {
 const composition = createProductionCommerceRuntimeComposition({
   bindings: {
     cartCache: serverEnv.CART_CACHE,
+    commerceEventQueue: serverEnv.COMMERCE_EVENT_QUEUE,
     notificationEventQueue: serverEnv.NOTIFICATION_EVENT_QUEUE,
     notificationEventRealtime: serverEnv.NOTIFICATION_EVENT_REALTIME,
     postgres: serverEnv.POSTGRES,
@@ -101,7 +104,12 @@ export default {
 
     return effectHttpRuntime.fetch(request);
   },
-  scheduled: () => composition.drainNotificationEventOutbox(),
+  scheduled: async () => {
+    await Promise.all([
+      composition.drainCommerceEventOutbox(),
+      composition.drainNotificationEventOutbox(),
+    ]);
+  },
   queue: (batch: MessageBatch<NotificationEventQueueMessage>) =>
     composition.processNotificationEventQueue(batch),
 };

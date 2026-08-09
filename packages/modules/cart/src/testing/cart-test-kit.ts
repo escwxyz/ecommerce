@@ -1,4 +1,6 @@
 import {
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -7,8 +9,11 @@ import { createInMemoryCartActorService } from "../coordination";
 import { createResettableInMemoryCartRepository } from "../repositories";
 import { createCartService } from "../services";
 
-export const createTestCartService = () =>
-  createCartService({
+export const createTestCartService = () => {
+  const outbox = createInMemoryOutbox();
+  const repository = createResettableInMemoryCartRepository();
+
+  return createCartService({
     actorService: createInMemoryCartActorService(),
     clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
     idGenerator: createSequenceIdGenerator([
@@ -19,5 +24,10 @@ export const createTestCartService = () =>
       "cadj_1",
       "evt_adjustment",
     ]),
-    repository: createResettableInMemoryCartRepository(),
+    outboxWriter: outbox.writer,
+    repository,
+    transactionBoundary: createInMemoryTransactionBoundary({
+      resources: [repository, outbox],
+    }),
   });
+};

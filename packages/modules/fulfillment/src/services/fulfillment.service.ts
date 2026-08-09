@@ -1,9 +1,17 @@
 import type {
   ClockServiceShape,
-  EventPublisherServiceShape,
   IdGeneratorServiceShape,
+  OutboxWriterServiceShape,
+  TransactionBoundaryServiceShape,
+  CurrentTransactionService,
 } from "@ecommerce/core";
-import { createEventEnvelope, createCorrelationContext } from "@ecommerce/core";
+import {
+  COMMERCE_EVENTS_OUTBOX_TOPIC,
+  createCorrelationContext,
+  createEventEnvelope,
+  executeTransactionalMutation,
+} from "@ecommerce/core";
+import type { CommerceEventEnvelope } from "@ecommerce/core/events";
 import { Context, Effect, Layer } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
@@ -118,10 +126,11 @@ export const FulfillmentService = Context.Service<FulfillmentServiceShape>(
 
 export interface CreateFulfillmentServiceOptions {
   readonly clock?: ClockServiceShape;
-  readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
+  readonly outboxWriter: OutboxWriterServiceShape;
   readonly providerRegistry: FulfillmentProviderRegistry;
   readonly repository: FulfillmentRepository;
+  readonly transactionBoundary: TransactionBoundaryServiceShape;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -130,12 +139,6 @@ const createDefaultClock = (): ClockServiceShape => ({
 
 const createDefaultIdGenerator = (): IdGeneratorServiceShape => ({
   nextId: () => nanoid(),
-});
-
-const createNoopEventPublisher = (): EventPublisherServiceShape => ({
-  publish: () => {
-    // Fulfillment events are optional until a runtime event bus is composed.
-  },
 });
 
 const createPrefixedId = (
@@ -150,17 +153,14 @@ const providerCorrelation = (requestId: string) =>
   createCorrelationContext({ requestId });
 
 const publishFulfillmentEvent = (
-  eventPublisher: EventPublisherServiceShape,
-  event: Parameters<EventPublisherServiceShape["publish"]>[0]
+  outboxWriter: OutboxWriterServiceShape,
+  event: CommerceEventEnvelope,
+  idempotencyKey: string
 ) =>
-  Effect.tryPromise({
-    catch: () =>
-      new FulfillmentValidationFailure({
-        message: "Fulfillment event publication failed.",
-      }),
-    try: async () => {
-      await eventPublisher.publish(event);
-    },
+  outboxWriter.enqueue({
+    event,
+    idempotencyKey: `${event.name}:${idempotencyKey}`,
+    topic: COMMERCE_EVENTS_OUTBOX_TOPIC,
   });
 
 const getProvider = (
@@ -183,10 +183,11 @@ const normalizeCurrencyCode = (currencyCode: string | undefined) =>
 
 export const createFulfillmentService = ({
   clock = createDefaultClock(),
-  eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
+  outboxWriter,
   providerRegistry,
   repository,
+  transactionBoundary,
 }: CreateFulfillmentServiceOptions): FulfillmentServiceShape => {
   const saveShipmentFromProvider = ({
     fulfillmentId,
@@ -258,8 +259,8 @@ export const createFulfillmentService = ({
       return fulfillment;
     });
 
-  return {
-    cancelFulfillment: (input) =>
+  const service = {
+    cancelFulfillment: (input: CancelFulfillmentInput) =>
       Effect.gen(function* cancelFulfillmentEffect() {
         const fulfillment = yield* requireFulfillment(input.fulfillmentId);
 
@@ -286,19 +287,20 @@ export const createFulfillmentService = ({
         });
 
         yield* publishFulfillmentEvent(
-          eventPublisher,
+          outboxWriter,
           createEventEnvelope({
             id: createPrefixedId(idGenerator, "evt_"),
             name: FULFILLMENT_CANCELED_EVENT,
             payload: { id: saved.id, reason: input.reason },
             sourceModule: "fulfillment",
             subject: { id: saved.id, type: "fulfillment" },
-          })
+          }),
+          `${FULFILLMENT_CANCELED_EVENT}:${saved.id}`
         );
 
         return saved;
       }),
-    createFulfillment: (input) =>
+    createFulfillment: (input: CreateFulfillmentInput) =>
       Effect.gen(function* createFulfillmentEffect() {
         const duplicate = yield* repository.findFulfillmentByIdempotencyKey(
           input.idempotencyKey
@@ -369,19 +371,20 @@ export const createFulfillmentService = ({
           : [];
 
         yield* publishFulfillmentEvent(
-          eventPublisher,
+          outboxWriter,
           createEventEnvelope({
             id: createPrefixedId(idGenerator, "evt_"),
             name: FULFILLMENT_CREATED_EVENT,
             payload: { id: saved.id, orderId: saved.orderId },
             sourceModule: "fulfillment",
             subject: { id: saved.id, type: "fulfillment" },
-          })
+          }),
+          input.idempotencyKey
         );
 
         return { fulfillment: saved, shipments };
       }),
-    createFulfillmentSet: (input) =>
+    createFulfillmentSet: (input: CreateFulfillmentSetInput) =>
       Effect.gen(function* createFulfillmentSetEffect() {
         const now = clock.now();
         const saved = yield* repository.saveFulfillmentSet({
@@ -395,19 +398,20 @@ export const createFulfillmentService = ({
         });
 
         yield* publishFulfillmentEvent(
-          eventPublisher,
+          outboxWriter,
           createEventEnvelope({
             id: createPrefixedId(idGenerator, "evt_"),
             name: FULFILLMENT_SET_CREATED_EVENT,
             payload: { id: saved.id, name: saved.name },
             sourceModule: "fulfillment",
             subject: { id: saved.id, type: "fulfillment-set" },
-          })
+          }),
+          `${FULFILLMENT_SET_CREATED_EVENT}:${saved.id}`
         );
 
         return saved;
       }),
-    createServiceZone: (input) =>
+    createServiceZone: (input: CreateServiceZoneInput) =>
       Effect.gen(function* createServiceZoneEffect() {
         const fulfillmentSet = yield* repository.findFulfillmentSetById(
           input.fulfillmentSetId
@@ -433,7 +437,7 @@ export const createFulfillmentService = ({
           updatedAt: now,
         });
       }),
-    createShippingOption: (input) =>
+    createShippingOption: (input: CreateShippingOptionInput) =>
       Effect.gen(function* createShippingOptionEffect() {
         const fulfillmentSet = yield* repository.findFulfillmentSetById(
           input.fulfillmentSetId
@@ -498,19 +502,20 @@ export const createFulfillmentService = ({
         });
 
         yield* publishFulfillmentEvent(
-          eventPublisher,
+          outboxWriter,
           createEventEnvelope({
             id: createPrefixedId(idGenerator, "evt_"),
             name: SHIPPING_OPTION_CREATED_EVENT,
             payload: { id: saved.id, providerKey: saved.providerKey },
             sourceModule: "fulfillment",
             subject: { id: saved.id, type: "shipping-option" },
-          })
+          }),
+          `${SHIPPING_OPTION_CREATED_EVENT}:${saved.id}`
         );
 
         return saved;
       }),
-    createShippingProfile: (input) =>
+    createShippingProfile: (input: CreateShippingProfileInput) =>
       Effect.gen(function* createShippingProfileEffect() {
         const fulfillmentSet = yield* repository.findFulfillmentSetById(
           input.fulfillmentSetId
@@ -534,7 +539,7 @@ export const createFulfillmentService = ({
           updatedAt: now,
         });
       }),
-    getFulfillmentDetail: (id) =>
+    getFulfillmentDetail: (id: FulfillmentId) =>
       Effect.gen(function* getFulfillmentDetailEffect() {
         const fulfillment = yield* repository.findFulfillmentById(id);
 
@@ -549,8 +554,9 @@ export const createFulfillmentService = ({
         return { fulfillment, shipments };
       }),
     listFulfillments: repository.listFulfillments,
-    listShippingOptions: (input) => repository.listShippingOptions(input),
-    rateShippingOption: (shippingOptionId) =>
+    listShippingOptions: (input?: ShippingOptionLookupInput) =>
+      repository.listShippingOptions(input),
+    rateShippingOption: (shippingOptionId: ShippingOptionId) =>
       Effect.gen(function* rateShippingOptionEffect() {
         const shippingOption = yield* requireShippingOption(shippingOptionId);
         const provider = yield* getProvider(
@@ -569,7 +575,7 @@ export const createFulfillmentService = ({
           shippingOptionId,
         };
       }),
-    registerProvider: (providerKey) =>
+    registerProvider: (providerKey: string) =>
       Effect.gen(function* registerFulfillmentProviderEffect() {
         yield* getProvider(providerRegistry, providerKey);
         const now = clock.now();
@@ -584,7 +590,7 @@ export const createFulfillmentService = ({
           updatedAt: now,
         });
       }),
-    trackShipment: (input) =>
+    trackShipment: (input: TrackShipmentInput) =>
       Effect.gen(function* trackShipmentEffect() {
         const fulfillment = yield* requireFulfillment(input.fulfillmentId);
 
@@ -619,7 +625,7 @@ export const createFulfillmentService = ({
         }
 
         yield* publishFulfillmentEvent(
-          eventPublisher,
+          outboxWriter,
           createEventEnvelope({
             id: createPrefixedId(idGenerator, "evt_"),
             name: SHIPMENT_TRACKED_EVENT,
@@ -630,11 +636,69 @@ export const createFulfillmentService = ({
             },
             sourceModule: "fulfillment",
             subject: { id: shipment.id, type: "shipment" },
-          })
+          }),
+          `${SHIPMENT_TRACKED_EVENT}:${shipment.id}:${shipment.status}`
         );
 
         return shipment;
       }),
+  };
+
+  const transactionalFulfillmentMutation = <A, E>(
+    operation: string,
+    effect: EffectValue<A, E, CurrentTransactionService>
+  ) =>
+    executeTransactionalMutation<A, E, never>({
+      effect,
+      moduleName: "fulfillment",
+      operation,
+      outboxMessages: () => [],
+      outboxWriter,
+      transactionBoundary,
+    });
+
+  return {
+    ...service,
+    cancelFulfillment: (input) =>
+      transactionalFulfillmentMutation(
+        "cancelFulfillment",
+        service.cancelFulfillment(input)
+      ),
+    createFulfillment: (input) =>
+      transactionalFulfillmentMutation(
+        "createFulfillment",
+        service.createFulfillment(input)
+      ),
+    createFulfillmentSet: (input) =>
+      transactionalFulfillmentMutation(
+        "createFulfillmentSet",
+        service.createFulfillmentSet(input)
+      ),
+    createServiceZone: (input) =>
+      transactionalFulfillmentMutation(
+        "createServiceZone",
+        service.createServiceZone(input)
+      ),
+    createShippingOption: (input) =>
+      transactionalFulfillmentMutation(
+        "createShippingOption",
+        service.createShippingOption(input)
+      ),
+    createShippingProfile: (input) =>
+      transactionalFulfillmentMutation(
+        "createShippingProfile",
+        service.createShippingProfile(input)
+      ),
+    registerProvider: (providerKey) =>
+      transactionalFulfillmentMutation(
+        "registerProvider",
+        service.registerProvider(providerKey)
+      ),
+    trackShipment: (input) =>
+      transactionalFulfillmentMutation(
+        "trackShipment",
+        service.trackShipment(input)
+      ),
   };
 };
 

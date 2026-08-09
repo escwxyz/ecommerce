@@ -1,3 +1,4 @@
+import type { InMemoryTransactionResource } from "@ecommerce/core/testing";
 import { Effect, Layer } from "effect";
 
 import type {
@@ -13,7 +14,8 @@ import type {
 } from "../domain";
 import { PricingRepositoryService } from "../domain";
 
-export interface ResettablePricingRepository extends PricingRepository {
+export interface ResettablePricingRepository
+  extends PricingRepository, InMemoryTransactionResource {
   clear(): void;
 }
 
@@ -54,6 +56,37 @@ export class InMemoryPricingRepository implements ResettablePricingRepository {
   readonly #pricePreferences = new Map<string, PricePreferenceRecord>();
   readonly #priceRules = new Map<string, PriceRuleRecord>();
   readonly #priceSets = new Map<string, PriceSetRecord>();
+
+  readonly captureRollback = Effect.sync(() => {
+    const currencies = new Map(this.#currencies);
+    const moneyAmounts = new Map(this.#moneyAmounts);
+    const priceLists = new Map(this.#priceLists);
+    const pricePreferences = new Map(this.#pricePreferences);
+    const priceRules = new Map(this.#priceRules);
+    const priceSets = new Map(this.#priceSets);
+
+    return Effect.sync(() => {
+      InMemoryPricingRepository.#restoreMap(this.#currencies, currencies);
+      InMemoryPricingRepository.#restoreMap(this.#moneyAmounts, moneyAmounts);
+      InMemoryPricingRepository.#restoreMap(this.#priceLists, priceLists);
+      InMemoryPricingRepository.#restoreMap(
+        this.#pricePreferences,
+        pricePreferences
+      );
+      InMemoryPricingRepository.#restoreMap(this.#priceRules, priceRules);
+      InMemoryPricingRepository.#restoreMap(this.#priceSets, priceSets);
+    });
+  });
+
+  static #restoreMap<Key, Value>(
+    target: Map<Key, Value>,
+    snapshot: Map<Key, Value>
+  ) {
+    target.clear();
+    for (const entry of snapshot) {
+      target.set(...entry);
+    }
+  }
 
   clear(): void {
     this.#currencies.clear();
