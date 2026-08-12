@@ -274,12 +274,12 @@ export const createStoreService = ({
         }),
         moduleName: "store",
         operation: "updateStoreSettings",
-        outboxMessages: ({ event, saved }) =>
+        outboxMessages: ({ event }) =>
           event
             ? [
                 {
                   event,
-                  idempotencyKey: `${event.name}:${saved.id}:${saved.updatedAt.toISOString()}`,
+                  idempotencyKey: `${event.name}:${event.id}`,
                   topic: COMMERCE_EVENTS_OUTBOX_TOPIC,
                 },
               ]

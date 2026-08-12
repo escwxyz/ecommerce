@@ -76,8 +76,7 @@ describe("store Effect service and Layer boundary", () => {
     });
     expect(outbox.records).toHaveLength(1);
     expect(outbox.records[0]).toMatchObject({
-      idempotencyKey:
-        "store.settings.updated:store_layer:2026-01-01T00:00:00.000Z",
+      idempotencyKey: "store.settings.updated:evt_layer",
       status: "pending",
       topic: "commerce.events",
       transactionId: "transaction_layer",
@@ -86,6 +85,40 @@ describe("store Effect service and Layer boundary", () => {
         name: STORE_SETTINGS_UPDATED_EVENT,
       },
     });
+  });
+
+  it("writes distinct event intent for updates sharing one timestamp", async () => {
+    const repository = createResettableInMemoryStoreRepository();
+    const outbox = createInMemoryOutbox({
+      recordIds: ["outbox_first", "outbox_second"],
+    });
+    const service = createStoreService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "store_same_timestamp",
+        "evt_first",
+        "evt_second",
+      ]),
+      outboxWriter: outbox.writer,
+      repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [storeRepositoryTransactionResource(repository), outbox],
+        transactionIds: ["transaction_first", "transaction_second"],
+      }),
+    });
+
+    await Effect.runPromise(service.updateStoreSettings({ name: "First" }));
+    await Effect.runPromise(service.updateStoreSettings({ name: "Second" }));
+
+    expect(outbox.records).toHaveLength(2);
+    expect(outbox.records.map(({ idempotencyKey }) => idempotencyKey)).toEqual([
+      "store.settings.updated:evt_first",
+      "store.settings.updated:evt_second",
+    ]);
+    expect(outbox.records.map(({ event }) => event.id)).toEqual([
+      "evt_first",
+      "evt_second",
+    ]);
   });
 
   it("rolls back settings when outbox persistence fails", async () => {
