@@ -62,7 +62,8 @@ export type CartAggregateApiRecord = typeof CartAggregateApiSchema.Type;
 
 export interface CartRepository {
   readonly findAdjustmentByIdempotencyKey: (
-    idempotencyKey: string
+    idempotencyKey: string,
+    cartId?: CartId
   ) => EffectValue<CartAdjustmentRecord | null, CartExpectedError>;
   readonly findCartById: (
     id: CartId
@@ -72,7 +73,8 @@ export interface CartRepository {
     cartId?: CartId
   ) => EffectValue<CartLineItemRecord | null, CartExpectedError>;
   readonly findLineItemByIdempotencyKey: (
-    idempotencyKey: string
+    idempotencyKey: string,
+    cartId?: CartId
   ) => EffectValue<CartLineItemRecord | null, CartExpectedError>;
   readonly getCartAggregate: (
     id: CartId

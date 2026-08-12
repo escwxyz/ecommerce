@@ -3,6 +3,16 @@ export {
   type CreateCachedCartRepositoryOptions,
 } from "./cached-cart.repository";
 export {
+  createCartMutationCacheCoordinator,
+  createCommittedCartCacheSynchronizer,
+  type CartCommittedMutation,
+  type CartCommittedMutationSynchronizer,
+  type CartMutationCacheCoordinator,
+  type CartMutationCacheGuardInput,
+  type CreateCartMutationCacheCoordinatorOptions,
+  type CreateCommittedCartCacheSynchronizerOptions,
+} from "./committed-cart-cache";
+export {
   createCustomerCartScope,
   createSystemCartScope,
   createVisitorCartScope,

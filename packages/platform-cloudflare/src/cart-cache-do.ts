@@ -43,6 +43,12 @@ interface StoredAggregate {
 
 type CartCacheOperation =
   | {
+      readonly cartId: string;
+      readonly mutationId: string;
+      readonly scope: CartOwnershipScope;
+      readonly type: "beginMutation" | "completeMutation";
+    }
+  | {
       readonly aggregate: StoredCartAggregate;
       readonly scope: CartOwnershipScope;
       readonly type: "hydrateCartAggregate";
@@ -106,6 +112,8 @@ const ownerStorageKey = "owner";
 const adjustmentIdempotencyStorageKey = "adjustment-idempotency";
 const lineItemIdempotencyStorageKey = "line-item-idempotency";
 const projectionFailuresStorageKey = "projection-failures";
+const activeMutationsStorageKey = "active-mutations";
+const aggregateStaleStorageKey = "aggregate-stale";
 
 const emptyAggregate = (): StoredAggregate => ({
   adjustments: {},
@@ -193,6 +201,14 @@ export class CartCacheDurableObject extends DurableObject {
 
   async #handleOperation(operation: CartCacheOperation): Promise<unknown> {
     switch (operation.type) {
+      case "beginMutation": {
+        await this.#beginMutation(operation);
+        return null;
+      }
+      case "completeMutation": {
+        await this.#completeMutation(operation);
+        return null;
+      }
       case "findAdjustmentByIdempotencyKey": {
         return this.#findAdjustmentByIdempotencyKey(operation);
       }
@@ -248,6 +264,44 @@ export class CartCacheDurableObject extends DurableObject {
         message: `Cart is owned by ${serializeCartOwnershipScope(owner)}.`,
       });
     }
+  }
+
+  async #beginMutation({
+    mutationId,
+    scope,
+  }: Extract<
+    CartCacheOperation,
+    { readonly type: "beginMutation" | "completeMutation" }
+  >): Promise<void> {
+    await this.#assertAccess(scope);
+    const active =
+      (await this.ctx.storage.get<Record<string, true>>(
+        activeMutationsStorageKey
+      )) ?? {};
+    await this.ctx.storage.put(activeMutationsStorageKey, {
+      ...active,
+      [mutationId]: true,
+    });
+    await this.ctx.storage.put(aggregateStaleStorageKey, true);
+  }
+
+  async #completeMutation({
+    mutationId,
+    scope,
+  }: Extract<
+    CartCacheOperation,
+    { readonly type: "beginMutation" | "completeMutation" }
+  >): Promise<void> {
+    await this.#assertAccess(scope);
+    const active =
+      (await this.ctx.storage.get<Record<string, true>>(
+        activeMutationsStorageKey
+      )) ?? {};
+    const remaining = Object.fromEntries(
+      Object.entries(active).filter(([activeId]) => activeId !== mutationId)
+    );
+    await this.ctx.storage.put(activeMutationsStorageKey, remaining);
+    await this.ctx.storage.put(aggregateStaleStorageKey, true);
   }
 
   async #assignOwner(
@@ -336,6 +390,10 @@ export class CartCacheDurableObject extends DurableObject {
   ): Promise<StoredCartAggregate | null> {
     await this.#assertAccess(scope);
 
+    if (await this.ctx.storage.get<boolean>(aggregateStaleStorageKey)) {
+      return null;
+    }
+
     return toStoredCartAggregate(await this.#readAggregate());
   }
 
@@ -346,6 +404,14 @@ export class CartCacheDurableObject extends DurableObject {
     CartCacheOperation,
     { readonly type: "hydrateCartAggregate" }
   >): Promise<void> {
+    const active =
+      (await this.ctx.storage.get<Record<string, true>>(
+        activeMutationsStorageKey
+      )) ?? {};
+    if (Object.keys(active).length > 0) {
+      return;
+    }
+
     await this.#assignOwner(aggregate.cart, scope);
     await this.ctx.storage.put(aggregateStorageKey, {
       adjustments: Object.fromEntries(
@@ -356,6 +422,7 @@ export class CartCacheDurableObject extends DurableObject {
         aggregate.lineItems.map((item) => [item.id, item])
       ),
     } satisfies StoredAggregate);
+    await this.ctx.storage.put(aggregateStaleStorageKey, false);
   }
 
   async #readAggregate(): Promise<StoredAggregate> {

@@ -96,6 +96,20 @@ describe("production commerce runtime composition", () => {
     expect(source).not.toContain("./commerce-runtime");
   });
 
+  it("keeps the Durable Object cart cache on reads and synchronizes it after commit", async () => {
+    const productionSource = await Bun.file(
+      new URL("../production-commerce-runtime.ts", import.meta.url)
+    ).text();
+
+    expect(productionSource).toContain("createCloudflareCartCacheRepository");
+    expect(productionSource).toContain("createCartMutationCacheCoordinator");
+    expect(productionSource).toContain("createCommittedCartCacheSynchronizer");
+    expect(productionSource).toContain(
+      "mutationRepository: projectionRepository"
+    );
+    expect(productionSource).toContain("repository: cachedRepository");
+  });
+
   it("keeps the deleted checkout compatibility runtime deleted", async () => {
     expect(
       await Bun.file(

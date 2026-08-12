@@ -1,6 +1,8 @@
 import {
   CartRepositoryService,
   CartService,
+  createCartMutationCacheCoordinator,
+  createCommittedCartCacheSynchronizer,
   createCartService,
 } from "@ecommerce/cart";
 import {
@@ -60,6 +62,8 @@ import {
   createPaymentService,
 } from "@ecommerce/payment";
 import {
+  createCloudflareCartActiveCache,
+  createCloudflareCartCacheRepository,
   createCloudflareKeyedActorLayer,
   createCloudflareQueuePublisherLayer,
   drainNotificationEventOutbox,
@@ -227,7 +231,7 @@ export const createProductionCommerceRuntimeComposition = ({
   mode,
 }: CreateProductionCommerceRuntimeCompositionOptions): ProductionCommerceRuntimeComposition => {
   const runtimeMode = requireRuntimeMode(mode);
-  requireBinding({
+  const cartCache = requireBinding({
     binding: "CART_CACHE",
     mode: runtimeMode,
     value: bindings.cartCache,
@@ -364,13 +368,28 @@ export const createProductionCommerceRuntimeComposition = ({
       const runtimeIdGenerator = yield* IdGeneratorService;
       const outboxWriter = yield* OutboxWriterService;
       const transactionBoundary = yield* TransactionBoundaryService;
+      const activeCache = createCloudflareCartActiveCache({
+        namespace: cartCache,
+      });
+      const cachedRepository = createCloudflareCartCacheRepository({
+        namespace: cartCache,
+        projectionRepository,
+      });
 
       return createCartService({
         actorService,
         clock: runtimeClock,
+        committedMutationSynchronizer: createCommittedCartCacheSynchronizer({
+          cache: activeCache,
+          projectionRepository,
+        }),
         idGenerator: runtimeIdGenerator,
+        mutationCacheCoordinator: createCartMutationCacheCoordinator({
+          cache: activeCache,
+        }),
+        mutationRepository: projectionRepository,
         outboxWriter,
-        repository: projectionRepository,
+        repository: cachedRepository,
         transactionBoundary,
       });
     })

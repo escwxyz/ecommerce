@@ -238,6 +238,7 @@ const createFakeCartCacheNamespace = () => {
   const objects = new Map<
     string,
     {
+      activeMutations: Set<string>;
       aggregate: {
         adjustments: { readonly id: string }[];
         cart: { readonly customerId: string | null } | null;
@@ -246,6 +247,7 @@ const createFakeCartCacheNamespace = () => {
       adjustmentIdempotency: Map<string, unknown>;
       lineItemIdempotency: Map<string, unknown>;
       owner: { readonly id: string; readonly type: string } | null;
+      stale: boolean;
     }
   >();
 
@@ -257,6 +259,7 @@ const createFakeCartCacheNamespace = () => {
     }
 
     const created = {
+      activeMutations: new Set<string>(),
       adjustmentIdempotency: new Map<string, unknown>(),
       aggregate: {
         adjustments: [] as { readonly id: string }[],
@@ -265,6 +268,7 @@ const createFakeCartCacheNamespace = () => {
       },
       lineItemIdempotency: new Map<string, unknown>(),
       owner: null,
+      stale: false,
     };
     objects.set(name, created);
 
@@ -300,6 +304,7 @@ const createFakeCartCacheNamespace = () => {
             readonly id?: string;
             readonly idempotencyKey?: string;
             readonly item?: { readonly id: string };
+            readonly mutationId?: string;
             readonly reason?: string;
             readonly scope: { readonly id: string; readonly type: string };
             readonly type: string;
@@ -315,13 +320,36 @@ const createFakeCartCacheNamespace = () => {
           }
 
           switch (operation.type) {
+            case "beginMutation":
+              if (operation.mutationId) {
+                object.activeMutations.add(operation.mutationId);
+              }
+              object.stale = true;
+              return Response.json({ output: null });
+            case "completeMutation":
+              if (operation.mutationId) {
+                object.activeMutations.delete(operation.mutationId);
+              }
+              object.stale = true;
+              return Response.json({ output: null });
+            case "findAdjustmentByIdempotencyKey":
+              return Response.json({
+                output: operation.idempotencyKey
+                  ? (object.adjustmentIdempotency.get(
+                      operation.idempotencyKey
+                    ) ?? null)
+                  : null,
+              });
             case "findCartById":
               return Response.json({
                 output: object.aggregate.cart,
               });
             case "getCartAggregate":
               return Response.json({
-                output: object.aggregate.cart ? object.aggregate : null,
+                output:
+                  object.aggregate.cart && !object.stale
+                    ? object.aggregate
+                    : null,
               });
             case "findLineItemById":
               return Response.json({
@@ -330,6 +358,13 @@ const createFakeCartCacheNamespace = () => {
                     (lineItem: { readonly id: string }) =>
                       operation.id === lineItem.id
                   ) ?? null,
+              });
+            case "findLineItemByIdempotencyKey":
+              return Response.json({
+                output: operation.idempotencyKey
+                  ? (object.lineItemIdempotency.get(operation.idempotencyKey) ??
+                    null)
+                  : null,
               });
             case "hydrateCartAggregate":
               if (
@@ -348,12 +383,16 @@ const createFakeCartCacheNamespace = () => {
               }
 
               if (operation.aggregate) {
+                if (object.activeMutations.size > 0) {
+                  return Response.json({ output: null });
+                }
                 object.aggregate = {
                   adjustments: [...operation.aggregate.adjustments],
                   cart: operation.aggregate.cart,
                   lineItems: [...operation.aggregate.lineItems],
                 };
                 object.owner = operation.scope;
+                object.stale = false;
               }
               return Response.json({ output: null });
             case "recordProjectionSyncFailure":
@@ -498,6 +537,13 @@ describe("cloudflare cart cache adapter", () => {
       ],
     });
     expect(duplicate.lineItems).toHaveLength(1);
+    expect(
+      cartCache.fetches.some(
+        ({ operation }) =>
+          (operation as { readonly type?: string }).type ===
+          "findLineItemByIdempotencyKey"
+      )
+    ).toBe(true);
   });
 
   it("hydrates cache misses from projection and records projection sync failures", async () => {

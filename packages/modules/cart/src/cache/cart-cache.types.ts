@@ -58,7 +58,18 @@ export const isCartCacheOwnershipError = (
  * this from `packages/platform-cloudflare`; tests can use the in-memory adapter.
  */
 export interface CartActiveCache {
+  readonly beginMutation: (input: {
+    readonly cartId: CartId;
+    readonly mutationId: string;
+    readonly scope: CartOwnershipScope;
+  }) => EffectValue<void, CartExpectedError>;
+  readonly completeMutation: (input: {
+    readonly cartId: CartId;
+    readonly mutationId: string;
+    readonly scope: CartOwnershipScope;
+  }) => EffectValue<void, CartExpectedError>;
   readonly findAdjustmentByIdempotencyKey: (input: {
+    readonly cartId?: CartId;
     readonly idempotencyKey: string;
     readonly scope: CartOwnershipScope;
   }) => EffectValue<CartAdjustmentRecord | null, CartExpectedError>;
@@ -72,6 +83,7 @@ export interface CartActiveCache {
     readonly scope: CartOwnershipScope;
   }) => EffectValue<CartLineItemRecord | null, CartExpectedError>;
   readonly findLineItemByIdempotencyKey: (input: {
+    readonly cartId?: CartId;
     readonly idempotencyKey: string;
     readonly scope: CartOwnershipScope;
   }) => EffectValue<CartLineItemRecord | null, CartExpectedError>;

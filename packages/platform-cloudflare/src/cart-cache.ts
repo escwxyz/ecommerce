@@ -198,7 +198,38 @@ const requestCartCacheEffect = <Output>(
 export const createCloudflareCartActiveCache = ({
   namespace,
 }: CloudflareCartCacheOptions): CartActiveCache => ({
-  findAdjustmentByIdempotencyKey: () => Effect.succeed(null),
+  beginMutation: ({ cartId, mutationId, scope }) =>
+    requestCartCacheEffect<null>({
+      cartId,
+      namespace,
+      operation: { cartId, mutationId, scope, type: "beginMutation" },
+    }).pipe(Effect.asVoid),
+  completeMutation: ({ cartId, mutationId, scope }) =>
+    requestCartCacheEffect<null>({
+      cartId,
+      namespace,
+      operation: { cartId, mutationId, scope, type: "completeMutation" },
+    }).pipe(Effect.asVoid),
+  findAdjustmentByIdempotencyKey: ({ cartId, idempotencyKey, scope }) => {
+    if (!cartId) {
+      return Effect.succeed(null);
+    }
+
+    return requestCartCacheEffect<StoredAdjustmentRecord | null>({
+      cartId,
+      namespace,
+      operation: {
+        cartId,
+        idempotencyKey,
+        scope,
+        type: "findAdjustmentByIdempotencyKey",
+      },
+    }).pipe(
+      Effect.map((adjustment) =>
+        adjustment ? deserializeAdjustment(adjustment) : null
+      )
+    );
+  },
   findCartById: ({ id, scope }) =>
     requestCartCacheEffect<StoredCartRecord | null>({
       cartId: id,
@@ -225,7 +256,22 @@ export const createCloudflareCartActiveCache = ({
       },
     }).pipe(Effect.map((item) => (item ? deserializeLineItem(item) : null)));
   },
-  findLineItemByIdempotencyKey: () => Effect.succeed(null),
+  findLineItemByIdempotencyKey: ({ cartId, idempotencyKey, scope }) => {
+    if (!cartId) {
+      return Effect.succeed(null);
+    }
+
+    return requestCartCacheEffect<StoredLineItemRecord | null>({
+      cartId,
+      namespace,
+      operation: {
+        cartId,
+        idempotencyKey,
+        scope,
+        type: "findLineItemByIdempotencyKey",
+      },
+    }).pipe(Effect.map((item) => (item ? deserializeLineItem(item) : null)));
+  },
   getCartAggregate: ({ id, scope }) =>
     requestCartCacheEffect<StoredCartAggregate | null>({
       cartId: id,

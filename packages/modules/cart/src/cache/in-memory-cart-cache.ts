@@ -39,22 +39,68 @@ const scopeFromCart = (
     : fallback;
 
 export class InMemoryCartActiveCache implements CartActiveCache {
+  readonly #activeMutations = new Map<string, Set<string>>();
   readonly #adjustmentIdempotency = new Map<string, CartAdjustmentRecord>();
   readonly #lineItemIdempotency = new Map<string, CartLineItemRecord>();
   readonly #owners = new Map<string, CartOwnershipScope>();
   readonly #repository = createInMemoryCartRepository();
+  readonly #staleCarts = new Set<string>();
+
+  readonly beginMutation = ({
+    cartId,
+    mutationId,
+    scope,
+  }: {
+    readonly cartId: CartId;
+    readonly mutationId: string;
+    readonly scope: CartOwnershipScope;
+  }): EffectValue<void, CartExpectedError> =>
+    this.#assertCartAccess(cartId, scope).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          const active = this.#activeMutations.get(cartId) ?? new Set<string>();
+          active.add(mutationId);
+          this.#activeMutations.set(cartId, active);
+          this.#staleCarts.add(cartId);
+        })
+      )
+    );
+
+  readonly completeMutation = ({
+    cartId,
+    mutationId,
+    scope,
+  }: {
+    readonly cartId: CartId;
+    readonly mutationId: string;
+    readonly scope: CartOwnershipScope;
+  }): EffectValue<void, CartExpectedError> =>
+    this.#assertCartAccess(cartId, scope).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          const active = this.#activeMutations.get(cartId);
+          active?.delete(mutationId);
+          if (active?.size === 0) {
+            this.#activeMutations.delete(cartId);
+          }
+          this.#staleCarts.add(cartId);
+        })
+      )
+    );
 
   readonly findAdjustmentByIdempotencyKey = ({
+    cartId,
     idempotencyKey,
     scope,
   }: {
+    readonly cartId?: CartId;
     readonly idempotencyKey: string;
     readonly scope: CartOwnershipScope;
   }): EffectValue<CartAdjustmentRecord | null, CartExpectedError> =>
     Effect.flatMap(
       Effect.succeed(this.#adjustmentIdempotency.get(idempotencyKey) ?? null),
       (adjustment) =>
-        adjustment
+        adjustment && (!cartId || adjustment.cartId === cartId)
           ? this.#assertCartAccess(adjustment.cartId, scope).pipe(
               Effect.as(adjustment)
             )
@@ -68,9 +114,11 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     readonly id: CartId;
     readonly scope: CartOwnershipScope;
   }): EffectValue<CartRecord | null, CartExpectedError> =>
-    this.#assertCartAccess(id, scope).pipe(
-      Effect.flatMap(() => this.#repository.findCartById(id))
-    );
+    this.#staleCarts.has(id)
+      ? Effect.succeed(null)
+      : this.#assertCartAccess(id, scope).pipe(
+          Effect.flatMap(() => this.#repository.findCartById(id))
+        );
 
   readonly findLineItemById = ({
     id,
@@ -92,16 +140,18 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     );
 
   readonly findLineItemByIdempotencyKey = ({
+    cartId,
     idempotencyKey,
     scope,
   }: {
+    readonly cartId?: CartId;
     readonly idempotencyKey: string;
     readonly scope: CartOwnershipScope;
   }): EffectValue<CartLineItemRecord | null, CartExpectedError> =>
     Effect.flatMap(
       Effect.succeed(this.#lineItemIdempotency.get(idempotencyKey) ?? null),
       (item) =>
-        item
+        item && (!cartId || item.cartId === cartId)
           ? this.#assertCartAccess(item.cartId, scope).pipe(Effect.as(item))
           : Effect.succeed(null)
     );
@@ -113,9 +163,11 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     readonly id: CartId;
     readonly scope: CartOwnershipScope;
   }): EffectValue<CartAggregate | null, CartExpectedError> =>
-    this.#assertCartAccess(id, scope).pipe(
-      Effect.flatMap(() => this.#repository.getCartAggregate(id))
-    );
+    this.#staleCarts.has(id)
+      ? Effect.succeed(null)
+      : this.#assertCartAccess(id, scope).pipe(
+          Effect.flatMap(() => this.#repository.getCartAggregate(id))
+        );
 
   readonly hydrateCartAggregate = ({
     aggregate,
@@ -124,7 +176,15 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     readonly aggregate: CartAggregate;
     readonly scope: CartOwnershipScope;
   }): EffectValue<void, CartExpectedError> =>
-    this.#upsertAggregate(aggregate, scope);
+    this.#activeMutations.has(aggregate.cart.id)
+      ? Effect.void
+      : this.#upsertAggregate(aggregate, scope).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              this.#staleCarts.delete(aggregate.cart.id);
+            })
+          )
+        );
 
   readonly removeLineItem = ({
     cartId,

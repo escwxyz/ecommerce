@@ -24,6 +24,12 @@ import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
 import type {
+  CartCommittedMutation,
+  CartCommittedMutationSynchronizer,
+  CartMutationCacheCoordinator,
+  CartMutationCacheGuardInput,
+} from "../cache";
+import type {
   AddCartLineItemInput,
   ApplyCartAdjustmentInput,
   AssociateCartCustomerInput,
@@ -51,7 +57,9 @@ import {
   CartRepositoryService,
   CartValidationFailure,
   createCartAdjustmentIdEffect,
+  createCartId,
   createCartIdEffect,
+  createCartLineItemId,
   createCartLineItemIdEffect,
 } from "../domain";
 
@@ -108,7 +116,10 @@ export const CartService = Context.Service<CartServiceShape>(
 export interface CreateCartServiceOptions {
   readonly actorService: KeyedActorService;
   readonly clock?: ClockServiceShape;
+  readonly committedMutationSynchronizer?: CartCommittedMutationSynchronizer;
   readonly idGenerator?: IdGeneratorServiceShape;
+  readonly mutationCacheCoordinator?: CartMutationCacheCoordinator;
+  readonly mutationRepository?: CartRepository;
   readonly outboxWriter: OutboxWriterServiceShape;
   readonly repository: CartRepository;
   readonly transactionBoundary: TransactionBoundaryServiceShape;
@@ -271,24 +282,29 @@ const coordinateCart = (
 export const createCartService = ({
   actorService,
   clock = createDefaultClock(),
+  committedMutationSynchronizer,
   idGenerator = createDefaultIdGenerator(),
+  mutationCacheCoordinator,
+  mutationRepository: configuredMutationRepository,
   outboxWriter,
   repository,
   transactionBoundary,
 }: CreateCartServiceOptions): CartServiceShape => {
+  const mutationRepository = configuredMutationRepository ?? repository;
   const service = {
     addLineItem: (input: AddCartLineItemInput) =>
       Effect.gen(function* addCartLineItemEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
         const duplicate = yield* repository.findLineItemByIdempotencyKey(
-          input.idempotencyKey
+          input.idempotencyKey,
+          cartId
         );
 
         if (duplicate) {
-          return yield* requireAggregate(repository, cartId);
+          return yield* requireAggregate(mutationRepository, cartId);
         }
 
-        yield* requireCart(repository, cartId);
+        yield* requireCart(mutationRepository, cartId);
 
         const now = clock.now();
         const lineItem: CartLineItemRecord = {
@@ -306,7 +322,7 @@ export const createCartService = ({
           variantId: input.variantId,
         };
 
-        yield* repository.saveLineItem(lineItem, input.idempotencyKey);
+        yield* mutationRepository.saveLineItem(lineItem, input.idempotencyKey);
         yield* publishCartEvent({
           cartId,
           causationId: input.causationId,
@@ -324,26 +340,27 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
     applyAdjustment: (input: ApplyCartAdjustmentInput) =>
       Effect.gen(function* applyCartAdjustmentEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
         const duplicate = yield* repository.findAdjustmentByIdempotencyKey(
-          input.idempotencyKey
+          input.idempotencyKey,
+          cartId
         );
 
         if (duplicate) {
-          return yield* requireAggregate(repository, cartId);
+          return yield* requireAggregate(mutationRepository, cartId);
         }
 
-        yield* requireCart(repository, cartId);
+        yield* requireCart(mutationRepository, cartId);
         const lineItemId = input.lineItemId
           ? yield* createCartLineItemIdEffect(input.lineItemId)
           : null;
 
         if (lineItemId) {
-          const lineItem = yield* repository.findLineItemById(
+          const lineItem = yield* mutationRepository.findLineItemById(
             lineItemId,
             cartId
           );
@@ -357,7 +374,7 @@ export const createCartService = ({
         }
 
         const now = clock.now();
-        const adjustment = yield* repository.saveAdjustment(
+        const adjustment = yield* mutationRepository.saveAdjustment(
           {
             amount: input.amount,
             cartId,
@@ -391,15 +408,15 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
     associateCustomer: (input: AssociateCartCustomerInput) =>
       Effect.gen(function* associateCartCustomerEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        const cart = yield* requireCart(repository, cartId);
+        const cart = yield* requireCart(mutationRepository, cartId);
         const now = clock.now();
 
-        yield* repository.saveCart({
+        yield* mutationRepository.saveCart({
           ...cart,
           customerId: input.customerId ?? cart.customerId,
           email: input.email ?? cart.email,
@@ -421,7 +438,7 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
     createCart: (input: CreateCartInput) =>
       Effect.gen(function* createCartEffect() {
@@ -448,7 +465,7 @@ export const createCartService = ({
           updatedAt: now,
         };
 
-        const saved = yield* repository.saveCart(cart);
+        const saved = yield* mutationRepository.saveCart(cart);
         yield* publishCartEvent({
           cartId: saved.id,
           correlationId: saved.id,
@@ -469,21 +486,21 @@ export const createCartService = ({
     setAddresses: (input: SetCartAddressesInput) =>
       Effect.gen(function* setCartAddressesEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        const cart = yield* requireCart(repository, cartId);
-        yield* repository.saveCart({
+        const cart = yield* requireCart(mutationRepository, cartId);
+        yield* mutationRepository.saveCart({
           ...cart,
           billingAddress: input.billingAddress ?? cart.billingAddress,
           shippingAddress: input.shippingAddress ?? cart.shippingAddress,
           updatedAt: clock.now(),
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
     setCheckoutReferences: (input: SetCartCheckoutReferencesInput) =>
       Effect.gen(function* setCartCheckoutReferencesEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        const cart = yield* requireCart(repository, cartId);
-        yield* repository.saveCart({
+        const cart = yield* requireCart(mutationRepository, cartId);
+        yield* mutationRepository.saveCart({
           ...cart,
           paymentCollectionId:
             input.paymentCollectionId ?? cart.paymentCollectionId,
@@ -507,17 +524,17 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
     setRegionChannel: (input: SetCartRegionChannelInput) =>
       Effect.gen(function* setCartRegionChannelEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        const cart = yield* requireCart(repository, cartId);
+        const cart = yield* requireCart(mutationRepository, cartId);
         const currencyCode = input.currencyCode
           ? normalizeCurrencyCode(input.currencyCode)
           : cart.currencyCode;
 
-        yield* repository.saveCart({
+        yield* mutationRepository.saveCart({
           ...cart,
           currencyCode,
           regionId: input.regionId ?? cart.regionId,
@@ -529,22 +546,25 @@ export const createCartService = ({
           updatedAt: clock.now(),
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
     updateLineItem: (input: UpdateCartLineItemInput) =>
       Effect.gen(function* updateCartLineItemEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        yield* requireCart(repository, cartId);
+        yield* requireCart(mutationRepository, cartId);
         const lineItemId = yield* createCartLineItemIdEffect(input.lineItemId);
-        const lineItem = yield* repository.findLineItemById(lineItemId, cartId);
+        const lineItem = yield* mutationRepository.findLineItemById(
+          lineItemId,
+          cartId
+        );
 
         if (!lineItem || lineItem.cartId !== cartId) {
           return yield* new CartLineItemNotFound({ cartId, lineItemId });
         }
 
         yield* input.quantity === 0
-          ? repository.removeLineItem(lineItemId, cartId)
-          : repository
+          ? mutationRepository.removeLineItem(lineItemId, cartId)
+          : mutationRepository
               .saveLineItem({
                 ...lineItem,
                 quantity: input.quantity,
@@ -568,18 +588,18 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
     updateTotals: (input: UpdateCartTotalsInput) =>
       Effect.gen(function* updateCartTotalsEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        const cart = yield* requireCart(repository, cartId);
+        const cart = yield* requireCart(mutationRepository, cartId);
         const totals = {
           ...input.totals,
           currencyCode: normalizeCurrencyCode(input.totals.currencyCode),
         };
 
-        yield* repository.saveCart({
+        yield* mutationRepository.saveCart({
           ...cart,
           currencyCode: totals.currencyCode,
           totals,
@@ -600,27 +620,59 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
   };
 
   const transactionalCartMutation = <A, E>(
     operation: string,
-    effect: EffectValue<A, E, CurrentTransactionService>
-  ) =>
-    executeTransactionalMutation<A, E, never>({
+    effect: EffectValue<A, E, CurrentTransactionService>,
+    toCommittedMutation: (result: A) => CartCommittedMutation,
+    cacheGuard?: CartMutationCacheGuardInput
+  ) => {
+    const transactionalEffect = executeTransactionalMutation<A, E, never>({
       effect,
       moduleName: "cart",
       operation,
       outboxMessages: () => [],
       outboxWriter,
       transactionBoundary,
-    });
+    }).pipe(
+      Effect.tap((result) =>
+        committedMutationSynchronizer
+          ? committedMutationSynchronizer(toCommittedMutation(result))
+          : Effect.void
+      )
+    );
+
+    if (!cacheGuard || !mutationCacheCoordinator) {
+      return transactionalEffect;
+    }
+
+    return mutationCacheCoordinator
+      .begin(cacheGuard)
+      .pipe(
+        Effect.andThen(transactionalEffect),
+        Effect.ensuring(mutationCacheCoordinator.complete(cacheGuard))
+      );
+  };
 
   return {
     ...service,
     addLineItem: (input) =>
-      transactionalCartMutation("addLineItem", service.addLineItem(input)).pipe(
+      transactionalCartMutation(
+        "addLineItem",
+        service.addLineItem(input),
+        (aggregate) => ({
+          cartId: aggregate.cart.id,
+          idempotencyKey: input.idempotencyKey,
+          type: "line-item",
+        }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `addLineItem:${input.idempotencyKey}:${nanoid()}`,
+        }
+      ).pipe(
         Effect.tap(() =>
           coordinateCart(actorService, input, "cart.addLineItem").pipe(
             Effect.ignore
@@ -630,7 +682,16 @@ export const createCartService = ({
     applyAdjustment: (input) =>
       transactionalCartMutation(
         "applyAdjustment",
-        service.applyAdjustment(input)
+        service.applyAdjustment(input),
+        (aggregate) => ({
+          cartId: aggregate.cart.id,
+          idempotencyKey: input.idempotencyKey,
+          type: "adjustment",
+        }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `applyAdjustment:${input.idempotencyKey}:${nanoid()}`,
+        }
       ).pipe(
         Effect.tap(() =>
           coordinateCart(actorService, input, "cart.applyAdjustment").pipe(
@@ -641,29 +702,74 @@ export const createCartService = ({
     associateCustomer: (input) =>
       transactionalCartMutation(
         "associateCustomer",
-        service.associateCustomer(input)
+        service.associateCustomer(input),
+        (aggregate) => ({ cartId: aggregate.cart.id, type: "aggregate" }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `associateCustomer:${input.idempotencyKey}:${nanoid()}`,
+        }
       ),
     createCart: (input) =>
-      transactionalCartMutation("createCart", service.createCart(input)),
+      transactionalCartMutation(
+        "createCart",
+        service.createCart(input),
+        (cart) => ({ cartId: cart.id, type: "aggregate" })
+      ),
     setAddresses: (input) =>
-      transactionalCartMutation("setAddresses", service.setAddresses(input)),
+      transactionalCartMutation(
+        "setAddresses",
+        service.setAddresses(input),
+        (aggregate) => ({ cartId: aggregate.cart.id, type: "aggregate" }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `setAddresses:${input.idempotencyKey}:${nanoid()}`,
+        }
+      ),
     setCheckoutReferences: (input) =>
       transactionalCartMutation(
         "setCheckoutReferences",
-        service.setCheckoutReferences(input)
+        service.setCheckoutReferences(input),
+        (aggregate) => ({ cartId: aggregate.cart.id, type: "aggregate" }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `setCheckoutReferences:${input.idempotencyKey}:${nanoid()}`,
+        }
       ),
     setRegionChannel: (input) =>
       transactionalCartMutation(
         "setRegionChannel",
-        service.setRegionChannel(input)
+        service.setRegionChannel(input),
+        (aggregate) => ({ cartId: aggregate.cart.id, type: "aggregate" }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `setRegionChannel:${input.idempotencyKey}:${nanoid()}`,
+        }
       ),
     updateLineItem: (input) =>
       transactionalCartMutation(
         "updateLineItem",
-        service.updateLineItem(input)
+        service.updateLineItem(input),
+        (aggregate) => ({
+          cartId: aggregate.cart.id,
+          lineItemId: createCartLineItemId(input.lineItemId),
+          remove: input.quantity === 0,
+          type: "line-item-update",
+        }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `updateLineItem:${input.idempotencyKey}:${nanoid()}`,
+        }
       ),
     updateTotals: (input) =>
-      transactionalCartMutation("updateTotals", service.updateTotals(input)),
+      transactionalCartMutation(
+        "updateTotals",
+        service.updateTotals(input),
+        (aggregate) => ({ cartId: aggregate.cart.id, type: "aggregate" }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `updateTotals:${input.idempotencyKey}:${nanoid()}`,
+        }
+      ),
   };
 };
 
