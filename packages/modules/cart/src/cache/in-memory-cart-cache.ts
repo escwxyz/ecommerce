@@ -82,8 +82,14 @@ export class InMemoryCartActiveCache implements CartActiveCache {
           active?.delete(mutationId);
           if (active?.size === 0) {
             this.#activeMutations.delete(cartId);
+            this.#staleCarts.delete(cartId);
+            return;
           }
-          this.#staleCarts.add(cartId);
+          if (active) {
+            this.#staleCarts.add(cartId);
+            return;
+          }
+          this.#staleCarts.delete(cartId);
         })
       )
     );
@@ -114,11 +120,13 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     readonly id: CartId;
     readonly scope: CartOwnershipScope;
   }): EffectValue<CartRecord | null, CartExpectedError> =>
-    this.#staleCarts.has(id)
-      ? Effect.succeed(null)
-      : this.#assertCartAccess(id, scope).pipe(
-          Effect.flatMap(() => this.#repository.findCartById(id))
-        );
+    Effect.suspend(() =>
+      this.#staleCarts.has(id)
+        ? Effect.succeed(null)
+        : this.#assertCartAccess(id, scope).pipe(
+            Effect.flatMap(() => this.#repository.findCartById(id))
+          )
+    );
 
   readonly findLineItemById = ({
     id,
@@ -163,11 +171,13 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     readonly id: CartId;
     readonly scope: CartOwnershipScope;
   }): EffectValue<CartAggregate | null, CartExpectedError> =>
-    this.#staleCarts.has(id)
-      ? Effect.succeed(null)
-      : this.#assertCartAccess(id, scope).pipe(
-          Effect.flatMap(() => this.#repository.getCartAggregate(id))
-        );
+    Effect.suspend(() =>
+      this.#staleCarts.has(id)
+        ? Effect.succeed(null)
+        : this.#assertCartAccess(id, scope).pipe(
+            Effect.flatMap(() => this.#repository.getCartAggregate(id))
+          )
+    );
 
   readonly hydrateCartAggregate = ({
     aggregate,
@@ -176,15 +186,17 @@ export class InMemoryCartActiveCache implements CartActiveCache {
     readonly aggregate: CartAggregate;
     readonly scope: CartOwnershipScope;
   }): EffectValue<void, CartExpectedError> =>
-    this.#activeMutations.has(aggregate.cart.id)
-      ? Effect.void
-      : this.#upsertAggregate(aggregate, scope).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => {
-              this.#staleCarts.delete(aggregate.cart.id);
-            })
+    Effect.suspend(() =>
+      this.#activeMutations.has(aggregate.cart.id)
+        ? Effect.void
+        : this.#upsertAggregate(aggregate, scope).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                this.#staleCarts.delete(aggregate.cart.id);
+              })
+            )
           )
-        );
+    );
 
   readonly removeLineItem = ({
     cartId,

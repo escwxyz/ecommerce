@@ -330,7 +330,7 @@ const createFakeCartCacheNamespace = () => {
               if (operation.mutationId) {
                 object.activeMutations.delete(operation.mutationId);
               }
-              object.stale = true;
+              object.stale = object.activeMutations.size > 0;
               return Response.json({ output: null });
             case "findAdjustmentByIdempotencyKey":
               return Response.json({

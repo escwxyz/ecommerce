@@ -58,16 +58,30 @@ export const isCartCacheOwnershipError = (
  * this from `packages/platform-cloudflare`; tests can use the in-memory adapter.
  */
 export interface CartActiveCache {
+  /**
+   * Marks a cart mutation as active for the ownership scope and makes cached
+   * aggregate reads stale until a committed projection is hydrated again.
+   */
   readonly beginMutation: (input: {
     readonly cartId: CartId;
     readonly mutationId: string;
     readonly scope: CartOwnershipScope;
   }) => EffectValue<void, CartExpectedError>;
+  /**
+   * Clears the mutation marker for this `mutationId`. The cart remains stale
+   * while other mutations are active; after the final mutation completes,
+   * aggregate reads may use the cache again and hydration may resume.
+   */
   readonly completeMutation: (input: {
     readonly cartId: CartId;
     readonly mutationId: string;
     readonly scope: CartOwnershipScope;
   }) => EffectValue<void, CartExpectedError>;
+  /**
+   * Looks up an adjustment idempotency record visible to `scope`. When `cartId`
+   * is provided, a cached hit is valid only for that cart; omitting it treats
+   * the idempotency key as the lookup scope.
+   */
   readonly findAdjustmentByIdempotencyKey: (input: {
     readonly cartId?: CartId;
     readonly idempotencyKey: string;
@@ -82,6 +96,11 @@ export interface CartActiveCache {
     readonly cartId?: CartId;
     readonly scope: CartOwnershipScope;
   }) => EffectValue<CartLineItemRecord | null, CartExpectedError>;
+  /**
+   * Looks up a line-item idempotency record visible to `scope`. When `cartId` is
+   * provided, a cached hit is valid only for that cart; omitting it treats the
+   * idempotency key as the lookup scope.
+   */
   readonly findLineItemByIdempotencyKey: (input: {
     readonly cartId?: CartId;
     readonly idempotencyKey: string;

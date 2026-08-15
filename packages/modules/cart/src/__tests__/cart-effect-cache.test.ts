@@ -22,6 +22,34 @@ import { createCartService } from "../services";
 import { createInMemoryCartActiveCache } from "../testing";
 
 const clock = createStaticClock(new Date("2026-01-01T00:00:00.000Z"));
+const createCacheTestCart = (id: string) => ({
+  billingAddress: null,
+  completedAt: null,
+  createdAt: clock.now(),
+  currencyCode: "USD",
+  customerId: null,
+  email: null,
+  id: createCartId(id),
+  metadata: {},
+  paymentCollectionId: null,
+  regionId: null,
+  salesChannelId: null,
+  shippingAddress: null,
+  shippingOptionId: null,
+  status: "active" as const,
+  totals: {
+    adjustmentTotal: 0,
+    currencyCode: "USD",
+    discountTotal: 0,
+    giftCardTotal: 0,
+    itemSubtotal: 0,
+    shippingTotal: 0,
+    subtotal: 0,
+    taxTotal: 0,
+    total: 0,
+  },
+  updatedAt: clock.now(),
+});
 const createMutationPersistence = () => {
   const outbox = createInMemoryOutbox();
   return {
@@ -145,6 +173,133 @@ describe("cart Effect active cache repository", () => {
           scope,
         })
       )
+    ).resolves.toBeNull();
+  });
+
+  it("reads cached aggregates again after the final active mutation completes", async () => {
+    const cache = createInMemoryCartActiveCache();
+    const scope = createVisitorCartScope("visitor_final_mutation");
+    const cartId = createCartId("cart_final");
+    const now = new Date("2026-01-01T00:00:00.000Z");
+
+    await Effect.runPromise(
+      cache.saveCart({
+        cart: {
+          billingAddress: null,
+          completedAt: null,
+          createdAt: now,
+          currencyCode: "USD",
+          customerId: null,
+          email: null,
+          id: cartId,
+          metadata: {},
+          paymentCollectionId: null,
+          regionId: null,
+          salesChannelId: null,
+          shippingAddress: null,
+          shippingOptionId: null,
+          status: "active",
+          totals: {
+            adjustmentTotal: 0,
+            currencyCode: "USD",
+            discountTotal: 0,
+            giftCardTotal: 0,
+            itemSubtotal: 0,
+            shippingTotal: 0,
+            subtotal: 0,
+            taxTotal: 0,
+            total: 0,
+          },
+          updatedAt: now,
+        },
+        scope,
+      })
+    );
+    await Effect.runPromise(
+      cache.beginMutation({
+        cartId,
+        mutationId: "mut_final",
+        scope,
+      })
+    );
+    await expect(
+      Effect.runPromise(cache.getCartAggregate({ id: cartId, scope }))
+    ).resolves.toBeNull();
+
+    await Effect.runPromise(
+      cache.completeMutation({
+        cartId,
+        mutationId: "mut_final",
+        scope,
+      })
+    );
+
+    await expect(
+      Effect.runPromise(cache.getCartAggregate({ id: cartId, scope }))
+    ).resolves.toMatchObject({ cart: { id: cartId } });
+  });
+
+  it("evaluates a preconstructed cart lookup after a mutation begins", async () => {
+    const cache = createInMemoryCartActiveCache();
+    const scope = createVisitorCartScope("visitor_deferred_cart");
+    const cart = createCacheTestCart("cart_deferred_lookup");
+    await Effect.runPromise(
+      cache.saveCart({
+        cart,
+        scope,
+      })
+    );
+    const pendingLookup = cache.findCartById({ id: cart.id, scope });
+
+    await Effect.runPromise(
+      cache.beginMutation({
+        cartId: cart.id,
+        mutationId: "mut_deferred_cart",
+        scope,
+      })
+    );
+
+    await expect(Effect.runPromise(pendingLookup)).resolves.toBeNull();
+  });
+
+  it("evaluates a preconstructed aggregate lookup after a mutation begins", async () => {
+    const cache = createInMemoryCartActiveCache();
+    const scope = createVisitorCartScope("visitor_deferred_aggregate");
+    const cart = createCacheTestCart("cart_deferred_aggregate");
+    await Effect.runPromise(cache.saveCart({ cart, scope }));
+    const pendingLookup = cache.getCartAggregate({ id: cart.id, scope });
+
+    await Effect.runPromise(
+      cache.beginMutation({
+        cartId: cart.id,
+        mutationId: "mut_deferred_aggregate",
+        scope,
+      })
+    );
+
+    await expect(Effect.runPromise(pendingLookup)).resolves.toBeNull();
+  });
+
+  it("defers preconstructed hydration while a mutation is active", async () => {
+    const cache = createInMemoryCartActiveCache();
+    const scope = createVisitorCartScope("visitor_deferred_hydration");
+    const cart = createCacheTestCart("cart_deferred_hydration");
+    const pendingHydration = cache.hydrateCartAggregate({
+      aggregate: { adjustments: [], cart, lineItems: [] },
+      scope,
+    });
+
+    await Effect.runPromise(
+      cache.beginMutation({
+        cartId: cart.id,
+        mutationId: "mut_deferred_hydration",
+        scope,
+      })
+    );
+    await Effect.runPromise(pendingHydration);
+
+    await expect(
+      Effect.runPromise(cache.getCartAggregate({ id: cart.id, scope }))
     ).resolves.toBeNull();
   });
 
