@@ -4,9 +4,10 @@ import {
   TransactionFailure,
 } from "@ecommerce/core/persistence";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Result } from "effect";
 import type { Effect as EffectValue, Success } from "effect/Effect";
 import type { SqlError } from "effect/unstable/sql/SqlError";
+import { isSqlError } from "effect/unstable/sql/SqlError";
 
 /** Drizzle Effect PostgreSQL configuration accepted by the adapter Layer. */
 export type PostgresDrizzleConfig = Parameters<
@@ -81,6 +82,39 @@ const defaultTransactionId = Effect.sync(
 );
 const defaultTransactionNow = Effect.sync(() => new Date());
 
+class PostgresTransactionBodySqlError<E> {
+  readonly _tag = "PostgresTransactionBodySqlError";
+
+  readonly error: E;
+
+  constructor(error: E) {
+    this.error = error;
+  }
+}
+
+const isPostgresTransactionBodySqlError = <E>(
+  error: unknown
+): error is PostgresTransactionBodySqlError<E> =>
+  error instanceof PostgresTransactionBodySqlError;
+
+const getTransactionFailureOperation = ({
+  transactionBodyInvoked,
+  transactionBodySucceeded,
+}: {
+  readonly transactionBodyInvoked: boolean;
+  readonly transactionBodySucceeded: boolean;
+}): "begin" | "commit" | "rollback" => {
+  if (!transactionBodyInvoked) {
+    return "begin";
+  }
+
+  if (transactionBodySucceeded) {
+    return "commit";
+  }
+
+  return "rollback";
+};
+
 /**
  * Adapts Drizzle's scoped PostgreSQL transaction to the runtime-neutral
  * transaction boundary consumed by commerce application services.
@@ -94,38 +128,75 @@ export const createPostgresTransactionBoundaryLayer = ({
     PostgresDrizzleService.use((service) =>
       Effect.succeed(
         TransactionBoundaryService.of({
-          withTransaction: (effect) => {
-            let transactionStarted = false;
+          withTransaction: <A, E, R>(
+            effect: Effect.Effect<A, E, R | CurrentTransactionService>
+          ) => {
+            let transactionBodyInvoked = false;
+            let transactionBodySucceeded = false;
 
-            return service
-              .withTransaction(() =>
-                Effect.gen(function* postgresTransactionBoundaryEffect() {
-                  transactionStarted = true;
-                  const transactionId = yield* nextTransactionId;
-                  const startedAt = yield* now;
+            return Effect.gen(function* postgresTransactionBoundary() {
+              const transactionResult = yield* Effect.result(
+                service.withTransaction(() =>
+                  Effect.gen(function* postgresTransactionBoundaryEffect() {
+                    transactionBodyInvoked = true;
+                    const transactionId = yield* nextTransactionId;
+                    const startedAt = yield* now;
 
-                  return yield* effect.pipe(
-                    Effect.provideService(
-                      CurrentTransactionService,
-                      CurrentTransactionService.of({
-                        adapter: "postgres",
-                        startedAt,
-                        transactionId,
-                      })
-                    )
-                  );
-                })
-              )
-              .pipe(
-                Effect.catchTag("SqlError", () =>
-                  Effect.fail(
-                    new TransactionFailure({
-                      adapter: "postgres",
-                      operation: transactionStarted ? "commit" : "begin",
-                    })
-                  )
+                    const bodyResult = yield* Effect.result(
+                      effect.pipe(
+                        Effect.provideService(
+                          CurrentTransactionService,
+                          CurrentTransactionService.of({
+                            adapter: "postgres",
+                            startedAt,
+                            transactionId,
+                          })
+                        )
+                      )
+                    );
+
+                    return yield* Result.match(bodyResult, {
+                      onFailure: (error) => {
+                        if (isSqlError(error)) {
+                          return Effect.fail(
+                            new PostgresTransactionBodySqlError<E>(error)
+                          );
+                        }
+
+                        return Effect.fail(error);
+                      },
+                      onSuccess: (result) => {
+                        transactionBodySucceeded = true;
+                        return Effect.succeed(result);
+                      },
+                    });
+                  })
                 )
               );
+
+              return yield* Result.match(transactionResult, {
+                onFailure: (error) => {
+                  if (isPostgresTransactionBodySqlError<E>(error)) {
+                    return Effect.fail(error.error);
+                  }
+
+                  if (isSqlError(error)) {
+                    return Effect.fail(
+                      new TransactionFailure({
+                        adapter: "postgres",
+                        operation: getTransactionFailureOperation({
+                          transactionBodyInvoked,
+                          transactionBodySucceeded,
+                        }),
+                      })
+                    );
+                  }
+
+                  return Effect.fail(error);
+                },
+                onSuccess: (result) => Effect.succeed(result),
+              });
+            });
           },
         })
       )
