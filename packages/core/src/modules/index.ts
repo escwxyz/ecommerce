@@ -233,8 +233,14 @@ type ContributionValues<
   Modules,
   Key extends keyof CommerceModuleContributions,
 > = Modules extends readonly (infer Module)[]
-  ? ModuleContributionsOf<Module>[Key] extends readonly (infer Value)[]
-    ? Value
+  ? Module extends CommerceModuleDefinition
+    ? Key extends keyof ModuleContributionsOf<Module>
+      ? NonNullable<
+          ModuleContributionsOf<Module>[Key]
+        > extends readonly (infer Value)[]
+        ? Value
+        : never
+      : never
     : never
   : never;
 
@@ -242,12 +248,6 @@ type ContributionLayer<Contribution> = Contribution extends {
   readonly layer: infer ServiceLayer;
 }
   ? ServiceLayer
-  : never;
-
-type ApiHandlerLayer<Contribution> = Contribution extends {
-  readonly handlers: infer HandlerLayer;
-}
-  ? HandlerLayer
   : never;
 
 type LayerOutput<ServiceLayer> =
@@ -277,14 +277,12 @@ type LayerRequirements<ServiceLayer> =
     ? Requirements
     : never;
 
-type ExecutableLayer<Modules> =
-  | ApiHandlerLayer<ContributionValues<Modules, "apiGroups">>
-  | ContributionLayer<
-      | ContributionValues<Modules, "eventHandlers">
-      | ContributionValues<Modules, "providers">
-      | ContributionValues<Modules, "services">
-      | ContributionValues<Modules, "workflows">
-    >;
+type ExecutableLayer<Modules> = ContributionLayer<
+  | ContributionValues<Modules, "eventHandlers">
+  | ContributionValues<Modules, "providers">
+  | ContributionValues<Modules, "services">
+  | ContributionValues<Modules, "workflows">
+>;
 
 type ModuleLifecycleRequirements<Modules> =
   Modules extends readonly (infer Module)[]
@@ -320,8 +318,11 @@ export interface CommerceApplicationComposition<
   readonly applicationLayer: Layer.Layer<
     LayerOutput<ExecutableLayer<Modules>>,
     CommerceModuleLifecycleError | LayerFailure<ExecutableLayer<Modules>>,
-    | LayerRequirements<ExecutableLayer<Modules>>
-    | ModuleLifecycleRequirements<Modules>
+    Exclude<
+      | LayerRequirements<ExecutableLayer<Modules>>
+      | ModuleLifecycleRequirements<Modules>,
+      LayerOutput<ExecutableLayer<Modules>>
+    >
   >;
   readonly eventHandlers: readonly CommerceModuleEventHandlerContribution[];
   readonly eventTypes: readonly string[];
@@ -842,7 +843,7 @@ const validateMetadataContributionKeys = (
   for (const surface of module.contributions?.adminSurfaces ?? []) {
     assertUniqueValue({
       contributionKind: "admin surface",
-      key: `${module.key}:${surface.key}`,
+      key: surface.key,
       owner: module.key,
       seen: getSeenContributionKeys(seenByKind, "admin-surface"),
     });
@@ -1110,9 +1111,10 @@ const mergeContributionLayers = (
   );
 
 /**
- * Feeds already-built dependency services into each module, then feeds the
- * module's own services into its HTTP handlers. `provideMerge` retains all
- * outputs, so later dependants and Worker entrypoints share one Layer graph.
+ * Feeds already-built dependency services into each module. HTTP handler
+ * Layers remain declarative here and are acquired by the HTTP assembler only
+ * after it has provided request middleware. `provideMerge` retains all module
+ * outputs so later dependants and Worker entrypoints share one Layer graph.
  */
 const composeExecutableModuleLayers = (
   orderedModules: readonly CommerceModuleDefinition[]
@@ -1140,14 +1142,6 @@ const composeExecutableModuleLayers = (
     applicationLayer = moduleExecutableLayer.pipe(
       Layer.provideMerge(applicationLayer)
     );
-
-    const handlerLayer = Layer.mergeAll(
-      Layer.empty,
-      ...(
-        (contributions.apiGroups ?? []) as CommerceModuleApiGroupContribution[]
-      ).map((contribution) => contribution.handlers)
-    );
-    applicationLayer = handlerLayer.pipe(Layer.provideMerge(applicationLayer));
   }
 
   return applicationLayer;

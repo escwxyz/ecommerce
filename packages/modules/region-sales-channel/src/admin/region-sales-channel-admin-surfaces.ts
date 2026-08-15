@@ -13,7 +13,7 @@ export const regionSalesChannelAdminMetadata = {
       description:
         "Manage region currency, country, tax, payment, and fulfillment availability references.",
       kind: "navigation",
-      key: "regions-navigation",
+      key: "region-sales-channel:regions-navigation",
       label: "Regions",
       operations: {
         read: { key: "regionList" },
@@ -26,7 +26,7 @@ export const regionSalesChannelAdminMetadata = {
     {
       description: "Create and review region market constraints.",
       kind: "resource",
-      key: "regions-resource",
+      key: "region-sales-channel:regions-resource",
       label: "Regions",
       operations: {
         create: {
@@ -58,7 +58,7 @@ export const regionSalesChannelAdminMetadata = {
     {
       description: "Manage sales-channel publishability and storefront scope.",
       kind: "navigation",
-      key: "sales-channels-navigation",
+      key: "region-sales-channel:sales-channels-navigation",
       label: "Sales channels",
       operations: {
         read: { key: "salesChannelList" },
@@ -71,7 +71,7 @@ export const regionSalesChannelAdminMetadata = {
     {
       description: "Create channels and publish products into channel scope.",
       kind: "resource",
-      key: "sales-channels-resource",
+      key: "region-sales-channel:sales-channels-resource",
       label: "Sales channels",
       operations: {
         create: {

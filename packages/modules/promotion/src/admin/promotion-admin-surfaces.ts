@@ -13,7 +13,7 @@ export const promotionAdminMetadata = {
       description:
         "Manage campaigns, discount rules, usage limits, and redemption tracking.",
       kind: "navigation",
-      key: "navigation",
+      key: "promotion:navigation",
       label: "Promotions",
       operations: {
         read: { key: "promotionAdjustmentsCalculate" },
@@ -27,7 +27,7 @@ export const promotionAdminMetadata = {
       description:
         "Configure promotion-owned discount adjustments without owning base prices, tax, or order financial records.",
       kind: "resource",
-      key: "resource",
+      key: "promotion:resource",
       label: "Promotions",
       operations: {
         calculate: {

@@ -239,11 +239,15 @@ describe("executable commerce module composition", () => {
           module("alpha", {
             adminSurfaces: [
               { key: "shared", kind: "navigation", label: "One" },
+            ],
+          }),
+          module("beta", {
+            adminSurfaces: [
               { key: "shared", kind: "navigation", label: "Two" },
             ],
           }),
         ],
-        owners: ["alpha", "alpha"],
+        owners: ["alpha", "beta"],
       },
       {
         contributionKind: "storage namespace",

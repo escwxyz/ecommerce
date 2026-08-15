@@ -99,17 +99,27 @@ export const builtinCommerceModuleCatalog = [
 export type BuiltinCommerceModuleKey =
   (typeof builtinCommerceModuleCatalog)[number]["key"];
 
-export interface ComposeBuiltinCommerceApplicationOptions {
-  readonly disabledModuleKeys?: readonly BuiltinCommerceModuleKey[];
+export interface ComposeBuiltinCommerceApplicationOptions<
+  DisabledModuleKeys extends readonly BuiltinCommerceModuleKey[] = readonly [],
+> {
+  readonly disabledModuleKeys?: DisabledModuleKeys;
 }
 
 /** Selects modules before validation so disablement removes all contributions. */
-export const composeBuiltinCommerceApplication = (
-  options: ComposeBuiltinCommerceApplicationOptions = {}
+export const composeBuiltinCommerceApplication = <
+  const DisabledModuleKeys extends readonly BuiltinCommerceModuleKey[] =
+    readonly [],
+>(
+  options: ComposeBuiltinCommerceApplicationOptions<DisabledModuleKeys> = {}
 ) => {
   const disabledModuleKeys = new Set(options.disabledModuleKeys);
   const modules = builtinCommerceModuleCatalog.filter(
-    (module) => !disabledModuleKeys.has(module.key)
+    (
+      module
+    ): module is Exclude<
+      (typeof builtinCommerceModuleCatalog)[number],
+      { readonly key: DisabledModuleKeys[number] }
+    > => !disabledModuleKeys.has(module.key)
   );
 
   return composeCommerceApplication({ modules });

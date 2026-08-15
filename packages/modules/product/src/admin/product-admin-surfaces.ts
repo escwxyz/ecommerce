@@ -12,7 +12,7 @@ export const productAdminMetadata = {
     {
       description: "Create and review product drafts from the admin dashboard.",
       kind: "navigation",
-      key: "navigation",
+      key: "product:navigation",
       label: "Products",
       operations: {
         create: { key: "productCreate" },
@@ -27,7 +27,7 @@ export const productAdminMetadata = {
     {
       description: "Manage the first product management surface.",
       kind: "resource",
-      key: "resource",
+      key: "product:resource",
       label: "Product catalog",
       operations: {
         create: {
@@ -68,7 +68,7 @@ export const productAdminMetadata = {
       description:
         "Manage product-owned variants, options, collections, categories, media, tags, metadata, and publishable/search attributes.",
       kind: "resource",
-      key: "catalog-structure",
+      key: "product:catalog-structure",
       label: "Catalog structure",
       operations: {
         read: {

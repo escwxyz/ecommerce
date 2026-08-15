@@ -32,14 +32,9 @@ import {
   builtinCommerceModuleCatalog,
   composeBuiltinCommerceApplication,
 } from "../builtin-commerce-modules";
-import {
-  effectHttpAuthMiddlewareLayer,
-  effectHttpExecutionMiddlewareLayer,
-  effectHttpRequestContextMiddlewareLayer,
-} from "../effect-http-middleware";
 
 describe("built-in executable commerce module catalog", () => {
-  it("acquires every built-in service and HTTP handler from one catalog", async () => {
+  it("validates every handler and acquires services without HTTP middleware", async () => {
     const composition = composeBuiltinCommerceApplication();
     const deterministicHostLayer = Layer.mergeAll(
       Layer.succeed(CartRepositoryService, {} as never),
@@ -63,10 +58,7 @@ describe("built-in executable commerce module catalog", () => {
       Layer.succeed(SalesChannelRepositoryService, {} as never),
       Layer.succeed(StoreRepositoryService, {} as never),
       Layer.succeed(TaxRepositoryService, {} as never),
-      Layer.succeed(TransactionBoundaryService, {} as never),
-      effectHttpAuthMiddlewareLayer,
-      effectHttpExecutionMiddlewareLayer,
-      effectHttpRequestContextMiddlewareLayer
+      Layer.succeed(TransactionBoundaryService, {} as never)
     );
     const runnableApplicationLayer = composition.applicationLayer.pipe(
       Layer.provide(deterministicHostLayer)

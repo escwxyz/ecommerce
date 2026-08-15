@@ -12,7 +12,7 @@ export const customerAdminMetadata = {
     {
       description: "Review and manage commerce customer profiles.",
       kind: "navigation",
-      key: "navigation",
+      key: "customer:navigation",
       label: "Customers",
       operations: {
         list: { key: "customerList" },
@@ -27,7 +27,7 @@ export const customerAdminMetadata = {
       description:
         "Manage customer-owned profiles, addresses, auth links, groups, and metadata.",
       kind: "resource",
-      key: "resource",
+      key: "customer:resource",
       label: "Customer profiles",
       operations: {
         assignGroup: {

@@ -258,6 +258,52 @@ describe("Cloudflare Effect HTTP Worker runtime", () => {
     }
   });
 
+  it("provides HTTP middleware before acquiring composition-owned handlers", async () => {
+    const protectedContribution = createProtectedAdminContribution();
+    const composition = composeCommerceApplication({
+      modules: [
+        defineCommerceModule({
+          contributions: {
+            apiGroups: [
+              defineCommerceModuleApiGroupContribution({
+                group: protectedContribution.group,
+                handlers: protectedContribution.handlers,
+                key: protectedContribution.key,
+                surface: protectedContribution.surface,
+              }),
+            ],
+          },
+          key: "protected-runtime",
+        }),
+      ] as const,
+    });
+    const runtime = createEffectHttpWorkerRuntime({
+      auth: {
+        api: {
+          getSession: () => Promise.resolve(createBetterAuthSession()),
+        },
+      },
+      contributions: composition.apiGroups,
+      runtimeLayers: [composition.applicationLayer],
+    });
+
+    try {
+      const response = await runtime.fetch(
+        new Request("https://commerce.example/admin/protected-runtime", {
+          headers: { cookie: "better-auth.session=token" },
+        })
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        role: "store-admin",
+        userId: "user_1",
+      });
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   it("serves canonical admin and storefront APIs through one Fetch handler", async () => {
     const runtime = createEffectHttpWorkerRuntime({
       adminRoot: adminHttpApi,

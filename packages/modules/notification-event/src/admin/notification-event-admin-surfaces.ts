@@ -13,7 +13,7 @@ export const notificationEventAdminMetadata = {
       description:
         "Observe event outbox delivery, retries, and dead-letter records.",
       kind: "navigation",
-      key: "events",
+      key: "notification-event:events",
       label: "Events",
       operations: {
         publish: {
@@ -30,7 +30,7 @@ export const notificationEventAdminMetadata = {
       description:
         "Manage notification templates and provider-backed dispatch records.",
       kind: "resource",
-      key: "notifications",
+      key: "notification-event:notifications",
       label: "Notifications",
       operations: {
         dispatch: {
