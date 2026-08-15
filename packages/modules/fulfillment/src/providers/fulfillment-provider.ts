@@ -54,6 +54,8 @@ export interface FulfillmentProviderCreateInput {
 
 export interface FulfillmentProviderCancelInput {
   readonly correlation?: CorrelationContext;
+  /** Stable identity that providers must use to deduplicate cancellation retries. */
+  readonly idempotencyKey: string;
   readonly providerFulfillmentId: string;
   readonly reason?: string;
 }

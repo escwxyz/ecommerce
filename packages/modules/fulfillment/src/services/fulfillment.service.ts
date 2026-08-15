@@ -152,6 +152,10 @@ const createPrefixedId = (
 const providerCorrelation = (requestId: string) =>
   createCorrelationContext({ requestId });
 
+const providerCancellationIdempotencyKey = (
+  fulfillmentId: FulfillmentId
+): string => `fulfillment.cancel:${fulfillmentId}`;
+
 const publishFulfillmentEvent = (
   outboxWriter: OutboxWriterServiceShape,
   event: CommerceEventEnvelope,
@@ -266,18 +270,6 @@ export const createFulfillmentService = ({
 
         if (fulfillment.status === "canceled") {
           return fulfillment;
-        }
-
-        if (fulfillment.providerFulfillmentId) {
-          const provider = yield* getProvider(
-            providerRegistry,
-            fulfillment.providerKey
-          );
-          yield* provider.cancelFulfillment({
-            correlation: providerCorrelation(input.fulfillmentId),
-            providerFulfillmentId: fulfillment.providerFulfillmentId,
-            reason: input.reason,
-          });
         }
 
         const saved = yield* repository.saveFulfillment({
@@ -660,10 +652,37 @@ export const createFulfillmentService = ({
   return {
     ...service,
     cancelFulfillment: (input) =>
-      transactionalFulfillmentMutation(
-        "cancelFulfillment",
-        service.cancelFulfillment(input)
-      ),
+      Effect.gen(function* cancelFulfillmentOperation() {
+        const fulfillment = yield* requireFulfillment(input.fulfillmentId);
+
+        if (fulfillment.status === "canceled") {
+          return fulfillment;
+        }
+
+        if (fulfillment.providerFulfillmentId) {
+          const provider = yield* getProvider(
+            providerRegistry,
+            fulfillment.providerKey
+          );
+          const idempotencyKey = providerCancellationIdempotencyKey(
+            fulfillment.id
+          );
+
+          // External side effects cannot participate in the local SQL transaction.
+          // The stable key makes a retry safe if final persistence fails to commit.
+          yield* provider.cancelFulfillment({
+            correlation: providerCorrelation(idempotencyKey),
+            idempotencyKey,
+            providerFulfillmentId: fulfillment.providerFulfillmentId,
+            reason: input.reason,
+          });
+        }
+
+        return yield* transactionalFulfillmentMutation(
+          "cancelFulfillment",
+          service.cancelFulfillment(input)
+        );
+      }),
     createFulfillment: (input) =>
       transactionalFulfillmentMutation(
         "createFulfillment",
