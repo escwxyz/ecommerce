@@ -235,9 +235,11 @@ describe("order module foundation", () => {
     ]);
   });
 
-  it("exposes typed module contributions without legacy API fragments", () => {
+  it("exposes typed metadata and executable service contributions", () => {
     expect(orderModule.key).toBe("order");
-    expect(orderModule.contributions?.apiFragments).toEqual([]);
+    expect(orderModule.contributions?.services?.map(({ key }) => key)).toEqual([
+      "order:service",
+    ]);
     expect(orderModule.contributions?.adminSurfaces?.[0]?.label).toBe("Orders");
     expect(orderModule.contributions?.eventTypes).toContain(ORDER_PLACED_EVENT);
   });

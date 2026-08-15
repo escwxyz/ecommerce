@@ -6,6 +6,7 @@ export {
   CART_LINE_ITEM_ADDED_EVENT,
   CART_LINE_ITEM_UPDATED_EVENT,
   CART_TOTALS_UPDATED_EVENT,
+  CartRuntimeAdapters,
   CartService,
   createCartRepositoryLayer,
   createCartService,
@@ -13,5 +14,6 @@ export {
   createCartServiceLayer,
   type CartServiceFailure,
   type CartServiceShape,
+  type CartRuntimeAdaptersShape,
   type CreateCartServiceOptions,
 } from "./cart.service";

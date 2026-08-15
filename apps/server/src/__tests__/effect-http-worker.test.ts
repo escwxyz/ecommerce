@@ -14,6 +14,12 @@ import {
 } from "@ecommerce/api";
 import { CheckoutService } from "@ecommerce/checkout";
 import type { CheckoutServiceShape } from "@ecommerce/checkout";
+import {
+  composeCommerceApplication,
+  defineCommerceModule,
+  defineCommerceModuleApiGroupContribution,
+  defineCommerceModuleServiceContribution,
+} from "@ecommerce/core";
 import { Context, Effect, Layer, Schema } from "effect";
 import {
   HttpApi,
@@ -188,6 +194,70 @@ const fetchProtectedRuntime = async ({
 };
 
 describe("Cloudflare Effect HTTP Worker runtime", () => {
+  it("serves admin and storefront endpoints discovered from one module composition", async () => {
+    const toModuleContribution = (
+      contribution: ReturnType<typeof createContribution>
+    ) =>
+      defineCommerceModuleApiGroupContribution({
+        group: contribution.group,
+        handlers: contribution.handlers,
+        key: contribution.key,
+        surface: contribution.surface,
+      });
+    const composition = composeCommerceApplication({
+      modules: [
+        defineCommerceModule({
+          contributions: {
+            apiGroups: [
+              toModuleContribution(
+                createContribution("admin", "/admin/composed-greeting")
+              ),
+              toModuleContribution(
+                createContribution("storefront", "/composed-greeting")
+              ),
+            ],
+            services: [
+              defineCommerceModuleServiceContribution({
+                key: "greeting:runtime",
+                layer: Layer.succeed(RuntimeGreeting, { value: "composed" }),
+                service: RuntimeGreeting,
+              }),
+            ],
+          },
+          key: "greeting",
+        }),
+      ] as const,
+    });
+    const runtime = createEffectHttpWorkerRuntime({
+      contributions: composition.apiGroups,
+      runtimeLayers: [composition.applicationLayer],
+    });
+
+    try {
+      const [adminResponse, storefrontResponse] = await Promise.all([
+        runtime.fetch(
+          new Request("https://commerce.example/admin/composed-greeting")
+        ),
+        runtime.fetch(
+          new Request("https://commerce.example/composed-greeting")
+        ),
+      ]);
+
+      expect(adminResponse.status).toBe(200);
+      expect(await adminResponse.json()).toEqual({
+        greeting: "composed",
+        surface: "admin",
+      });
+      expect(storefrontResponse.status).toBe(200);
+      expect(await storefrontResponse.json()).toEqual({
+        greeting: "composed",
+        surface: "storefront",
+      });
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   it("serves canonical admin and storefront APIs through one Fetch handler", async () => {
     const runtime = createEffectHttpWorkerRuntime({
       adminRoot: adminHttpApi,

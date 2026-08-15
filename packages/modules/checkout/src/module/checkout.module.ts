@@ -1,5 +1,9 @@
-import { defineCommerceModule } from "@ecommerce/core";
-import { Effect } from "effect";
+import {
+  defineCommerceModule,
+  defineCommerceModuleServiceContribution,
+  defineCommerceModuleWorkflowContribution,
+} from "@ecommerce/core";
+import { Effect, Layer } from "effect";
 
 import { checkoutAdminSurfaces } from "../admin";
 import { checkoutPermissionList } from "../permissions";
@@ -7,6 +11,7 @@ import {
   CHECKOUT_COMPLETED_EVENT,
   CHECKOUT_FAILED_EVENT,
   CheckoutService,
+  CheckoutServiceLive,
 } from "../services";
 
 export const checkoutWorkflow = {
@@ -64,10 +69,22 @@ export const checkoutWorkflow = {
 export const checkoutModule = defineCommerceModule({
   contributions: {
     adminSurfaces: checkoutAdminSurfaces,
-    apiFragments: [],
     eventTypes: [CHECKOUT_COMPLETED_EVENT, CHECKOUT_FAILED_EVENT],
     permissions: checkoutPermissionList,
-    workflows: [checkoutWorkflow],
+    services: [
+      defineCommerceModuleServiceContribution({
+        key: "checkout:service",
+        layer: CheckoutServiceLive,
+        service: CheckoutService,
+      }),
+    ],
+    workflows: [
+      defineCommerceModuleWorkflowContribution({
+        key: checkoutWorkflow.key,
+        layer: Layer.empty,
+        workflow: checkoutWorkflow,
+      }),
+    ],
   },
   dependencies: [
     "store",
@@ -85,5 +102,4 @@ export const checkoutModule = defineCommerceModule({
     "notification-event",
   ],
   key: "checkout",
-  providedServices: [{ key: "checkout-service", service: CheckoutService }],
 });

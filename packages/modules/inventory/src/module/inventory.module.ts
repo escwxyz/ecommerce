@@ -1,4 +1,7 @@
-import { defineCommerceModule } from "@ecommerce/core";
+import {
+  defineCommerceModule,
+  defineCommerceModuleServiceContribution,
+} from "@ecommerce/core";
 import { Effect } from "effect";
 
 import { inventoryAdminSurfaces } from "../admin";
@@ -7,6 +10,7 @@ import {
   INVENTORY_ADJUSTED_EVENT,
   INVENTORY_RESERVED_EVENT,
   InventoryService,
+  createInventoryServiceFromDependenciesLayer,
 } from "../services";
 
 export const inventoryExtensionPoints = {
@@ -18,9 +22,15 @@ export const inventoryExtensionPoints = {
 export const inventoryModule = defineCommerceModule({
   contributions: {
     adminSurfaces: inventoryAdminSurfaces,
-    apiFragments: [],
     eventTypes: [INVENTORY_RESERVED_EVENT, INVENTORY_ADJUSTED_EVENT],
     permissions: inventoryPermissionList,
+    services: [
+      defineCommerceModuleServiceContribution({
+        key: "inventory:service",
+        layer: createInventoryServiceFromDependenciesLayer(),
+        service: InventoryService,
+      }),
+    ],
     workflowSteps: [
       {
         name: "inventory.reserve",
@@ -44,5 +54,4 @@ export const inventoryModule = defineCommerceModule({
   },
   dependencies: [],
   key: "inventory",
-  providedServices: [{ key: "inventory-service", service: InventoryService }],
 });

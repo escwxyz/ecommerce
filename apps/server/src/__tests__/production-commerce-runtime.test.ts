@@ -62,20 +62,28 @@ describe("production commerce runtime composition", () => {
         },
         relational: "effect-postgres",
       },
+      contributionCounts: {
+        adminSurfaces: 29,
+        apiGroups: 14,
+        eventHandlers: 0,
+        providers: 1,
+        services: 14,
+        workflows: 0,
+      },
       modules: [
-        "store",
         "customer",
-        "product",
-        "pricing",
-        "inventory",
-        "cart",
-        "region-sales-channel",
-        "promotion",
-        "tax",
         "fulfillment",
-        "payment",
-        "order",
+        "inventory",
         "notification-event",
+        "payment",
+        "pricing",
+        "product",
+        "promotion",
+        "region-sales-channel",
+        "store",
+        "tax",
+        "cart",
+        "order",
       ],
     });
     expect(JSON.stringify(composition.diagnostics)).not.toContain("secret");
@@ -94,6 +102,11 @@ describe("production commerce runtime composition", () => {
     expect(source).not.toMatch(/default\w+(Repository|Service)/);
     expect(source).not.toMatch(/@ecommerce\/[^"\n]+\/testing/);
     expect(source).not.toContain("createCloudflareQueuedNotificationProvider");
+    expect(source).not.toMatch(
+      /create[A-Z]\w+Service(?:FromDependencies)?Layer/
+    );
+    expect(source).not.toContain("createNotificationEventService(");
+    expect(source).not.toContain("moduleServiceLayer");
     expect(source).not.toContain("./commerce-runtime");
   });
 
@@ -108,7 +121,8 @@ describe("production commerce runtime composition", () => {
     expect(productionSource).toContain(
       "mutationRepository: projectionRepository"
     );
-    expect(productionSource).toContain("repository: cachedRepository");
+    expect(productionSource).toContain("CartRuntimeAdapters");
+    expect(productionSource).toContain("cartRepositoryLayer");
   });
 
   it("keeps the deleted checkout compatibility runtime deleted", async () => {

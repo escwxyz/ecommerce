@@ -17,8 +17,8 @@ describe("cart module declaration", () => {
       "store",
       "tax",
     ]);
-    expect(cartModule.providedServices?.map(({ key }) => key)).toEqual([
-      "cart-service",
+    expect(cartModule.contributions?.services?.map(({ key }) => key)).toEqual([
+      "cart:service",
     ]);
     expect(cartModule.schema?.tables).toEqual([
       "cart",

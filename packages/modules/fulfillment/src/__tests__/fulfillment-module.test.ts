@@ -16,7 +16,9 @@ describe("fulfillment module", () => {
     expect(contributions.workflowSteps?.map((step) => step.name)).toEqual(
       expect.arrayContaining(["fulfillment.create", "fulfillment.cancel"])
     );
-    expect(contributions.apiFragments).toEqual([]);
+    expect(contributions.services?.map(({ key }) => key)).toEqual([
+      "fulfillment:service",
+    ]);
     expect(contributions.adminSurfaces?.[0]?.label).toBe("Fulfillment");
   });
 });

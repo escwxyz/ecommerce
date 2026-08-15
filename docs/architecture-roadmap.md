@@ -58,6 +58,21 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
+As of 2026-08-15, `CommerceModuleDefinition` is the executable built-in module
+registration seam. The core composer validates the selected dependency graph
+and contribution keys before Layer acquisition, produces stable topological
+order, merges service/provider/workflow/event Layers, and owns instance-scoped
+lifecycle start, rollback, and reverse shutdown. The API package exposes one
+explicit built-in catalog whose entries attach each module's Effect HTTP groups
+and handlers to its definition. The production Worker selects that catalog
+once (with checkout disabled until its durable completion-store adapter exists)
+and consumes its routes, permissions, diagnostics, and application Layer; it no
+longer enumerates built-in HTTP contributions or application-service Layers in
+the entrypoint. Issue 23 verification passed on 2026-08-15 with all 24 workspace
+test tasks, all 26 non-web typecheck tasks, the targeted 30-file Ultracite check,
+and both workspace builds. The root formatting and typecheck commands remain
+blocked only by pre-existing editor/web worktree changes outside Issue 23.
+
 As of 2026-08-09, persistent mutations in Store, Cart, Pricing, Inventory,
 Order, Promotion, Tax, and Fulfillment own their local transaction and enqueue
 canonical commerce events through the runtime-neutral outbox writer before

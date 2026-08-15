@@ -85,6 +85,7 @@ export type {
 export { cartModule } from "./module";
 export { cartPermissionList, cartPermissions } from "./permissions";
 export {
+  CartRuntimeAdapters,
   CartService,
   createCartRepositoryLayer,
   createCartService,
@@ -92,5 +93,6 @@ export {
   createCartServiceLayer,
   type CartServiceFailure,
   type CartServiceShape,
+  type CartRuntimeAdaptersShape,
   type CreateCartServiceOptions,
 } from "./services";

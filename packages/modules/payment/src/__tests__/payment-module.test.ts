@@ -21,7 +21,9 @@ describe("payment module", () => {
         "payment.capture",
       ])
     );
-    expect(contributions.apiFragments).toEqual([]);
+    expect(contributions.services?.map(({ key }) => key)).toEqual([
+      "payment:service",
+    ]);
     expect(contributions.adminSurfaces?.[0]?.label).toBe("Payments");
   });
 });

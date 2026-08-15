@@ -1,16 +1,3 @@
-import {
-  builtinPermissionStatement,
-  cartEffectHttpApiContribution,
-  customerEffectHttpApiContribution,
-  inventoryEffectHttpApiContribution,
-  orderEffectHttpApiContribution,
-  pricingEffectHttpApiContribution,
-  productEffectHttpApiContribution,
-  promotionEffectHttpApiContribution,
-  regionSalesChannelEffectHttpApiContribution,
-  storeEffectHttpApiContribution,
-  taxEffectHttpApiContribution,
-} from "@ecommerce/api";
 import { createAuth } from "@ecommerce/auth";
 import type { CommerceQueueMessage } from "@ecommerce/core";
 import { env } from "@ecommerce/env/server";
@@ -66,25 +53,14 @@ const composition = createProductionCommerceRuntimeComposition({
 const auth = createAuth({
   baseURL: serverEnv.BETTER_AUTH_URL,
   database: serverEnv.DB,
-  permissionStatement: builtinPermissionStatement,
+  permissionStatement: composition.permissions.statement,
   secret: serverEnv.BETTER_AUTH_SECRET,
   trustedOrigins: [serverEnv.CORS_ORIGIN],
 });
 
 const effectHttpRuntime = createEffectHttpWorkerRuntime({
   auth,
-  contributions: [
-    ...storeEffectHttpApiContribution.groups,
-    ...customerEffectHttpApiContribution.groups,
-    ...productEffectHttpApiContribution.groups,
-    ...pricingEffectHttpApiContribution.groups,
-    ...inventoryEffectHttpApiContribution.groups,
-    ...cartEffectHttpApiContribution.groups,
-    ...regionSalesChannelEffectHttpApiContribution.groups,
-    ...promotionEffectHttpApiContribution.groups,
-    ...taxEffectHttpApiContribution.groups,
-    ...orderEffectHttpApiContribution.groups,
-  ],
+  contributions: composition.apiGroups,
   corsOrigin: serverEnv.CORS_ORIGIN,
   runtimeLayers: [composition.applicationLayer],
 });

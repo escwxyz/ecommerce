@@ -1,6 +1,10 @@
-import { Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
 
-import { defineCommerceModule } from "../modules/index";
+import {
+  composeCommerceApplication,
+  defineCommerceModule,
+  defineCommerceModuleServiceContribution,
+} from "../modules/index";
 import type { ValidateModuleDependencies } from "../modules/index";
 import {
   ClockService,
@@ -11,28 +15,38 @@ import {
 import { createSequenceIdGenerator, createStaticClock } from "./index";
 
 const baseModule = defineCommerceModule({
+  contributions: {
+    services: [
+      defineCommerceModuleServiceContribution({
+        key: "base:clock",
+        layer: clockLayer(
+          createStaticClock(new Date("2026-01-01T00:00:00.000Z"))
+        ),
+        service: ClockService,
+      }),
+    ],
+  },
   key: "base",
-  providedServices: [{ key: "clock", service: ClockService }],
 });
 
 const dependentModule = defineCommerceModule({
   key: "dependent",
   dependencies: ["base"] as const,
-  providedServices: [{ key: "id-generator", service: IdGeneratorService }],
+  contributions: {
+    services: [
+      defineCommerceModuleServiceContribution({
+        key: "dependent:id-generator",
+        layer: idGeneratorLayer(createSequenceIdGenerator(["typecheck_1"])),
+        service: IdGeneratorService,
+      }),
+    ],
+  },
 });
 
 const productModule = defineCommerceModule({
   key: "product",
   dependencies: ["base"] as const,
   contributions: {
-    apiFragments: [
-      {
-        key: "module:product",
-        router: {
-          productList: {},
-        },
-      },
-    ],
     adminSurfaces: [
       {
         key: "product:navigation",
@@ -44,7 +58,83 @@ const productModule = defineCommerceModule({
   },
 });
 
+const TypecheckHost = Context.Service<{ readonly host: true }>(
+  "typechecks/Host"
+);
+const TypecheckOutput = Context.Service<{ readonly output: true }>(
+  "typechecks/Output"
+);
+class TypecheckLayerFailureError extends Error {
+  override readonly name = "TypecheckLayerFailureError";
+}
+
+const heterogeneousModule = defineCommerceModule({
+  contributions: {
+    services: [
+      defineCommerceModuleServiceContribution({
+        key: "heterogeneous:output",
+        layer: Layer.effect(
+          TypecheckOutput,
+          TypecheckHost.use(() =>
+            Effect.fail(new TypecheckLayerFailureError("type-level only"))
+          )
+        ),
+        service: TypecheckOutput,
+      }),
+    ],
+  },
+  key: "heterogeneous",
+});
+
+const heterogeneousComposition = composeCommerceApplication({
+  modules: [heterogeneousModule] as const,
+});
+
+// @ts-expect-error executable service registrations require both a Layer and tag
+defineCommerceModule({
+  contributions: {
+    services: [{ _tag: "Service", key: "invalid:service" }],
+  },
+  key: "invalid",
+});
+
 type Expect<Actual extends true> = Actual;
+type IsAny<Value> = 0 extends 1 & Value ? true : false;
+type Extends<Actual, Expected> = Actual extends Expected ? true : false;
+
+type HeterogeneousApplicationLayer =
+  typeof heterogeneousComposition.applicationLayer;
+
+export type ModuleLayerOutputPreserved = Expect<
+  Extends<
+    Context.Service.Identifier<typeof TypecheckOutput>,
+    Layer.Success<HeterogeneousApplicationLayer>
+  >
+>;
+
+export type ModuleLayerFailurePreserved = Expect<
+  Extends<
+    TypecheckLayerFailureError,
+    Layer.Error<HeterogeneousApplicationLayer>
+  >
+>;
+
+export type ModuleLayerRequirementPreserved = Expect<
+  Extends<
+    Context.Service.Identifier<typeof TypecheckHost>,
+    Layer.Services<HeterogeneousApplicationLayer>
+  >
+>;
+
+export type ModuleLayerInferenceDoesNotUseAny = Expect<
+  IsAny<
+    | Layer.Success<HeterogeneousApplicationLayer>
+    | Layer.Error<HeterogeneousApplicationLayer>
+    | Layer.Services<HeterogeneousApplicationLayer>
+  > extends false
+    ? true
+    : false
+>;
 
 export type ModuleDependenciesSatisfied = Expect<
   ValidateModuleDependencies<[typeof baseModule, typeof dependentModule]>
