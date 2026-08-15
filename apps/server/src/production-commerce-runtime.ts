@@ -17,7 +17,6 @@ import {
   idGeneratorLayer,
 } from "@ecommerce/core";
 import type { CommerceQueueMessage } from "@ecommerce/core";
-import { KeyedActorService } from "@ecommerce/core/stateful";
 import { createCustomerServiceFromDependenciesLayer } from "@ecommerce/customer";
 import {
   PostgresCartRepositoryLayer,
@@ -362,7 +361,6 @@ export const createProductionCommerceRuntimeComposition = ({
   const cartServiceLayer = Layer.effect(
     CartService,
     Effect.gen(function* createProductionCartService() {
-      const actorService = yield* KeyedActorService;
       const projectionRepository = yield* CartRepositoryService;
       const runtimeClock = yield* ClockService;
       const runtimeIdGenerator = yield* IdGeneratorService;
@@ -377,7 +375,6 @@ export const createProductionCommerceRuntimeComposition = ({
       });
 
       return createCartService({
-        actorService,
         clock: runtimeClock,
         committedMutationSynchronizer: createCommittedCartCacheSynchronizer({
           cache: activeCache,

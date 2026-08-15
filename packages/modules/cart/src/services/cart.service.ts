@@ -15,11 +15,8 @@ import {
 } from "@ecommerce/core";
 import type { CommerceEventEnvelope } from "@ecommerce/core/events";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import {
-  KeyedActorCommandSchema,
-  KeyedActorService,
-} from "@ecommerce/core/stateful";
-import { Context, Effect, Layer, Schema } from "effect";
+import type { KeyedActorService } from "@ecommerce/core/stateful";
+import { Context, Effect, Layer } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
@@ -55,7 +52,6 @@ import {
   CartNotActive,
   CartNotFound,
   CartRepositoryService,
-  CartValidationFailure,
   createCartAdjustmentIdEffect,
   createCartId,
   createCartIdEffect,
@@ -114,7 +110,8 @@ export const CartService = Context.Service<CartServiceShape>(
 );
 
 export interface CreateCartServiceOptions {
-  readonly actorService: KeyedActorService;
+  /** @deprecated Cart mutations coordinate through committed events and cache synchronization. */
+  readonly actorService?: KeyedActorService;
   readonly clock?: ClockServiceShape;
   readonly committedMutationSynchronizer?: CartCommittedMutationSynchronizer;
   readonly idGenerator?: IdGeneratorServiceShape;
@@ -230,57 +227,7 @@ const publishCartEvent = ({
     .pipe(Effect.asVoid);
 };
 
-const coordinateCart = (
-  actorService: KeyedActorService,
-  input:
-    | AddCartLineItemInput
-    | ApplyCartAdjustmentInput
-    | AssociateCartCustomerInput
-    | SetCartAddressesInput
-    | SetCartCheckoutReferencesInput
-    | SetCartRegionChannelInput
-    | UpdateCartLineItemInput
-    | UpdateCartTotalsInput,
-  operationName: string
-): EffectValue<{ readonly duplicate: boolean }, CartValidationFailure> =>
-  Effect.gen(function* coordinateCartThroughActor() {
-    const command = yield* Schema.decodeUnknownEffect(KeyedActorCommandSchema)({
-      actor: {
-        key: input.cartId,
-        type: "cart",
-      },
-      causationId: input.causationId,
-      commandId: input.idempotencyKey,
-      commandName: operationName,
-      correlationId: input.correlationId,
-      idempotencyKey: input.idempotencyKey,
-      issuedAt: new Date().toISOString(),
-      payload: input,
-      schemaVersion: 1,
-      subject: {
-        id: input.cartId,
-        type: "cart",
-      },
-      workflowRunId: input.workflowRunId,
-    }).pipe(
-      Effect.mapError(
-        () =>
-          new CartValidationFailure({ message: "Cart coordination failed." })
-      )
-    );
-
-    return yield* actorService
-      .dispatch(command)
-      .pipe(
-        Effect.mapError(
-          () =>
-            new CartValidationFailure({ message: "Cart coordination failed." })
-        )
-      );
-  });
-
 export const createCartService = ({
-  actorService,
   clock = createDefaultClock(),
   committedMutationSynchronizer,
   idGenerator = createDefaultIdGenerator(),
@@ -672,12 +619,6 @@ export const createCartService = ({
           cartId: createCartId(input.cartId),
           mutationId: `addLineItem:${input.idempotencyKey}:${nanoid()}`,
         }
-      ).pipe(
-        Effect.tap(() =>
-          coordinateCart(actorService, input, "cart.addLineItem").pipe(
-            Effect.ignore
-          )
-        )
       ),
     applyAdjustment: (input) =>
       transactionalCartMutation(
@@ -692,12 +633,6 @@ export const createCartService = ({
           cartId: createCartId(input.cartId),
           mutationId: `applyAdjustment:${input.idempotencyKey}:${nanoid()}`,
         }
-      ).pipe(
-        Effect.tap(() =>
-          coordinateCart(actorService, input, "cart.applyAdjustment").pipe(
-            Effect.ignore
-          )
-        )
       ),
     associateCustomer: (input) =>
       transactionalCartMutation(
@@ -783,7 +718,6 @@ export const createCartServiceFromDependenciesLayer = () =>
   Layer.effect(
     CartService,
     Effect.gen(function* createCartServiceFromDependencies() {
-      const actorService = yield* KeyedActorService;
       const clock = yield* ClockService;
       const idGenerator = yield* IdGeneratorService;
       const outboxWriter = yield* OutboxWriterService;
@@ -791,7 +725,6 @@ export const createCartServiceFromDependenciesLayer = () =>
       const transactionBoundary = yield* TransactionBoundaryService;
 
       return createCartService({
-        actorService,
         clock,
         idGenerator,
         outboxWriter,

@@ -19,8 +19,15 @@ describe("cart Effect service", () => {
       recordIds: ["outbox_1", "outbox_2", "outbox_3", "outbox_4"],
     });
     const repository = createResettableInMemoryCartRepository();
+    const baseActorService = createInMemoryCartActorService();
+    let directActorDispatches = 0;
     const service = createCartService({
-      actorService: createInMemoryCartActorService(),
+      actorService: {
+        dispatch: (command) =>
+          Effect.sync(() => {
+            directActorDispatches += 1;
+          }).pipe(Effect.andThen(baseActorService.dispatch(command))),
+      },
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
         "cart_active",
@@ -105,6 +112,7 @@ describe("cart Effect service", () => {
     expect(duplicateAdd.lineItems).toHaveLength(1);
     expect(adjusted.adjustments).toHaveLength(1);
     expect(totals.cart.totals.total).toBe(2100);
+    expect(directActorDispatches).toBe(0);
     expect(outbox.records.map((record) => record.event.name)).toEqual([
       "cart.created",
       "cart.line-item-added",
