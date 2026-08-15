@@ -23,14 +23,25 @@ export const createCartMutationLease = (
   startedAt,
 });
 
-const isActiveLease = (
+const normalizeActiveLease = (
   entry: CartMutationLease | boolean | undefined,
   now: number
-): entry is CartMutationLease =>
-  typeof entry === "object" &&
-  entry !== null &&
-  Number.isFinite(entry.expiresAt) &&
-  entry.expiresAt > now;
+): CartMutationLease | null => {
+  if (entry === true) {
+    return createCartMutationLease(now);
+  }
+
+  if (
+    typeof entry === "object" &&
+    entry !== null &&
+    Number.isFinite(entry.expiresAt) &&
+    entry.expiresAt > now
+  ) {
+    return entry;
+  }
+
+  return null;
+};
 
 export const pruneCartMutationLeases = (
   entries: StoredCartMutationLeases,
@@ -40,8 +51,10 @@ export const pruneCartMutationLeases = (
   let expiredAny = false;
 
   for (const [mutationId, entry] of Object.entries(entries)) {
-    if (isActiveLease(entry, now)) {
-      activeEntries[mutationId] = entry;
+    const activeLease = normalizeActiveLease(entry, now);
+
+    if (activeLease) {
+      activeEntries[mutationId] = activeLease;
       continue;
     }
 
