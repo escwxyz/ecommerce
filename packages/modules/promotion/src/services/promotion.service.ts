@@ -57,8 +57,6 @@ import {
 } from "../domain";
 
 export const PROMOTION_CREATED_EVENT = "promotion.created" as const;
-export const PROMOTION_ADJUSTMENTS_CALCULATED_EVENT =
-  "promotion.adjustments-calculated" as const;
 export const PROMOTION_REDEMPTION_RECORDED_EVENT =
   "promotion.redemption-recorded" as const;
 
@@ -66,13 +64,6 @@ export interface PromotionCreatedEventPayload {
   readonly code: string | null;
   readonly id: string;
   readonly title: string;
-}
-
-export interface PromotionAdjustmentsCalculatedEventPayload {
-  readonly adjustmentCount: number;
-  readonly cartId: string;
-  readonly currencyCode: string;
-  readonly totalDiscount: number;
 }
 
 export interface PromotionRedemptionRecordedEventPayload {
@@ -338,26 +329,6 @@ export const createPromotionService = ({
           ),
         };
 
-        yield* publishEvent(
-          outboxWriter,
-          createEventEnvelope({
-            id: createId("evt_", idGenerator),
-            name: PROMOTION_ADJUSTMENTS_CALCULATED_EVENT,
-            payload: {
-              adjustmentCount: result.adjustments.length,
-              cartId: result.cartId,
-              currencyCode: result.currencyCode,
-              totalDiscount: result.totalDiscount,
-            } satisfies PromotionAdjustmentsCalculatedEventPayload,
-            sourceModule: "promotion",
-            subject: {
-              id: result.cartId,
-              type: "cart",
-            },
-          }),
-          `${PROMOTION_ADJUSTMENTS_CALCULATED_EVENT}:${result.cartId}:${result.currencyCode}:${result.subtotal}:${result.totalDiscount}`
-        );
-
         return result;
       }),
     createCampaign: (input: CreateCampaignInput) =>
@@ -563,11 +534,7 @@ export const createPromotionService = ({
     });
 
   return {
-    calculateAdjustments: (input) =>
-      transactionalPromotionMutation(
-        "calculateAdjustments",
-        service.calculateAdjustments(input)
-      ),
+    calculateAdjustments: service.calculateAdjustments,
     createCampaign: (input) =>
       transactionalPromotionMutation(
         "createCampaign",

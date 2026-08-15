@@ -12,7 +12,7 @@ import { createInMemoryPricingRepository } from "../repositories";
 import { createPricingService } from "../services";
 
 describe("pricing Effect service", () => {
-  it("calculates traceable rule-based prices without discounts or tax", async () => {
+  it("calculates traceable rule-based prices without opening a transaction", async () => {
     const repository = createInMemoryPricingRepository();
     const outbox = createInMemoryOutbox({
       recordIds: ["outbox_1", "outbox_2", "outbox_3"],
@@ -26,8 +26,6 @@ describe("pricing Effect service", () => {
         "prule_vip",
         "amt_base",
         "amt_vip",
-        "evt_calculated",
-        "evt_calculated_fallback",
       ]),
       outboxWriter: outbox.writer,
       repository,
@@ -80,9 +78,19 @@ describe("pricing Effect service", () => {
         },
       })
     );
+    const calculationService = createPricingService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([]),
+      outboxWriter: outbox.writer,
+      repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        failBegin: true,
+        resources: [outbox],
+      }),
+    });
 
     const calculatedPrice = await Effect.runPromise(
-      service.calculatePrice({
+      calculationService.calculatePrice({
         context: {
           customerGroupId: "vip",
           regionId: "reg_us",
@@ -108,7 +116,7 @@ describe("pricing Effect service", () => {
     });
 
     const fallbackPrice = await Effect.runPromise(
-      service.calculatePrice({
+      calculationService.calculatePrice({
         context: {
           customerGroupId: "guest",
           regionId: "reg_us",
@@ -130,8 +138,6 @@ describe("pricing Effect service", () => {
     });
     expect(outbox.records.map((record) => record.event.name)).toEqual([
       "pricing.price-set-created",
-      "pricing.price-calculated",
-      "pricing.price-calculated",
     ]);
   });
 

@@ -24,6 +24,38 @@ const createMutationPersistence = () => {
 };
 
 describe("promotion Effect service", () => {
+  it("calculates adjustments without opening a transaction", async () => {
+    const repository = createResettableInMemoryPromotionRepository();
+    const outbox = createInMemoryOutbox();
+    const service = createPromotionService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([]),
+      outboxWriter: outbox.writer,
+      repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        failBegin: true,
+        resources: [outbox],
+      }),
+    });
+
+    await expect(
+      Effect.runPromise(
+        service.calculateAdjustments({
+          cart: {
+            currencyCode: "usd",
+            id: "cart_empty",
+            subtotal: 1000,
+          },
+        })
+      )
+    ).resolves.toMatchObject({
+      adjustments: [],
+      currencyCode: "USD",
+      totalDiscount: 0,
+    });
+    expect(outbox.records).toEqual([]);
+  });
+
   it("validates discount codes and returns traceable adjustments separate from pricing and tax", async () => {
     const repository = createResettableInMemoryPromotionRepository();
     const mutationPersistence = createMutationPersistence();
@@ -37,7 +69,6 @@ describe("promotion Effect service", () => {
         "prule_region",
         "plimit_total",
         "padj_cart",
-        "evt_adjusted",
         "pred_checkout",
         "evt_redemption",
       ]),
@@ -175,11 +206,8 @@ describe("promotion Effect service", () => {
       mutationPersistence.outbox.records.map((record) => record.event.name)
     ).toEqual([
       "promotion.created",
-      "promotion.adjustments-calculated",
       "promotion.redemption-recorded",
-      "promotion.adjustments-calculated",
       "promotion.redemption-recorded",
-      "promotion.adjustments-calculated",
     ]);
   });
 

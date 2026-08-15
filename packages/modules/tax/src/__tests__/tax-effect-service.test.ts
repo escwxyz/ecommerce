@@ -15,7 +15,7 @@ import {
   createTaxRateId,
   createTaxRegionId,
 } from "../domain";
-import { manualTaxProvider } from "../providers";
+import { manualTaxProvider, type TaxProvider } from "../providers";
 import { createResettableInMemoryTaxRepository } from "../repositories";
 import { createTaxService } from "../services";
 
@@ -36,7 +36,6 @@ describe("tax Effect service", () => {
         "evt_rate",
         "txline_item_1",
         "txcalc_cart_1",
-        "evt_calculated",
       ]),
       outboxWriter: outbox.writer,
       providers: [manualTaxProvider],
@@ -125,14 +124,38 @@ describe("tax Effect service", () => {
       "tax.category-created",
       "tax.region-created",
       "tax.rate-created",
-      "tax.calculated",
     ]);
   });
 
-  it("calls replaceable tax providers outside the local transaction", async () => {
+  it("calculates tax outside the local transaction", async () => {
     const repository = createResettableInMemoryTaxRepository();
     const outbox = createInMemoryOutbox();
     let providerObservedTransaction = false;
+    const providers: readonly TaxProvider[] = [
+      {
+        calculateTax: (_input, context) =>
+          Effect.gen(function* calculateCustomTax() {
+            providerObservedTransaction = Option.isSome(
+              yield* Effect.serviceOption(CurrentTransactionService)
+            );
+
+            return {
+              currencyCode: context.currencyCode,
+              lines: [],
+              totalTax: 123,
+            };
+          }),
+        key: "custom",
+        validateConfig: (settings) =>
+          settings.enabled === true
+            ? Effect.void
+            : Effect.fail(
+                new TaxValidationFailure({
+                  message: "Custom provider must be enabled.",
+                })
+              ),
+      },
+    ];
     const service = createTaxService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
@@ -141,31 +164,7 @@ describe("tax Effect service", () => {
         "txcalc_custom",
       ]),
       outboxWriter: outbox.writer,
-      providers: [
-        {
-          calculateTax: (_input, context) =>
-            Effect.gen(function* calculateCustomTax() {
-              providerObservedTransaction = Option.isSome(
-                yield* Effect.serviceOption(CurrentTransactionService)
-              );
-
-              return {
-                currencyCode: context.currencyCode,
-                lines: [],
-                totalTax: 123,
-              };
-            }),
-          key: "custom",
-          validateConfig: (settings) =>
-            settings.enabled === true
-              ? Effect.void
-              : Effect.fail(
-                  new TaxValidationFailure({
-                    message: "Custom provider must be enabled.",
-                  })
-                ),
-        },
-      ],
+      providers,
       repository,
       transactionBoundary: createInMemoryTransactionBoundary({
         resources: [outbox],
@@ -186,10 +185,21 @@ describe("tax Effect service", () => {
         providerConfigId: providerConfig.id,
       })
     );
+    const calculationService = createTaxService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["txcalc_custom"]),
+      outboxWriter: outbox.writer,
+      providers,
+      repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        failBegin: true,
+        resources: [outbox],
+      }),
+    });
 
     await expect(
       Effect.runPromise(
-        service.calculateTax({
+        calculationService.calculateTax({
           address: {
             countryCode: "GB",
           },

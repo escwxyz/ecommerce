@@ -58,20 +58,10 @@ import {
 } from "../domain";
 
 export const PRICE_SET_CREATED_EVENT = "pricing.price-set-created" as const;
-export const PRICE_CALCULATED_EVENT = "pricing.price-calculated" as const;
 
 export interface PriceSetCreatedEventPayload {
   readonly id: string;
   readonly title: string;
-}
-
-export interface PriceCalculatedEventPayload {
-  readonly amount: number;
-  readonly currencyCode: string;
-  readonly priceSetId: string;
-  readonly quantity: number;
-  readonly source: "base" | "price-list";
-  readonly subtotal: number;
 }
 
 export type PricingServiceFailure = PricingExpectedError;
@@ -298,67 +288,35 @@ export const createPricingService = ({
 
   return {
     calculatePrice: (input) =>
-      transactionalPricingMutation(
-        "calculatePrice",
-        Effect.gen(function* calculatePriceEffect() {
-          const now = clock.now();
-          const priceSet = yield* repository.findPriceSetById(input.priceSetId);
+      Effect.gen(function* calculatePriceEffect() {
+        const now = clock.now();
+        const priceSet = yield* repository.findPriceSetById(input.priceSetId);
 
-          if (!priceSet) {
-            return yield* new PricingPriceSetNotFound({
-              priceSetId: input.priceSetId,
-            });
-          }
-
-          const selection = yield* findBestAmount({ input, now, repository });
-
-          if (!selection) {
-            return yield* new PricingNoMatchingPrice({
-              currencyCode: normalizeCurrencyCode(input.currencyCode),
-              priceSetId: input.priceSetId,
-            });
-          }
-
-          const calculatedPrice = createCalculatedPrice({
-            amount: selection.amount,
-            input: {
-              ...input,
-              currencyCode: normalizeCurrencyCode(input.currencyCode),
-            },
-            ruleMatches: selection.ruleMatches,
-            source: selection.amount.priceListId ? "price-list" : "base",
+        if (!priceSet) {
+          return yield* new PricingPriceSetNotFound({
+            priceSetId: input.priceSetId,
           });
-
-          return calculatedPrice;
-        }),
-        (calculatedPrice) => {
-          const event = createEventEnvelope({
-            id: createId("evt_", idGenerator),
-            name: PRICE_CALCULATED_EVENT,
-            payload: {
-              amount: calculatedPrice.amount,
-              currencyCode: calculatedPrice.currencyCode,
-              priceSetId: calculatedPrice.priceSetId,
-              quantity: calculatedPrice.quantity,
-              source: calculatedPrice.trace.source,
-              subtotal: calculatedPrice.subtotal,
-            } satisfies PriceCalculatedEventPayload,
-            sourceModule: "pricing",
-            subject: {
-              id: calculatedPrice.priceSetId,
-              type: "price-set",
-            },
-          });
-
-          return [
-            {
-              event,
-              idempotencyKey: `${event.name}:${calculatedPrice.priceSetId}:${calculatedPrice.currencyCode}:${calculatedPrice.quantity}:${calculatedPrice.subtotal}`,
-              topic: COMMERCE_EVENTS_OUTBOX_TOPIC,
-            },
-          ];
         }
-      ),
+
+        const selection = yield* findBestAmount({ input, now, repository });
+
+        if (!selection) {
+          return yield* new PricingNoMatchingPrice({
+            currencyCode: normalizeCurrencyCode(input.currencyCode),
+            priceSetId: input.priceSetId,
+          });
+        }
+
+        return createCalculatedPrice({
+          amount: selection.amount,
+          input: {
+            ...input,
+            currencyCode: normalizeCurrencyCode(input.currencyCode),
+          },
+          ruleMatches: selection.ruleMatches,
+          source: selection.amount.priceListId ? "price-list" : "base",
+        });
+      }),
     createCurrency: (input) =>
       transactionalPricingMutation(
         "createCurrency",

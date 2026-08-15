@@ -56,7 +56,6 @@ export const TAX_CATEGORY_CREATED_EVENT = "tax.category-created" as const;
 export const TAX_PROVIDER_CONFIGURED_EVENT = "tax.provider-configured" as const;
 export const TAX_REGION_CREATED_EVENT = "tax.region-created" as const;
 export const TAX_RATE_CREATED_EVENT = "tax.rate-created" as const;
-export const TAX_CALCULATED_EVENT = "tax.calculated" as const;
 
 export interface TaxCategoryCreatedEventPayload {
   readonly code: string;
@@ -77,14 +76,6 @@ export interface TaxRateCreatedEventPayload {
   readonly id: string;
   readonly percentage: number;
   readonly regionId: string;
-}
-
-export interface TaxCalculatedEventPayload {
-  readonly id: string;
-  readonly lineCount: number;
-  readonly providerKey: string;
-  readonly regionId: string;
-  readonly totalTax: number;
 }
 
 export interface TaxServiceShape {
@@ -231,33 +222,7 @@ export const createTaxService = ({
           regionId: region.id,
         };
 
-        return yield* transactionalTaxMutation(
-          "calculateTax",
-          Effect.gen(function* persistTaxCalculationEffect() {
-            yield* publishTaxEvent(
-              outboxWriter,
-              createEventEnvelope({
-                id: createId("evt_", idGenerator),
-                name: TAX_CALCULATED_EVENT,
-                payload: {
-                  id: result.id,
-                  lineCount: result.lines.length,
-                  providerKey: result.providerKey,
-                  regionId: result.regionId,
-                  totalTax: result.totalTax,
-                } satisfies TaxCalculatedEventPayload,
-                sourceModule: "tax",
-                subject: {
-                  id: result.regionId,
-                  type: "tax-region",
-                },
-              }),
-              `${TAX_CALCULATED_EVENT}:${result.id}`
-            );
-
-            return result;
-          })
-        );
+        return result;
       }),
     createCategory: (input: CreateTaxCategoryInput) =>
       Effect.gen(function* createTaxCategoryEffect() {

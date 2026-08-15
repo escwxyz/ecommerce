@@ -11,7 +11,6 @@ describe("pricing module declaration", () => {
     expect(pricingModule.contributions?.apiFragments).toEqual([]);
     expect(pricingModule.contributions?.eventTypes).toEqual([
       "pricing.price-set-created",
-      "pricing.price-calculated",
     ]);
   });
 });
