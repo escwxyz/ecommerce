@@ -152,7 +152,8 @@ export const createCachedCartRepository = ({
         return (
           cached ??
           (yield* projectionRepository.findAdjustmentByIdempotencyKey(
-            idempotencyKey
+            idempotencyKey,
+            cartId
           ))
         );
       }),
@@ -197,7 +198,8 @@ export const createCachedCartRepository = ({
         return (
           cached ??
           (yield* projectionRepository.findLineItemByIdempotencyKey(
-            idempotencyKey
+            idempotencyKey,
+            cartId
           ))
         );
       }),

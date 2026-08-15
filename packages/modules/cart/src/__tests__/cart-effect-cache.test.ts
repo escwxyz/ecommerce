@@ -16,6 +16,7 @@ import {
   createVisitorCartScope,
 } from "../cache";
 import { createInMemoryCartActorService } from "../coordination";
+import type { CartRepository } from "../domain";
 import { CartValidationFailure, createCartId } from "../domain";
 import { createResettableInMemoryCartRepository } from "../repositories";
 import { createCartService } from "../services";
@@ -417,6 +418,54 @@ describe("cart Effect active cache repository", () => {
         hydratedRepository.getCartAggregate(createCartId("cart_missing"))
       )
     ).resolves.toBeNull();
+  });
+
+  it("forwards cart-scoped idempotency fallback lookups to the projection repository", async () => {
+    const cache = createInMemoryCartActiveCache();
+    const projection = createResettableInMemoryCartRepository();
+    const cartId = createCartId("cart_idempotency_scope");
+    const projectionLookupCalls: Array<{
+      readonly cartId: string | undefined;
+      readonly idempotencyKey: string;
+      readonly type: "adjustment" | "line-item";
+    }> = [];
+    const repository = createCachedCartRepository({
+      cache,
+      projectionRepository: {
+        ...projection,
+        findAdjustmentByIdempotencyKey: (idempotencyKey, scopedCartId) =>
+          Effect.sync(() => {
+            projectionLookupCalls.push({
+              cartId: scopedCartId,
+              idempotencyKey,
+              type: "adjustment",
+            });
+            return null;
+          }),
+        findLineItemByIdempotencyKey: (idempotencyKey, scopedCartId) =>
+          Effect.sync(() => {
+            projectionLookupCalls.push({
+              cartId: scopedCartId,
+              idempotencyKey,
+              type: "line-item",
+            });
+            return null;
+          }),
+      } satisfies CartRepository,
+      scope: createVisitorCartScope("visitor_idempotency_scope"),
+    });
+
+    await Effect.runPromise(
+      repository.findAdjustmentByIdempotencyKey("adjustment_key", cartId)
+    );
+    await Effect.runPromise(
+      repository.findLineItemByIdempotencyKey("line_item_key", cartId)
+    );
+
+    expect(projectionLookupCalls).toEqual([
+      { cartId, idempotencyKey: "adjustment_key", type: "adjustment" },
+      { cartId, idempotencyKey: "line_item_key", type: "line-item" },
+    ]);
   });
 
   it("enforces visitor and customer ownership scopes with explicit claim", async () => {
