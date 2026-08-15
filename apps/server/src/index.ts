@@ -25,6 +25,8 @@ import {
   verifyPostgresHyperdriveConnection,
 } from "./postgres-hyperdrive-smoke";
 import { createProductionCommerceRuntimeComposition } from "./production-commerce-runtime";
+import { routeCommerceServerQueueBatch } from "./queue-routing";
+import type { CommerceServerQueueMessage } from "./queue-routing";
 
 interface CommerceServerEnv {
   readonly BETTER_AUTH_SECRET: string;
@@ -87,14 +89,6 @@ const effectHttpRuntime = createEffectHttpWorkerRuntime({
   runtimeLayers: [composition.applicationLayer],
 });
 
-type CommerceServerQueueMessage =
-  | CommerceQueueMessage
-  | NotificationEventQueueMessage;
-
-const isNotificationEventQueueMessage = (
-  message: CommerceServerQueueMessage
-): message is NotificationEventQueueMessage => "kind" in message;
-
 export default {
   fetch: (
     request: Request,
@@ -119,17 +113,6 @@ export default {
       composition.drainNotificationEventOutbox(),
     ]);
   },
-  queue: (batch: MessageBatch<CommerceServerQueueMessage>) => {
-    const firstMessage = batch.messages[0]?.body;
-
-    if (firstMessage && isNotificationEventQueueMessage(firstMessage)) {
-      return composition.processNotificationEventQueue(
-        batch as MessageBatch<NotificationEventQueueMessage>
-      );
-    }
-
-    return composition.processCommerceEventQueue(
-      batch as MessageBatch<CommerceQueueMessage>
-    );
-  },
+  queue: (batch: MessageBatch<CommerceServerQueueMessage>) =>
+    routeCommerceServerQueueBatch(batch, composition),
 };

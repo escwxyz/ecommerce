@@ -168,7 +168,7 @@ describe("production commerce runtime composition", () => {
     expect(productionSource).toContain("COMMERCE_EVENTS_OUTBOX_TOPIC");
     expect(productionSource).toContain("createCloudflareQueuePublisherLayer");
     expect(workerSource).toContain("composition.drainCommerceEventOutbox()");
-    expect(workerSource).toContain("composition.processCommerceEventQueue");
+    expect(workerSource).toContain("routeCommerceServerQueueBatch");
   });
 
   it("acks valid commerce events after durable handling and retries handler failures", async () => {

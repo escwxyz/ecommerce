@@ -152,7 +152,7 @@ export interface ProductionCommerceRuntimeComposition {
   readonly diagnostics: ProductionCommerceRuntimeDiagnostics;
   readonly drainCommerceEventOutbox: () => Promise<void>;
   readonly processCommerceEventQueue: (
-    batch: MessageBatch<CommerceQueueMessage>
+    batch: MessageBatch<unknown>
   ) => Promise<void>;
   readonly processNotificationEventQueue: (
     batch: MessageBatch<NotificationEventQueueMessage>
