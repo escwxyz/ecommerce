@@ -65,6 +65,7 @@ import type {
   FulfillmentProvider,
   FulfillmentProviderRegistry,
 } from "../providers";
+import { DEFAULT_FULFILLMENT_PROVIDER_CANCELLATION_TIMEOUT_MS } from "../providers";
 
 export const FULFILLMENT_SET_CREATED_EVENT = "fulfillment.set-created" as const;
 export const SHIPPING_OPTION_CREATED_EVENT =
@@ -128,6 +129,7 @@ export interface CreateFulfillmentServiceOptions {
   readonly clock?: ClockServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
   readonly outboxWriter: OutboxWriterServiceShape;
+  readonly providerCancellationTimeoutMs?: number;
   readonly providerRegistry: FulfillmentProviderRegistry;
   readonly repository: FulfillmentRepository;
   readonly transactionBoundary: TransactionBoundaryServiceShape;
@@ -155,6 +157,61 @@ const providerCorrelation = (requestId: string) =>
 const providerCancellationIdempotencyKey = (
   fulfillmentId: FulfillmentId
 ): string => `fulfillment.cancel:${fulfillmentId}`;
+
+const cancellationCommandsMetadataKey = "fulfillmentCancellationCommands";
+
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const providerCancellationTimeoutFailure = (timeoutMs: number) =>
+  new FulfillmentValidationFailure({
+    message: `Fulfillment provider cancellation timed out after ${timeoutMs}ms.`,
+  });
+
+const withProviderCancellationTimeout = (
+  effect: EffectValue<void, FulfillmentExpectedError>,
+  timeoutMs: number
+) =>
+  effect.pipe(
+    Effect.timeoutOrElse({
+      duration: `${timeoutMs} millis`,
+      orElse: () => Effect.fail(providerCancellationTimeoutFailure(timeoutMs)),
+    })
+  );
+
+const withCancellationCommandMetadata = ({
+  clock,
+  fulfillment,
+  idempotencyKey,
+  reason,
+}: {
+  readonly clock: ClockServiceShape;
+  readonly fulfillment: Fulfillment;
+  readonly idempotencyKey: string;
+  readonly reason?: string;
+}): Fulfillment => {
+  const existingCommands =
+    fulfillment.metadata[cancellationCommandsMetadataKey];
+  const commands = isObjectRecord(existingCommands) ? existingCommands : {};
+  const now = clock.now();
+
+  return {
+    ...fulfillment,
+    metadata: {
+      ...fulfillment.metadata,
+      [cancellationCommandsMetadataKey]: {
+        ...commands,
+        [idempotencyKey]: {
+          idempotencyKey,
+          reason,
+          requestedAt: now.toISOString(),
+          status: "provider-cancellation-requested",
+        },
+      },
+    },
+    updatedAt: now,
+  };
+};
 
 const publishFulfillmentEvent = (
   outboxWriter: OutboxWriterServiceShape,
@@ -189,6 +246,7 @@ export const createFulfillmentService = ({
   clock = createDefaultClock(),
   idGenerator = createDefaultIdGenerator(),
   outboxWriter,
+  providerCancellationTimeoutMs = DEFAULT_FULFILLMENT_PROVIDER_CANCELLATION_TIMEOUT_MS,
   providerRegistry,
   repository,
   transactionBoundary,
@@ -668,14 +726,30 @@ export const createFulfillmentService = ({
             fulfillment.id
           );
 
+          yield* transactionalFulfillmentMutation(
+            "requestFulfillmentCancellation",
+            repository.saveFulfillment(
+              withCancellationCommandMetadata({
+                clock,
+                fulfillment,
+                idempotencyKey,
+                reason: input.reason,
+              })
+            )
+          );
+
           // External side effects cannot participate in the local SQL transaction.
-          // The stable key makes a retry safe if final persistence fails to commit.
-          yield* provider.cancelFulfillment({
-            correlation: providerCorrelation(idempotencyKey),
-            idempotencyKey,
-            providerFulfillmentId: fulfillment.providerFulfillmentId,
-            reason: input.reason,
-          });
+          // The durable command marker plus stable key make retry/reconciliation safe
+          // if final status/event persistence fails to commit.
+          yield* withProviderCancellationTimeout(
+            provider.cancelFulfillment({
+              correlation: providerCorrelation(idempotencyKey),
+              idempotencyKey,
+              providerFulfillmentId: fulfillment.providerFulfillmentId,
+              reason: input.reason,
+            }),
+            providerCancellationTimeoutMs
+          );
         }
 
         return yield* transactionalFulfillmentMutation(

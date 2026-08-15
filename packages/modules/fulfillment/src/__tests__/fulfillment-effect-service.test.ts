@@ -10,6 +10,7 @@ import {
 import { Effect, Exit, Option } from "effect";
 
 import {
+  createFulfillmentProviderFromPromiseProvider,
   createFulfillmentProviderRegistry,
   defineFulfillmentProvider,
 } from "../providers";
@@ -195,16 +196,28 @@ describe("fulfillment Effect service", () => {
       })
     );
     const outboxRecordCountBeforeCancellation = outbox.records.length;
+    let failingServiceTransactionCount = 0;
+    const commandTransactionBoundary = createInMemoryTransactionBoundary({
+      resources: [repository, outbox],
+    });
+    const failedFinalTransactionBoundary = createInMemoryTransactionBoundary({
+      failCommit: true,
+      resources: [repository, outbox],
+    });
     const failingService = createFulfillmentService({
       clock: createStaticClock(new Date("2026-01-01T00:00:01.000Z")),
       idGenerator: createSequenceIdGenerator(["evt_cancel_failed"]),
       outboxWriter: outbox.writer,
       providerRegistry,
       repository,
-      transactionBoundary: createInMemoryTransactionBoundary({
-        failCommit: true,
-        resources: [repository, outbox],
-      }),
+      transactionBoundary: {
+        withTransaction: (effect) => {
+          failingServiceTransactionCount += 1;
+          return failingServiceTransactionCount === 1
+            ? commandTransactionBoundary.withTransaction(effect)
+            : failedFinalTransactionBoundary.withTransaction(effect);
+        },
+      },
     });
 
     const failedCancellation = await Effect.runPromiseExit(
@@ -246,5 +259,156 @@ describe("fulfillment Effect service", () => {
     ]);
     expect(providerCancellationSideEffects).toBe(1);
     expect(outbox.records.at(-1)?.event.name).toBe("fulfillment.canceled");
+  });
+
+  it("times out promise-backed provider cancellation instead of waiting indefinitely", async () => {
+    const provider = createFulfillmentProviderFromPromiseProvider({
+      cancelFulfillment: () => new Promise<void>(() => undefined),
+      createFulfillment: async () => ({
+        providerFulfillmentId: "provider_fulfillment_timeout",
+        status: "created",
+      }),
+      id: "fake",
+      rate: async (input) => ({
+        amount: { amount: 500, currencyCode: "USD" },
+        providerKey: "fake",
+        providerServiceId: input.providerServiceId,
+      }),
+      trackShipment: async () => null,
+      validateOption: async () => ({ valid: true }),
+    });
+    const outbox = createInMemoryOutbox();
+    const service = createFulfillmentService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "fulfprov_fake",
+        "fset_default",
+        "shprof_default",
+        "fzone_us",
+        "shipopt_ground",
+        "fulf_order_timeout",
+      ]),
+      outboxWriter: outbox.writer,
+      providerCancellationTimeoutMs: 5,
+      providerRegistry: createFulfillmentProviderRegistry([provider]),
+      repository: createResettableInMemoryFulfillmentRepository(),
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+      }),
+    });
+    const shippingOption = await createShippingOptionFixture(service);
+    const detail = await Effect.runPromise(
+      service.createFulfillment({
+        address: { countryCode: "US" },
+        idempotencyKey: "fulfillment_timeout",
+        items: [{ lineItemId: "line_1", quantity: 1, sku: "SKU-1" }],
+        orderId: "order_timeout",
+        shippingOptionId: shippingOption.id,
+      })
+    );
+
+    const timedCancellation = await Effect.runPromiseExit(
+      service
+        .cancelFulfillment({
+          fulfillmentId: detail.fulfillment.id,
+          reason: "timeout-test",
+        })
+        .pipe(
+          Effect.timeoutOrElse({
+            duration: "100 millis",
+            orElse: () => Effect.fail(new Error("test timed out")),
+          })
+        )
+    );
+
+    expect(Exit.isFailure(timedCancellation)).toBe(true);
+    expect(String(timedCancellation)).toContain(
+      "Fulfillment provider cancellation timed out"
+    );
+  });
+
+  it("persists a cancellation command before provider cancellation for reconciliation", async () => {
+    const repository = createResettableInMemoryFulfillmentRepository();
+    const outbox = createInMemoryOutbox();
+    const fakeProvider = createFakeFulfillmentProvider();
+    const provider = defineFulfillmentProvider({
+      ...fakeProvider,
+      cancelFulfillment: (input) => fakeProvider.cancelFulfillment(input),
+    });
+    const providerRegistry = createFulfillmentProviderRegistry([provider]);
+    const setupService = createFulfillmentService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([
+        "fulfprov_fake",
+        "fset_default",
+        "shprof_default",
+        "fzone_us",
+        "shipopt_ground",
+        "fulf_order_reconcile",
+        "ship_order_reconcile",
+      ]),
+      outboxWriter: outbox.writer,
+      providerRegistry,
+      repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [repository, outbox],
+      }),
+    });
+    const shippingOption = await createShippingOptionFixture(setupService);
+    const detail = await Effect.runPromise(
+      setupService.createFulfillment({
+        address: { countryCode: "US" },
+        idempotencyKey: "fulfillment_reconcile",
+        items: [{ lineItemId: "line_1", quantity: 1, sku: "SKU-1" }],
+        orderId: "order_reconcile",
+        shippingOptionId: shippingOption.id,
+      })
+    );
+    let transactionCount = 0;
+    const committingBoundary = createInMemoryTransactionBoundary({
+      resources: [repository, outbox],
+    });
+    const failingBoundary = createInMemoryTransactionBoundary({
+      failCommit: true,
+      resources: [repository, outbox],
+    });
+    const service = createFulfillmentService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:01.000Z")),
+      idGenerator: createSequenceIdGenerator(["evt_cancel_failed"]),
+      outboxWriter: outbox.writer,
+      providerRegistry,
+      repository,
+      transactionBoundary: {
+        withTransaction: (effect) => {
+          transactionCount += 1;
+          return transactionCount === 1
+            ? committingBoundary.withTransaction(effect)
+            : failingBoundary.withTransaction(effect);
+        },
+      },
+    });
+
+    const failedCancellation = await Effect.runPromiseExit(
+      service.cancelFulfillment({
+        fulfillmentId: detail.fulfillment.id,
+        reason: "customer-request",
+      })
+    );
+    const stored = await Effect.runPromise(
+      repository.findFulfillmentById(detail.fulfillment.id)
+    );
+    const idempotencyKey = `fulfillment.cancel:${detail.fulfillment.id}`;
+
+    expect(Exit.isFailure(failedCancellation)).toBe(true);
+    expect(stored?.status).toBe("shipped");
+    expect(stored?.metadata).toMatchObject({
+      fulfillmentCancellationCommands: {
+        [idempotencyKey]: {
+          idempotencyKey,
+          reason: "customer-request",
+          status: "provider-cancellation-requested",
+        },
+      },
+    });
   });
 });
