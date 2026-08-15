@@ -1,12 +1,13 @@
 import { describe, expect, it } from "bun:test";
 
+import { CurrentTransactionService } from "@ecommerce/core";
 import {
   createInMemoryOutbox,
   createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 
 import {
   TaxValidationFailure,
@@ -128,9 +129,10 @@ describe("tax Effect service", () => {
     ]);
   });
 
-  it("uses replaceable provider contracts for calculation", async () => {
+  it("calls replaceable tax providers outside the local transaction", async () => {
     const repository = createResettableInMemoryTaxRepository();
     const outbox = createInMemoryOutbox();
+    let providerObservedTransaction = false;
     const service = createTaxService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
@@ -142,10 +144,16 @@ describe("tax Effect service", () => {
       providers: [
         {
           calculateTax: (_input, context) =>
-            Effect.succeed({
-              currencyCode: context.currencyCode,
-              lines: [],
-              totalTax: 123,
+            Effect.gen(function* calculateCustomTax() {
+              providerObservedTransaction = Option.isSome(
+                yield* Effect.serviceOption(CurrentTransactionService)
+              );
+
+              return {
+                currencyCode: context.currencyCode,
+                lines: [],
+                totalTax: 123,
+              };
             }),
           key: "custom",
           validateConfig: (settings) =>
@@ -204,6 +212,7 @@ describe("tax Effect service", () => {
       providerKey: "custom",
       totalTax: 123,
     });
+    expect(providerObservedTransaction).toBe(false);
   });
 
   it("extracts tax from inclusive prices instead of adding exclusive tax", async () => {

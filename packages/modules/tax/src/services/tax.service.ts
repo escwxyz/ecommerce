@@ -173,6 +173,19 @@ export const createTaxService = ({
   repository,
   transactionBoundary,
 }: CreateTaxServiceOptions): TaxServiceShape => {
+  const transactionalTaxMutation = <A, E>(
+    operation: string,
+    effect: EffectValue<A, E, CurrentTransactionService>
+  ) =>
+    executeTransactionalMutation<A, E, never>({
+      effect,
+      moduleName: "tax",
+      operation,
+      outboxMessages: () => [],
+      outboxWriter,
+      transactionBoundary,
+    });
+
   const service = {
     calculateTax: (input: CalculateTaxInput) =>
       Effect.gen(function* calculateTaxEffect() {
@@ -218,28 +231,33 @@ export const createTaxService = ({
           regionId: region.id,
         };
 
-        yield* publishTaxEvent(
-          outboxWriter,
-          createEventEnvelope({
-            id: createId("evt_", idGenerator),
-            name: TAX_CALCULATED_EVENT,
-            payload: {
-              id: result.id,
-              lineCount: result.lines.length,
-              providerKey: result.providerKey,
-              regionId: result.regionId,
-              totalTax: result.totalTax,
-            } satisfies TaxCalculatedEventPayload,
-            sourceModule: "tax",
-            subject: {
-              id: result.regionId,
-              type: "tax-region",
-            },
-          }),
-          `${TAX_CALCULATED_EVENT}:${result.id}`
-        );
+        return yield* transactionalTaxMutation(
+          "calculateTax",
+          Effect.gen(function* persistTaxCalculationEffect() {
+            yield* publishTaxEvent(
+              outboxWriter,
+              createEventEnvelope({
+                id: createId("evt_", idGenerator),
+                name: TAX_CALCULATED_EVENT,
+                payload: {
+                  id: result.id,
+                  lineCount: result.lines.length,
+                  providerKey: result.providerKey,
+                  regionId: result.regionId,
+                  totalTax: result.totalTax,
+                } satisfies TaxCalculatedEventPayload,
+                sourceModule: "tax",
+                subject: {
+                  id: result.regionId,
+                  type: "tax-region",
+                },
+              }),
+              `${TAX_CALCULATED_EVENT}:${result.id}`
+            );
 
-        return result;
+            return result;
+          })
+        );
       }),
     createCategory: (input: CreateTaxCategoryInput) =>
       Effect.gen(function* createTaxCategoryEffect() {
@@ -430,22 +448,8 @@ export const createTaxService = ({
       }),
   };
 
-  const transactionalTaxMutation = <A, E>(
-    operation: string,
-    effect: EffectValue<A, E, CurrentTransactionService>
-  ) =>
-    executeTransactionalMutation<A, E, never>({
-      effect,
-      moduleName: "tax",
-      operation,
-      outboxMessages: () => [],
-      outboxWriter,
-      transactionBoundary,
-    });
-
   return {
-    calculateTax: (input) =>
-      transactionalTaxMutation("calculateTax", service.calculateTax(input)),
+    calculateTax: service.calculateTax,
     createCategory: (input) =>
       transactionalTaxMutation("createCategory", service.createCategory(input)),
     createProviderConfig: (input) =>
