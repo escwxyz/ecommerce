@@ -30,6 +30,7 @@ interface CommerceServerEnv {
   readonly BETTER_AUTH_SECRET: string;
   readonly BETTER_AUTH_URL: string;
   readonly CART_CACHE: DurableObjectNamespace;
+  readonly COMMERCE_EVENT_DEAD_LETTER_QUEUE?: Queue<CommerceQueueMessage>;
   readonly COMMERCE_EVENT_QUEUE?: Queue<CommerceQueueMessage>;
   readonly COMMERCE_RUNTIME_MODE: "development" | "production";
   readonly CORS_ORIGIN: string;
@@ -86,6 +87,14 @@ const effectHttpRuntime = createEffectHttpWorkerRuntime({
   runtimeLayers: [composition.applicationLayer],
 });
 
+type CommerceServerQueueMessage =
+  | CommerceQueueMessage
+  | NotificationEventQueueMessage;
+
+const isNotificationEventQueueMessage = (
+  message: CommerceServerQueueMessage
+): message is NotificationEventQueueMessage => "kind" in message;
+
 export default {
   fetch: (
     request: Request,
@@ -110,6 +119,17 @@ export default {
       composition.drainNotificationEventOutbox(),
     ]);
   },
-  queue: (batch: MessageBatch<NotificationEventQueueMessage>) =>
-    composition.processNotificationEventQueue(batch),
+  queue: (batch: MessageBatch<CommerceServerQueueMessage>) => {
+    const firstMessage = batch.messages[0]?.body;
+
+    if (firstMessage && isNotificationEventQueueMessage(firstMessage)) {
+      return composition.processNotificationEventQueue(
+        batch as MessageBatch<NotificationEventQueueMessage>
+      );
+    }
+
+    return composition.processCommerceEventQueue(
+      batch as MessageBatch<CommerceQueueMessage>
+    );
+  },
 };

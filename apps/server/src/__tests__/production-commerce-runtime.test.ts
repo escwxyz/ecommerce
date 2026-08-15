@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { COMMERCE_EVENTS_OUTBOX_TOPIC } from "@ecommerce/core";
 import { Effect, Layer } from "effect";
 
 import {
@@ -167,6 +168,57 @@ describe("production commerce runtime composition", () => {
     expect(productionSource).toContain("COMMERCE_EVENTS_OUTBOX_TOPIC");
     expect(productionSource).toContain("createCloudflareQueuePublisherLayer");
     expect(workerSource).toContain("composition.drainCommerceEventOutbox()");
+    expect(workerSource).toContain("composition.processCommerceEventQueue");
+  });
+
+  it("acks valid commerce events and retries malformed queue messages", async () => {
+    const composition = createProductionCommerceRuntimeComposition({
+      bindings: {
+        ...createBindings(),
+        commerceEventQueue: undefined,
+        notificationEventQueue: undefined,
+      },
+      mode: "development",
+    });
+    let acknowledged = 0;
+    let retried = 0;
+    const batch = {
+      messages: [
+        {
+          ack: () => {
+            acknowledged += 1;
+          },
+          body: {
+            correlationId: "correlation_1",
+            id: "outbox_1",
+            idempotencyKey: "event_1",
+            payload: {},
+            queueName: COMMERCE_EVENTS_OUTBOX_TOPIC,
+            type: "store.settings-updated",
+          },
+          retry: () => {
+            retried += 1;
+          },
+        },
+        {
+          ack: () => {
+            acknowledged += 1;
+          },
+          body: {
+            id: "invalid",
+            queueName: "wrong-topic",
+          },
+          retry: () => {
+            retried += 1;
+          },
+        },
+      ],
+    } as MessageBatch<unknown>;
+
+    await composition.processCommerceEventQueue(batch);
+
+    expect(acknowledged).toBe(1);
+    expect(retried).toBe(1);
   });
 
   it("rejects a missing or invalid runtime mode", () => {

@@ -147,6 +147,9 @@ export interface ProductionCommerceRuntimeComposition {
   readonly applicationLayer: EffectLayer<never, never, never>;
   readonly diagnostics: ProductionCommerceRuntimeDiagnostics;
   readonly drainCommerceEventOutbox: () => Promise<void>;
+  readonly processCommerceEventQueue: (
+    batch: MessageBatch<CommerceQueueMessage>
+  ) => Promise<void>;
   readonly processNotificationEventQueue: (
     batch: MessageBatch<NotificationEventQueueMessage>
   ) => Promise<void>;
@@ -189,6 +192,33 @@ const requireRuntimeMode = (mode: unknown): ProductionCommerceRuntimeMode => {
       "Runtime composition requires an explicit development or production mode.",
     mode: typeof mode === "string" ? mode : "missing",
   });
+};
+
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const isCommerceQueueMessage = (
+  message: unknown
+): message is CommerceQueueMessage =>
+  isObjectRecord(message) &&
+  message.queueName === COMMERCE_EVENTS_OUTBOX_TOPIC &&
+  typeof message.id === "string" &&
+  typeof message.type === "string" &&
+  typeof message.correlationId === "string" &&
+  typeof message.idempotencyKey === "string";
+
+const processCommerceEventQueueBatch = (
+  batch: MessageBatch<unknown>
+): Promise<void> => {
+  for (const message of batch.messages) {
+    if (isCommerceQueueMessage(message.body)) {
+      message.ack();
+    } else {
+      message.retry();
+    }
+  }
+
+  return Promise.resolve();
 };
 
 const requirePostgresConnectionString = (
@@ -570,6 +600,7 @@ export const createProductionCommerceRuntimeComposition = ({
     },
     drainCommerceEventOutbox,
     drainNotificationEventOutbox: drainNotificationOutbox,
+    processCommerceEventQueue: processCommerceEventQueueBatch,
     processNotificationEventQueue,
   };
 };

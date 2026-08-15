@@ -172,6 +172,13 @@ export const commerceEventQueue = Cloudflare.Queues.Queue(
   }
 );
 
+export const commerceEventDeadLetterQueue = Cloudflare.Queues.Queue(
+  "CommerceEventDeadLetterQueue",
+  {
+    name: "commerce-events-dead-letter",
+  }
+);
+
 export const notificationEventQueue = Cloudflare.Queues.Queue(
   "NotificationEventQueue",
   {
@@ -194,6 +201,7 @@ export const notificationEventOutboxDrainCrons = ["* * * * *"] as const;
 
 type RuntimeQueueEnv = Record<
   string,
+  | typeof commerceEventDeadLetterQueue
   | typeof commerceEventQueue
   | typeof notificationEventDeadLetterQueue
   | typeof notificationEventQueue
@@ -205,6 +213,7 @@ export const getNotificationEventQueueEnv = (dev: boolean): RuntimeQueueEnv => {
   }
 
   return {
+    COMMERCE_EVENT_DEAD_LETTER_QUEUE: commerceEventDeadLetterQueue,
     COMMERCE_EVENT_QUEUE: commerceEventQueue,
     NOTIFICATION_EVENT_DEAD_LETTER_QUEUE: notificationEventDeadLetterQueue,
     NOTIFICATION_EVENT_QUEUE: notificationEventQueue,
@@ -248,6 +257,29 @@ export const notificationEventQueueConsumer = Effect.gen(
     const queue = yield* notificationEventQueue;
     return yield* Cloudflare.Queues.Consumer("NotificationEventQueueConsumer", {
       deadLetterQueue: "notification-event-dead-letter",
+      queueId: queue.queueId,
+      scriptName: "ecommerce-server",
+      settings: {
+        batchSize: 10,
+        maxRetries: 3,
+        maxWaitTimeMs: 5000,
+        retryDelay: 30,
+      },
+    });
+  }
+);
+
+export const commerceEventQueueConsumer = Effect.gen(
+  function* createCommerceEventQueueConsumer() {
+    const { dev } = yield* Alchemy.AlchemyContext;
+
+    if (dev) {
+      return;
+    }
+
+    const queue = yield* commerceEventQueue;
+    return yield* Cloudflare.Queues.Consumer("CommerceEventQueueConsumer", {
+      deadLetterQueue: "commerce-events-dead-letter",
       queueId: queue.queueId,
       scriptName: "ecommerce-server",
       settings: {
@@ -304,6 +336,9 @@ export default Alchemy.Stack(
       apiUrl: api.url,
       databaseId: db.databaseId,
       databaseName: db.databaseName,
+      commerceEventQueueConsumerId: yield* commerceEventQueueConsumer.pipe(
+        Effect.map((consumer) => consumer?.consumerId ?? null)
+      ),
       postgresHyperdriveId: postgres.hyperdriveId,
       postgresHyperdriveName: postgres.name,
       notificationEventQueueConsumerId:
