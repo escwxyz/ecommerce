@@ -19,7 +19,7 @@ import {
   KeyedActorCommandSchema,
   KeyedActorService,
 } from "@ecommerce/core/stateful";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Cause, Context, Effect, Layer, Schema } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
@@ -128,6 +128,20 @@ const createId = (prefix: string, idGenerator: IdGeneratorServiceShape) => {
   return rawId.startsWith(prefix) ? rawId : `${prefix}${rawId}`;
 };
 
+const describeCoordinationFailure = (error: unknown): string => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string" &&
+    error.message.length > 0
+  ) {
+    return `Inventory coordination failed: ${error.message}`;
+  }
+
+  return "Inventory coordination failed.";
+};
+
 const publishEvent = (
   outboxWriter: OutboxWriterServiceShape,
   envelope: CommerceEventEnvelope,
@@ -168,22 +182,45 @@ const coordinateInventory = (
       workflowRunId: input.workflowRunId,
     }).pipe(
       Effect.mapError(
-        () =>
+        (error) =>
           new InventoryValidationFailure({
-            message: "Inventory coordination failed.",
+            message: describeCoordinationFailure(error),
           })
       )
     );
 
     return yield* actorService.dispatch(command).pipe(
       Effect.mapError(
-        () =>
+        (error) =>
           new InventoryValidationFailure({
-            message: "Inventory coordination failed.",
+            message: describeCoordinationFailure(error),
           })
       )
     );
   });
+
+const coordinateInventoryPostCommit = (
+  actorService: KeyedActorService,
+  input: AdjustInventoryInput | ReserveInventoryInput,
+  operationName: "adjustInventory" | "reserveInventory",
+  actorType: "inventory-adjustment" | "inventory-reservation"
+): EffectValue<void> =>
+  coordinateInventory(actorService, input, operationName, actorType).pipe(
+    Effect.asVoid,
+    Effect.catchCause((cause) =>
+      Effect.logError("inventory.coordination.failed", {
+        actorType,
+        causationId: input.causationId,
+        cause: Cause.pretty(cause),
+        correlationId: input.correlationId,
+        idempotencyKey: input.idempotencyKey,
+        inventoryItemId: input.inventoryItemId,
+        operation: operationName,
+        stockLocationId: input.stockLocationId,
+        workflowRunId: input.workflowRunId,
+      })
+    )
+  );
 
 const getReservedQuantity = (level: InventoryLevelRecord): number =>
   level.reservedQuantity;
@@ -617,12 +654,12 @@ export const createInventoryService = ({
         service.adjustInventory(input)
       ).pipe(
         Effect.tap(() =>
-          coordinateInventory(
+          coordinateInventoryPostCommit(
             actorService,
             input,
             "adjustInventory",
             "inventory-adjustment"
-          ).pipe(Effect.ignore)
+          )
         )
       ),
     createInventoryItem: (input) =>
@@ -641,12 +678,12 @@ export const createInventoryService = ({
         service.reserveInventory(input)
       ).pipe(
         Effect.tap(() =>
-          coordinateInventory(
+          coordinateInventoryPostCommit(
             actorService,
             input,
             "reserveInventory",
             "inventory-reservation"
-          ).pipe(Effect.ignore)
+          )
         )
       ),
     setInventoryLevel: (input) =>
