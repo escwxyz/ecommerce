@@ -1,4 +1,7 @@
-import type { RepositoryFailure } from "@ecommerce/core";
+import type {
+  RepositoryFailure,
+  TransactionalMutationFailure,
+} from "@ecommerce/core";
 /* eslint-disable max-classes-per-file -- inventory expected failures form one schema-backed domain vocabulary */
 import { Schema } from "effect";
 
@@ -60,4 +63,5 @@ export type InventoryExpectedError =
   | InventoryLevelNotFound
   | InventoryValidationFailure
   | RepositoryFailure
-  | StockLocationNotFound;
+  | StockLocationNotFound
+  | TransactionalMutationFailure;

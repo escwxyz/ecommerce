@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import {
-  createEventCollector,
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -11,13 +12,56 @@ import { PromotionUnsupportedUsageLimitScope } from "../domain";
 import { createResettableInMemoryPromotionRepository } from "../repositories";
 import { createPromotionService } from "../services";
 
+const createMutationPersistence = () => {
+  const outbox = createInMemoryOutbox();
+  return {
+    outbox,
+    outboxWriter: outbox.writer,
+    transactionBoundary: createInMemoryTransactionBoundary({
+      resources: [outbox],
+    }),
+  };
+};
+
 describe("promotion Effect service", () => {
-  it("validates discount codes and returns traceable adjustments separate from pricing and tax", async () => {
+  it("calculates adjustments without opening a transaction", async () => {
     const repository = createResettableInMemoryPromotionRepository();
-    const eventCollector = createEventCollector();
+    const outbox = createInMemoryOutbox();
     const service = createPromotionService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-      eventPublisher: eventCollector.publisher,
+      idGenerator: createSequenceIdGenerator([]),
+      outboxWriter: outbox.writer,
+      repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        failBegin: true,
+        resources: [outbox],
+      }),
+    });
+
+    await expect(
+      Effect.runPromise(
+        service.calculateAdjustments({
+          cart: {
+            currencyCode: "usd",
+            id: "cart_empty",
+            subtotal: 1000,
+          },
+        })
+      )
+    ).resolves.toMatchObject({
+      adjustments: [],
+      currencyCode: "USD",
+      totalDiscount: 0,
+    });
+    expect(outbox.records).toEqual([]);
+  });
+
+  it("validates discount codes and returns traceable adjustments separate from pricing and tax", async () => {
+    const repository = createResettableInMemoryPromotionRepository();
+    const mutationPersistence = createMutationPersistence();
+    const service = createPromotionService({
+      ...mutationPersistence,
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
         "pcamp_winter",
         "promo_save10",
@@ -25,7 +69,6 @@ describe("promotion Effect service", () => {
         "prule_region",
         "plimit_total",
         "padj_cart",
-        "evt_adjusted",
         "pred_checkout",
         "evt_redemption",
       ]),
@@ -159,19 +202,19 @@ describe("promotion Effect service", () => {
       adjustments: [],
       totalDiscount: 0,
     });
-    expect(eventCollector.events.map((event) => event.name)).toEqual([
+    expect(
+      mutationPersistence.outbox.records.map((record) => record.event.name)
+    ).toEqual([
       "promotion.created",
-      "promotion.adjustments-calculated",
       "promotion.redemption-recorded",
-      "promotion.adjustments-calculated",
       "promotion.redemption-recorded",
-      "promotion.adjustments-calculated",
     ]);
   });
 
   it("deduplicates promotion codes before discounting", async () => {
     const repository = createResettableInMemoryPromotionRepository();
     const service = createPromotionService({
+      ...createMutationPersistence(),
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["pcamp_dup", "promo_dup"]),
       repository,
@@ -222,6 +265,7 @@ describe("promotion Effect service", () => {
   it("rejects customer-scoped usage limits until customer enforcement exists", async () => {
     const repository = createResettableInMemoryPromotionRepository();
     const service = createPromotionService({
+      ...createMutationPersistence(),
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator(["pcamp_scope", "promo_scope"]),
       repository,

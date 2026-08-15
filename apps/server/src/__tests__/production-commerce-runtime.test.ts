@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { COMMERCE_EVENTS_OUTBOX_TOPIC } from "@ecommerce/core";
 import { Effect, Layer } from "effect";
 
 import {
@@ -9,6 +10,7 @@ import {
 
 const createBindings = () => ({
   cartCache: {} as DurableObjectNamespace,
+  commerceEventQueue: {} as Queue,
   notificationEventRealtime: {} as DurableObjectNamespace,
   notificationEventQueue: {} as Queue,
   postgres: {
@@ -21,6 +23,7 @@ const createBindings = () => ({
 describe("production commerce runtime composition", () => {
   for (const binding of [
     "cartCache",
+    "commerceEventQueue",
     "notificationEventQueue",
     "notificationEventRealtime",
     "postgres",
@@ -94,6 +97,20 @@ describe("production commerce runtime composition", () => {
     expect(source).not.toContain("./commerce-runtime");
   });
 
+  it("keeps the Durable Object cart cache on reads and synchronizes it after commit", async () => {
+    const productionSource = await Bun.file(
+      new URL("../production-commerce-runtime.ts", import.meta.url)
+    ).text();
+
+    expect(productionSource).toContain("createCloudflareCartCacheRepository");
+    expect(productionSource).toContain("createCartMutationCacheCoordinator");
+    expect(productionSource).toContain("createCommittedCartCacheSynchronizer");
+    expect(productionSource).toContain(
+      "mutationRepository: projectionRepository"
+    );
+    expect(productionSource).toContain("repository: cachedRepository");
+  });
+
   it("keeps the deleted checkout compatibility runtime deleted", async () => {
     expect(
       await Bun.file(
@@ -137,6 +154,133 @@ describe("production commerce runtime composition", () => {
     });
 
     expect(composition.diagnostics.adapters.notifications).toBe("disabled");
+  });
+
+  it("drains committed commerce outbox records through the commerce queue", async () => {
+    const productionSource = await Bun.file(
+      new URL("../production-commerce-runtime.ts", import.meta.url)
+    ).text();
+    const workerSource = await Bun.file(
+      new URL("../index.ts", import.meta.url)
+    ).text();
+
+    expect(productionSource).toContain("deliverOutboxBatch");
+    expect(productionSource).toContain("COMMERCE_EVENTS_OUTBOX_TOPIC");
+    expect(productionSource).toContain("createCloudflareQueuePublisherLayer");
+    expect(workerSource).toContain("composition.drainCommerceEventOutbox()");
+    expect(workerSource).toContain("routeCommerceServerQueueBatch");
+  });
+
+  it("acks valid commerce events after durable handling and retries handler failures", async () => {
+    const handled: string[] = [];
+    const options = {
+      bindings: {
+        ...createBindings(),
+        commerceEventQueue: undefined,
+        notificationEventQueue: undefined,
+      },
+      commerceEventConsumer: {
+        consume: (message: { readonly id: string }) => {
+          handled.push(message.id);
+
+          if (message.id === "outbox_failed") {
+            throw new Error("handler unavailable");
+          }
+        },
+      },
+      mode: "development",
+    } satisfies Parameters<
+      typeof createProductionCommerceRuntimeComposition
+    >[0];
+    const composition = createProductionCommerceRuntimeComposition(options);
+    let acknowledged = 0;
+    let retried = 0;
+    const batch = {
+      messages: [
+        {
+          ack: () => {
+            acknowledged += 1;
+          },
+          body: {
+            correlationId: "correlation_1",
+            id: "outbox_1",
+            idempotencyKey: "event_1",
+            payload: {},
+            queueName: COMMERCE_EVENTS_OUTBOX_TOPIC,
+            type: "store.settings-updated",
+          },
+          retry: () => {
+            retried += 1;
+          },
+        },
+        {
+          ack: () => {
+            acknowledged += 1;
+          },
+          body: {
+            correlationId: "correlation_2",
+            id: "outbox_failed",
+            idempotencyKey: "event_2",
+            payload: {},
+            queueName: COMMERCE_EVENTS_OUTBOX_TOPIC,
+            type: "store.settings-updated",
+          },
+          retry: () => {
+            retried += 1;
+          },
+        },
+      ],
+    } as MessageBatch<unknown>;
+
+    await expect(composition.processCommerceEventQueue(batch)).rejects.toThrow(
+      "handler unavailable"
+    );
+
+    expect(acknowledged).toBe(1);
+    expect(retried).toBe(1);
+    expect(handled).toEqual(["outbox_1", "outbox_failed"]);
+  });
+
+  it("retries malformed commerce queue messages without acknowledging them", async () => {
+    const options = {
+      bindings: {
+        ...createBindings(),
+        commerceEventQueue: undefined,
+        notificationEventQueue: undefined,
+      },
+      commerceEventConsumer: {
+        consume: () => {
+          throw new Error("invalid payloads must not reach handlers");
+        },
+      },
+      mode: "development",
+    } satisfies Parameters<
+      typeof createProductionCommerceRuntimeComposition
+    >[0];
+    const composition = createProductionCommerceRuntimeComposition(options);
+    let acknowledged = 0;
+    let retried = 0;
+    const batch = {
+      messages: [
+        {
+          ack: () => {
+            acknowledged += 1;
+          },
+          body: {
+            id: "invalid",
+            queueName: "wrong-topic",
+          },
+          retry: () => {
+            retried += 1;
+          },
+        },
+      ],
+    } as MessageBatch<unknown>;
+
+    await composition.processCommerceEventQueue(batch);
+
+    expect(acknowledged).toBe(0);
+    expect(retried).toBe(1);
   });
 
   it("rejects a missing or invalid runtime mode", () => {

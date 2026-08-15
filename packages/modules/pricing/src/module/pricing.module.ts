@@ -2,11 +2,7 @@ import { defineCommerceModule } from "@ecommerce/core";
 
 import { pricingAdminSurfaces } from "../admin";
 import { pricingPermissionList } from "../permissions";
-import {
-  PRICE_CALCULATED_EVENT,
-  PRICE_SET_CREATED_EVENT,
-  PricingService,
-} from "../services";
+import { PRICE_SET_CREATED_EVENT, PricingService } from "../services";
 
 export const pricingExtensionPoints = {
   calculatedPriceConsumers: "pricing.calculated-price-consumers",
@@ -17,7 +13,7 @@ export const pricingModule = defineCommerceModule({
   contributions: {
     adminSurfaces: pricingAdminSurfaces,
     apiFragments: [],
-    eventTypes: [PRICE_SET_CREATED_EVENT, PRICE_CALCULATED_EVENT],
+    eventTypes: [PRICE_SET_CREATED_EVENT],
     permissions: pricingPermissionList,
   },
   dependencies: [],

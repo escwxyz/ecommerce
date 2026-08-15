@@ -58,6 +58,22 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
+As of 2026-08-09, persistent mutations in Store, Cart, Pricing, Inventory,
+Order, Promotion, Tax, and Fulfillment own their local transaction and enqueue
+canonical commerce events through the runtime-neutral outbox writer before
+commit. The production Worker supplies the PostgreSQL Drizzle transaction
+boundary and PostgreSQL outbox Layer over the same database Layer. Adapter
+transaction/outbox failures leave the modules as one schema-backed
+`TransactionalMutationFailure`, while defects and interruptions retain Effect
+Cause semantics. The deployed cron drains committed `commerce.events` records
+to a dedicated Cloudflare queue. PostgreSQL remains authoritative for Cart
+mutations, while Cart and Inventory actor coordination runs only after local
+commit. Deterministic module repositories and outbox state participate in the
+same rollback boundary; tests cover success, outbox and commit rollback,
+interruption, rollback-cause composition, and logical-event deduplication. A
+repository source gate rejects reintroduction of the temporary direct publisher
+or weaker outbox-only test seams in migrated modules.
+
 As of 2026-08-03, the `adopt-effect-4-backend-architecture` implementation is
 in completion audit. Backend commerce code has moved to Effect-native schemas,
 service contracts, repository contracts, PostgreSQL Drizzle adapters, Effect
@@ -351,14 +367,19 @@ architecture:
   Fulfillment providers plus a durable checkout completion-store adapter are
   registered; deterministic in-memory completion state is test-only.
 - The task-9.4 delivery cycle and Cloudflare queue Layer compose through
-  runtime-neutral Effect services. The deployed Worker now composes the
-  PostgreSQL notification-event repository and Cloudflare queue processor, but
-  it does not yet schedule the generic PostgreSQL outbox drain. Credential-free
-  tests continue to cover deterministic claimer and queue Layers.
+  runtime-neutral Effect services. The deployed Worker schedules both the
+  notification-event drain and the generic PostgreSQL `commerce.events` outbox
+  drain; downstream consumers still own event-specific processing and
+  idempotency after Cloudflare Queue delivery.
 - Section 12.5 removes the completed Promise-shaped cart/inventory coordinator
   bridge. Cart and inventory now accept `KeyedActorService` directly, the
   deprecated Cloudflare coordinator facade is gone, and only
   `KeyedActorDurableObject` remains as the exported generic actor class.
+- Cart and Inventory actor synchronization is deliberately post-commit so it
+  cannot weaken PostgreSQL/outbox atomicity. Its current best-effort
+  `Effect.ignore` path has no durable retry or failure record; move that
+  synchronization behind a `commerce.events` queue consumer before treating
+  actor state as a guaranteed projection of committed mutations.
 - The generic `KeyedActorDurableObject` currently provides coordination,
   deduplication, state, and timer hosting with a no-op command interpreter.
   Commerce-specific actor behavior must compose

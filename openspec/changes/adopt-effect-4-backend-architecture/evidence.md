@@ -187,6 +187,24 @@ commands above:
   - Temporary bridge accountability
   - Store tracer preserves marketplace extensibility
 
+## Transactional commerce mutation correction (Issue 22)
+
+- Store, Cart, Pricing, Inventory, Order, Promotion, Tax, and Fulfillment
+  persistent mutation services execute repository and outbox writes through the
+  runtime-neutral `executeTransactionalMutation` seam.
+- PostgreSQL repositories and `PostgresOutboxLayer` resolve the same active
+  Drizzle transaction supplied by `PostgresTransactionBoundaryLayer`.
+- Production schedules committed `commerce.events` delivery through a dedicated
+  Cloudflare Queue; Cart mutations use PostgreSQL as authority and Cart/Inventory
+  actor coordination occurs after commit.
+- Deterministic repository and outbox resources roll back together. Tests cover
+  outbox and commit failure, interruption, rollback-cause composition,
+  idempotency, delivery replay, and direct-publisher/source-boundary gates.
+- Fresh verification: 552 tests passed with 29 credential-gated skips; all
+  changed backend packages typecheck; production server and web builds pass.
+- Repository-wide `check` and `check-types` remain blocked only by the unrelated
+  dirty frontend/editor files named in the completion judgment below.
+
 ## Completion judgment
 
 The backend architecture migration is implemented and verified for the scoped

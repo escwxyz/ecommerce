@@ -3,7 +3,8 @@ import type {
   IdGeneratorServiceShape,
 } from "@ecommerce/core";
 import {
-  createEventCollector,
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -14,7 +15,9 @@ import { createTaxService } from "../services";
 
 export interface TaxTestKit {
   readonly clock: ClockServiceShape;
-  readonly eventCollector: ReturnType<typeof createEventCollector>;
+  readonly eventCollector: {
+    readonly events: readonly unknown[];
+  };
   readonly idGenerator: IdGeneratorServiceShape;
   readonly repository: ReturnType<typeof createResettableInMemoryTaxRepository>;
   readonly service: ReturnType<typeof createTaxService>;
@@ -22,15 +25,23 @@ export interface TaxTestKit {
 
 export const createTaxTestKit = (ids: readonly string[] = []): TaxTestKit => {
   const clock = createStaticClock(new Date("2026-01-01T00:00:00.000Z"));
-  const eventCollector = createEventCollector();
+  const outbox = createInMemoryOutbox();
+  const eventCollector = {
+    get events() {
+      return outbox.records.map((record) => record.event);
+    },
+  };
   const idGenerator = createSequenceIdGenerator(ids);
   const repository = createResettableInMemoryTaxRepository();
   const service = createTaxService({
     clock,
-    eventPublisher: eventCollector.publisher,
     idGenerator,
+    outboxWriter: outbox.writer,
     providers: [manualTaxProvider],
     repository,
+    transactionBoundary: createInMemoryTransactionBoundary({
+      resources: [repository, outbox],
+    }),
   });
 
   return {

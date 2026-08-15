@@ -138,3 +138,13 @@
 - [x] 12.10 Run `openspec status --change "adopt-effect-4-backend-architecture"` and complete a requirement-by-requirement evidence audit
 - [x] 12.11 Concentrate production repository, actor, provider, and notification adapter selection in one fail-closed Worker composition and keep in-memory implementations behind explicit testing/development seams
 - [x] 12.12 Move checkout orchestration onto public module Effect services and delete the server compatibility runtime plus Payment/Fulfillment Promise bridges
+
+## 13. Atomic commerce mutations and transactional outbox correction
+
+- [x] 13.1 Add one runtime-neutral transactional-mutation runner that translates transaction and outbox adapter failures without flattening defects or interruptions
+- [x] 13.2 Expose the PostgreSQL Drizzle transaction boundary and transactional outbox writer as production Layers over the same active transaction
+- [x] 13.3 Migrate Store, Cart, Pricing, Inventory, Order, Promotion, Tax, and Fulfillment persistent mutation services away from the temporary direct event publisher
+- [x] 13.4 Add deterministic repository/outbox rollback resources plus success, outbox failure, commit failure, interruption, rollback-cause, and idempotency coverage through public mutation and shared boundary seams
+- [x] 13.5 Wire the production Worker and Effect HTTP error contracts to the atomic mutation services and add a source gate rejecting direct publisher regression
+- [ ] 13.6 Run targeted module, core persistence, PostgreSQL adapter, API, server, repository-wide typecheck, test, lint/static-analysis, and build verification
+- [ ] 13.7 Move best-effort post-commit Cart and Inventory actor synchronization behind a durable `commerce.events` consumer with retry/failure evidence

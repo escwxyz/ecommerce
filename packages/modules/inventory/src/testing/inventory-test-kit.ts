@@ -1,4 +1,6 @@
 import {
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -9,6 +11,7 @@ import { createInventoryService } from "../services";
 
 export const createTestInventoryService = () => {
   const repository = createResettableInMemoryInventoryRepository();
+  const outbox = createInMemoryOutbox();
 
   return {
     repository,
@@ -24,7 +27,11 @@ export const createTestInventoryService = () => {
         "iadj_test",
         "evt_adjusted",
       ]),
+      outboxWriter: outbox.writer,
       repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [repository, outbox],
+      }),
     }),
   };
 };

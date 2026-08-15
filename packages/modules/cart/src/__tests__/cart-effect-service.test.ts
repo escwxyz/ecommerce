@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import {
-  createEventCollector,
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -14,11 +15,20 @@ import { createCartService } from "../services";
 
 describe("cart Effect service", () => {
   it("creates and mutates a cart aggregate with idempotent line item metadata", async () => {
-    const eventCollector = createEventCollector();
+    const outbox = createInMemoryOutbox({
+      recordIds: ["outbox_1", "outbox_2", "outbox_3", "outbox_4"],
+    });
+    const repository = createResettableInMemoryCartRepository();
+    const baseActorService = createInMemoryCartActorService();
+    let directActorDispatches = 0;
     const service = createCartService({
-      actorService: createInMemoryCartActorService(),
+      actorService: {
+        dispatch: (command) =>
+          Effect.sync(() => {
+            directActorDispatches += 1;
+          }).pipe(Effect.andThen(baseActorService.dispatch(command))),
+      },
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-      eventPublisher: eventCollector.publisher,
       idGenerator: createSequenceIdGenerator([
         "cart_active",
         "evt_created",
@@ -28,7 +38,11 @@ describe("cart Effect service", () => {
         "evt_adjustment",
         "evt_totals",
       ]),
-      repository: createResettableInMemoryCartRepository(),
+      outboxWriter: outbox.writer,
+      repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [repository, outbox],
+      }),
     });
 
     const cart = await Effect.runPromise(
@@ -98,7 +112,8 @@ describe("cart Effect service", () => {
     expect(duplicateAdd.lineItems).toHaveLength(1);
     expect(adjusted.adjustments).toHaveLength(1);
     expect(totals.cart.totals.total).toBe(2100);
-    expect(eventCollector.events.map((event) => event.name)).toEqual([
+    expect(directActorDispatches).toBe(0);
+    expect(outbox.records.map((record) => record.event.name)).toEqual([
       "cart.created",
       "cart.line-item-added",
       "cart.adjustment-applied",
@@ -107,6 +122,8 @@ describe("cart Effect service", () => {
   });
 
   it("returns typed failures for missing line-item adjustments", async () => {
+    const outbox = createInMemoryOutbox();
+    const repository = createResettableInMemoryCartRepository();
     const service = createCartService({
       actorService: createInMemoryCartActorService(),
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
@@ -115,7 +132,11 @@ describe("cart Effect service", () => {
         "evt_cart_a",
         "cadj_missing",
       ]),
-      repository: createResettableInMemoryCartRepository(),
+      outboxWriter: outbox.writer,
+      repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [repository, outbox],
+      }),
     });
     const cart = await Effect.runPromise(
       service.createCart({ currencyCode: "USD" })
@@ -137,5 +158,29 @@ describe("cart Effect service", () => {
     if (result._tag === "Failure") {
       expect(String(result.cause)).toContain(CartLineItemNotFound.name);
     }
+  });
+
+  it("rolls back cart state when durable event intent cannot be written", async () => {
+    const outbox = createInMemoryOutbox({ failEnqueue: true });
+    const repository = createResettableInMemoryCartRepository();
+    const service = createCartService({
+      actorService: createInMemoryCartActorService(),
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator(["cart_rollback", "evt_rollback"]),
+      outboxWriter: outbox.writer,
+      repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [repository, outbox],
+      }),
+    });
+
+    const exit = await Effect.runPromiseExit(
+      service.createCart({ currencyCode: "USD" })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(String(exit)).toContain("TransactionalMutationFailure");
+    expect(await Effect.runPromise(repository.listCarts)).toEqual([]);
+    expect(outbox.records).toEqual([]);
   });
 });

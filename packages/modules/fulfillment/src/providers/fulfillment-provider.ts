@@ -10,6 +10,8 @@ import type {
 } from "../domain";
 import { FulfillmentValidationFailure } from "../domain";
 
+export const DEFAULT_FULFILLMENT_PROVIDER_CANCELLATION_TIMEOUT_MS = 15_000;
+
 export interface FulfillmentProviderRate {
   readonly amount: FulfillmentProviderMoney;
   readonly providerKey: string;
@@ -54,6 +56,8 @@ export interface FulfillmentProviderCreateInput {
 
 export interface FulfillmentProviderCancelInput {
   readonly correlation?: CorrelationContext;
+  /** Stable identity that providers must use to deduplicate cancellation retries. */
+  readonly idempotencyKey: string;
   readonly providerFulfillmentId: string;
   readonly reason?: string;
 }
@@ -95,36 +99,61 @@ export const defineFulfillmentProvider = <
   provider: Provider
 ): Provider => provider;
 
+const providerCancellationTimeoutFailure = (timeoutMs: number) =>
+  new FulfillmentValidationFailure({
+    message: `Fulfillment provider cancellation timed out after ${timeoutMs}ms.`,
+  });
+
+const withProviderCancellationTimeout = (
+  effect: EffectValue<void, FulfillmentExpectedError>,
+  timeoutMs: number
+) =>
+  effect.pipe(
+    Effect.timeoutOrElse({
+      duration: `${timeoutMs} millis`,
+      orElse: () => Effect.fail(providerCancellationTimeoutFailure(timeoutMs)),
+    })
+  );
+
 /**
  * Temporary bridge for legacy Promise-based provider implementations while
  * external carrier integrations migrate behind the Effect provider contract.
  */
-export const createFulfillmentProviderFromPromiseProvider = (provider: {
-  readonly cancelFulfillment: (
-    input: FulfillmentProviderCancelInput
-  ) => Promise<void>;
-  readonly createFulfillment: (
-    input: FulfillmentProviderCreateInput
-  ) => Promise<FulfillmentProviderFulfillment>;
-  readonly id: string;
-  readonly rate: (
-    input: FulfillmentProviderRateInput
-  ) => Promise<FulfillmentProviderRate>;
-  readonly trackShipment: (
-    input: FulfillmentProviderTrackInput
-  ) => Promise<FulfillmentProviderShipment | null>;
-  readonly validateOption: (
-    input: FulfillmentProviderRateInput
-  ) => Promise<FulfillmentProviderValidationResult>;
-}): FulfillmentProvider => ({
+export const createFulfillmentProviderFromPromiseProvider = (
+  provider: {
+    readonly cancelFulfillment: (
+      input: FulfillmentProviderCancelInput
+    ) => Promise<void>;
+    readonly createFulfillment: (
+      input: FulfillmentProviderCreateInput
+    ) => Promise<FulfillmentProviderFulfillment>;
+    readonly id: string;
+    readonly rate: (
+      input: FulfillmentProviderRateInput
+    ) => Promise<FulfillmentProviderRate>;
+    readonly trackShipment: (
+      input: FulfillmentProviderTrackInput
+    ) => Promise<FulfillmentProviderShipment | null>;
+    readonly validateOption: (
+      input: FulfillmentProviderRateInput
+    ) => Promise<FulfillmentProviderValidationResult>;
+  },
+  options: {
+    readonly cancellationTimeoutMs?: number;
+  } = {}
+): FulfillmentProvider => ({
   cancelFulfillment: (input) =>
-    Effect.tryPromise({
-      catch: () =>
-        new FulfillmentValidationFailure({
-          message: "Fulfillment provider cancellation failed.",
-        }),
-      try: () => provider.cancelFulfillment(input),
-    }),
+    withProviderCancellationTimeout(
+      Effect.tryPromise({
+        catch: () =>
+          new FulfillmentValidationFailure({
+            message: "Fulfillment provider cancellation failed.",
+          }),
+        try: () => provider.cancelFulfillment(input),
+      }),
+      options.cancellationTimeoutMs ??
+        DEFAULT_FULFILLMENT_PROVIDER_CANCELLATION_TIMEOUT_MS
+    ),
   createFulfillment: (input) =>
     Effect.tryPromise({
       catch: () =>

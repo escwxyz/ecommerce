@@ -1,16 +1,26 @@
 import {
   CartRepositoryService,
   CartService,
+  createCartMutationCacheCoordinator,
+  createCommittedCartCacheSynchronizer,
   createCartService,
 } from "@ecommerce/cart";
 import {
+  COMMERCE_EVENTS_OUTBOX_TOPIC,
   ClockService,
+  deliverOutboxBatch,
   EventPublisherService,
   IdGeneratorService,
+  OutboxWriterService,
+  TransactionBoundaryService,
   clockLayer,
   idGeneratorLayer,
 } from "@ecommerce/core";
-import { KeyedActorService } from "@ecommerce/core/stateful";
+import type {
+  CommerceQueueConsumer,
+  CommerceQueueConsumeContext,
+  CommerceQueueMessage,
+} from "@ecommerce/core";
 import { createCustomerServiceFromDependenciesLayer } from "@ecommerce/customer";
 import {
   PostgresCartRepositoryLayer,
@@ -26,6 +36,8 @@ import {
   PostgresRegionSalesChannelRepositoryLayer,
   PostgresStoreRepositoryLayer,
   PostgresTaxRepositoryLayer,
+  PostgresOutboxLayer,
+  PostgresTransactionBoundaryLayer,
   createPostgresDatabaseLayer,
   createPostgresPoolConfig,
 } from "@ecommerce/db-postgres";
@@ -53,8 +65,10 @@ import {
   createPaymentService,
 } from "@ecommerce/payment";
 import {
+  createCloudflareCartActiveCache,
   createCloudflareCartCacheRepository,
   createCloudflareKeyedActorLayer,
+  createCloudflareQueuePublisherLayer,
   drainNotificationEventOutbox,
   createNotificationEventRealtimePublisher,
   processNotificationEventQueueBatch,
@@ -101,6 +115,7 @@ export type ProductionCommerceRuntimeMode = "development" | "production";
 
 export interface ProductionCommerceRuntimeBindings {
   readonly cartCache?: DurableObjectNamespace;
+  readonly commerceEventQueue?: Queue<CommerceQueueMessage>;
   readonly notificationEventQueue?: Queue<NotificationEventQueueMessage>;
   readonly notificationEventRealtime?: DurableObjectNamespace;
   readonly postgres?: Hyperdrive;
@@ -135,6 +150,10 @@ export interface ProductionCommerceRuntimeDiagnostics {
 export interface ProductionCommerceRuntimeComposition {
   readonly applicationLayer: EffectLayer<never, never, never>;
   readonly diagnostics: ProductionCommerceRuntimeDiagnostics;
+  readonly drainCommerceEventOutbox: () => Promise<void>;
+  readonly processCommerceEventQueue: (
+    batch: MessageBatch<unknown>
+  ) => Promise<void>;
   readonly processNotificationEventQueue: (
     batch: MessageBatch<NotificationEventQueueMessage>
   ) => Promise<void>;
@@ -143,6 +162,7 @@ export interface ProductionCommerceRuntimeComposition {
 
 export interface CreateProductionCommerceRuntimeCompositionOptions {
   readonly bindings: ProductionCommerceRuntimeBindings;
+  readonly commerceEventConsumer?: CommerceQueueConsumer;
   readonly mode: ProductionCommerceRuntimeMode;
 }
 
@@ -177,6 +197,57 @@ const requireRuntimeMode = (mode: unknown): ProductionCommerceRuntimeMode => {
       "Runtime composition requires an explicit development or production mode.",
     mode: typeof mode === "string" ? mode : "missing",
   });
+};
+
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const isCommerceQueueMessage = (
+  message: unknown
+): message is CommerceQueueMessage =>
+  isObjectRecord(message) &&
+  message.queueName === COMMERCE_EVENTS_OUTBOX_TOPIC &&
+  typeof message.id === "string" &&
+  typeof message.type === "string" &&
+  typeof message.correlationId === "string" &&
+  typeof message.idempotencyKey === "string";
+
+const getMessageAttempt = (message: Message<unknown>): number =>
+  "attempts" in message && typeof message.attempts === "number"
+    ? message.attempts
+    : 1;
+
+const processCommerceEventQueueBatch = async (
+  batch: MessageBatch<unknown>,
+  consumer: CommerceQueueConsumer
+): Promise<void> => {
+  const failures: unknown[] = [];
+
+  for (const message of batch.messages) {
+    if (isCommerceQueueMessage(message.body)) {
+      const context: CommerceQueueConsumeContext = {
+        attempt: getMessageAttempt(message),
+        retryPolicy: {
+          backoffSeconds: [30, 120, 300],
+          maxAttempts: 3,
+        },
+      };
+
+      try {
+        await consumer.consume(message.body, context);
+        message.ack();
+      } catch (error) {
+        message.retry();
+        failures.push(error);
+      }
+    } else {
+      message.retry();
+    }
+  }
+
+  if (failures.length > 0) {
+    throw failures[0];
+  }
 };
 
 const requirePostgresConnectionString = (
@@ -215,6 +286,7 @@ const createRuntimeIdGenerator = () => ({
  */
 export const createProductionCommerceRuntimeComposition = ({
   bindings,
+  commerceEventConsumer,
   mode,
 }: CreateProductionCommerceRuntimeCompositionOptions): ProductionCommerceRuntimeComposition => {
   const runtimeMode = requireRuntimeMode(mode);
@@ -250,6 +322,14 @@ export const createProductionCommerceRuntimeComposition = ({
           value: bindings.notificationEventQueue,
         })
       : bindings.notificationEventQueue;
+  const commerceEventQueue =
+    runtimeMode === "production"
+      ? requireBinding({
+          binding: "COMMERCE_EVENT_QUEUE",
+          mode: runtimeMode,
+          value: bindings.commerceEventQueue,
+        })
+      : bindings.commerceEventQueue;
   const clock = createRuntimeClock();
   const idGenerator = createRuntimeIdGenerator();
   const databaseLayer = createPostgresDatabaseLayer({
@@ -274,6 +354,19 @@ export const createProductionCommerceRuntimeComposition = ({
     PostgresStoreRepositoryLayer,
     PostgresTaxRepositoryLayer
   ).pipe(Layer.provide(databaseLayer));
+  const mutationPersistenceLayer = Layer.mergeAll(
+    PostgresOutboxLayer,
+    PostgresTransactionBoundaryLayer
+  ).pipe(Layer.provide(databaseLayer));
+  const commerceOutboxDeliveryLayer = commerceEventQueue
+    ? Layer.mergeAll(
+        PostgresOutboxLayer,
+        createCloudflareQueuePublisherLayer({
+          clock,
+          queue: commerceEventQueue,
+        })
+      ).pipe(Layer.provide(databaseLayer))
+    : undefined;
   const notificationEventRealtime = createNotificationEventRealtimePublisher({
     namespace: notificationEventRealtimeNamespace as unknown as Parameters<
       typeof createNotificationEventRealtimePublisher
@@ -322,27 +415,39 @@ export const createProductionCommerceRuntimeComposition = ({
     clockDependencyLayer,
     idGeneratorDependencyLayer,
     domainEventPublisherLayer,
+    mutationPersistenceLayer,
     actorLayer
   );
   const cartServiceLayer = Layer.effect(
     CartService,
     Effect.gen(function* createProductionCartService() {
-      const actorService = yield* KeyedActorService;
       const projectionRepository = yield* CartRepositoryService;
       const runtimeClock = yield* ClockService;
-      const eventPublisher = yield* EventPublisherService;
       const runtimeIdGenerator = yield* IdGeneratorService;
+      const outboxWriter = yield* OutboxWriterService;
+      const transactionBoundary = yield* TransactionBoundaryService;
+      const activeCache = createCloudflareCartActiveCache({
+        namespace: cartCache,
+      });
+      const cachedRepository = createCloudflareCartCacheRepository({
+        namespace: cartCache,
+        projectionRepository,
+      });
 
       return createCartService({
-        actorService,
         clock: runtimeClock,
-        eventPublisher,
-        idGenerator: runtimeIdGenerator,
-        repository: createCloudflareCartCacheRepository({
-          namespace: cartCache,
-          projectionSyncFailureMode: "fail-write",
+        committedMutationSynchronizer: createCommittedCartCacheSynchronizer({
+          cache: activeCache,
           projectionRepository,
         }),
+        idGenerator: runtimeIdGenerator,
+        mutationCacheCoordinator: createCartMutationCacheCoordinator({
+          cache: activeCache,
+        }),
+        mutationRepository: projectionRepository,
+        outboxWriter,
+        repository: cachedRepository,
+        transactionBoundary,
       });
     })
   );
@@ -353,15 +458,17 @@ export const createProductionCommerceRuntimeComposition = ({
     Effect.gen(function* createProductionFulfillmentService() {
       const repository = yield* FulfillmentRepositoryService;
       const runtimeClock = yield* ClockService;
-      const eventPublisher = yield* EventPublisherService;
       const runtimeIdGenerator = yield* IdGeneratorService;
+      const outboxWriter = yield* OutboxWriterService;
+      const transactionBoundary = yield* TransactionBoundaryService;
 
       return createFulfillmentService({
         clock: runtimeClock,
-        eventPublisher,
         idGenerator: runtimeIdGenerator,
+        outboxWriter,
         providerRegistry: fulfillmentProviderRegistry,
         repository,
+        transactionBoundary,
       });
     })
   );
@@ -385,14 +492,16 @@ export const createProductionCommerceRuntimeComposition = ({
     Effect.gen(function* createProductionPromotionService() {
       const repository = yield* PromotionRepositoryService;
       const runtimeClock = yield* ClockService;
-      const eventPublisher = yield* EventPublisherService;
       const runtimeIdGenerator = yield* IdGeneratorService;
+      const outboxWriter = yield* OutboxWriterService;
+      const transactionBoundary = yield* TransactionBoundaryService;
 
       return createPromotionService({
         clock: runtimeClock,
-        eventPublisher,
         idGenerator: runtimeIdGenerator,
+        outboxWriter,
         repository,
+        transactionBoundary,
       });
     })
   );
@@ -401,15 +510,17 @@ export const createProductionCommerceRuntimeComposition = ({
     Effect.gen(function* createProductionTaxService() {
       const repository = yield* TaxRepositoryService;
       const runtimeClock = yield* ClockService;
-      const eventPublisher = yield* EventPublisherService;
       const runtimeIdGenerator = yield* IdGeneratorService;
+      const outboxWriter = yield* OutboxWriterService;
+      const transactionBoundary = yield* TransactionBoundaryService;
 
       return createTaxService({
         clock: runtimeClock,
-        eventPublisher,
         idGenerator: runtimeIdGenerator,
+        outboxWriter,
         providers: [manualTaxProvider],
         repository,
+        transactionBoundary,
       });
     })
   );
@@ -418,14 +529,16 @@ export const createProductionCommerceRuntimeComposition = ({
     Effect.gen(function* createProductionOrderService() {
       const repository = yield* OrderRepositoryService;
       const runtimeClock = yield* ClockService;
-      const eventPublisher = yield* EventPublisherService;
       const runtimeIdGenerator = yield* IdGeneratorService;
+      const outboxWriter = yield* OutboxWriterService;
+      const transactionBoundary = yield* TransactionBoundaryService;
 
       return createOrderService({
         clock: runtimeClock,
-        eventPublisher,
         idGenerator: runtimeIdGenerator,
+        outboxWriter,
         repository,
+        transactionBoundary,
       });
     })
   );
@@ -467,6 +580,23 @@ export const createProductionCommerceRuntimeComposition = ({
         )
       ).pipe(Effect.provide(notificationEventRepositoryLayer))
     );
+  const durableCommerceEventConsumer: CommerceQueueConsumer =
+    commerceEventConsumer ?? {
+      consume: (message) =>
+        Effect.runPromise(
+          NotificationEventService.use((service) =>
+            service.publishEvent({
+              causationId: message.causationId,
+              correlationId: message.correlationId,
+              name: message.type,
+              payload: message.payload,
+              sourceModule: "commerce-events",
+              subject: message.subject,
+              workflowRunId: message.workflowRunId,
+            })
+          ).pipe(Effect.asVoid, Effect.provide(notificationEventServiceLayer))
+        ),
+    };
   const drainNotificationOutbox = (): Promise<void> =>
     Effect.runPromise(
       NotificationEventRepositoryService.use((repository) =>
@@ -485,6 +615,18 @@ export const createProductionCommerceRuntimeComposition = ({
         })
       ).pipe(Effect.provide(notificationEventRepositoryLayer))
     );
+  const drainCommerceEventOutbox = async (): Promise<void> => {
+    if (!commerceOutboxDeliveryLayer) {
+      return;
+    }
+
+    await Effect.runPromise(
+      deliverOutboxBatch({
+        limit: 100,
+        topic: COMMERCE_EVENTS_OUTBOX_TOPIC,
+      }).pipe(Effect.provide(commerceOutboxDeliveryLayer))
+    );
+  };
 
   return {
     applicationLayer,
@@ -503,7 +645,10 @@ export const createProductionCommerceRuntimeComposition = ({
       },
       modules: productionModuleKeys,
     },
+    drainCommerceEventOutbox,
     drainNotificationEventOutbox: drainNotificationOutbox,
+    processCommerceEventQueue: (batch) =>
+      processCommerceEventQueueBatch(batch, durableCommerceEventConsumer),
     processNotificationEventQueue,
   };
 };

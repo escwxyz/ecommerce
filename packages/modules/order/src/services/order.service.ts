@@ -1,7 +1,15 @@
 import type {
   ClockServiceShape,
-  EventPublisherServiceShape,
   IdGeneratorServiceShape,
+  OutboxWriterServiceShape,
+  TransactionBoundaryServiceShape,
+  CurrentTransactionService,
+} from "@ecommerce/core";
+import {
+  COMMERCE_EVENTS_OUTBOX_TOPIC,
+  OutboxWriterService,
+  TransactionBoundaryService,
+  executeTransactionalMutation,
 } from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
 import { Context, Effect, Layer } from "effect";
@@ -60,9 +68,10 @@ export const OrderService = Context.Service<OrderServiceShape>(
 
 export interface CreateOrderServiceOptions {
   readonly clock?: ClockServiceShape;
-  readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
+  readonly outboxWriter: OutboxWriterServiceShape;
   readonly repository: OrderRepository;
+  readonly transactionBoundary: TransactionBoundaryServiceShape;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -71,12 +80,6 @@ const createDefaultClock = (): ClockServiceShape => ({
 
 const createDefaultIdGenerator = (): IdGeneratorServiceShape => ({
   nextId: () => nanoid(),
-});
-
-const createNoopEventPublisher = (): EventPublisherServiceShape => ({
-  publish: () => {
-    // Order events are emitted when a runtime event bus is composed.
-  },
 });
 
 const createPrefixedId = (
@@ -115,255 +118,292 @@ const requireAggregate = (repository: OrderRepository, id: OrderId) =>
 const publishOrderEvent = ({
   causationId,
   correlationId,
-  eventPublisher,
   idGenerator,
+  idempotencyKey,
   name,
   orderId,
+  outboxWriter,
   payload,
   workflowRunId,
 }: {
   readonly causationId?: string;
   readonly correlationId: string;
-  readonly eventPublisher: EventPublisherServiceShape;
   readonly idGenerator: IdGeneratorServiceShape;
+  readonly idempotencyKey: string;
   readonly name: string;
   readonly orderId: OrderId;
+  readonly outboxWriter: OutboxWriterServiceShape;
   readonly payload: unknown;
   readonly workflowRunId?: string;
-}): EffectValue<void, OrderExpectedError> =>
-  Effect.tryPromise({
-    catch: (cause) =>
-      new OrderValidationFailure({
-        message: cause instanceof Error ? cause.message : String(cause),
-      }),
-    try: () =>
-      Promise.resolve(
-        eventPublisher.publish(
-          createEventEnvelope({
-            causationId,
-            correlationId,
-            id: createPrefixedId(idGenerator, "evt_"),
-            name,
-            payload,
-            sourceModule: "order",
-            subject: {
-              id: orderId,
-              type: "order",
-            },
-            workflowRunId,
-          })
-        )
-      ),
+}) => {
+  const event = createEventEnvelope({
+    causationId,
+    correlationId,
+    id: createPrefixedId(idGenerator, "evt_"),
+    name,
+    payload,
+    sourceModule: "order",
+    subject: {
+      id: orderId,
+      type: "order",
+    },
+    workflowRunId,
   });
+
+  return outboxWriter.enqueue({
+    event,
+    idempotencyKey: `${event.name}:${idempotencyKey}`,
+    topic: COMMERCE_EVENTS_OUTBOX_TOPIC,
+  });
+};
 
 export const createOrderService = ({
   clock = createDefaultClock(),
-  eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
+  outboxWriter,
   repository,
-}: CreateOrderServiceOptions): OrderServiceShape => ({
-  createOrderFromCheckout: (input) =>
-    Effect.gen(function* createOrderFromCheckoutEffect() {
-      const duplicate = yield* repository.findOrderByIdempotencyKey(
-        input.idempotencyKey
-      );
-
-      if (duplicate) {
-        return yield* requireAggregate(repository, duplicate.id);
-      }
-
-      const now = clock.now();
-      const orderId = yield* createOrderIdEffect(
-        createPrefixedId(idGenerator, ORDER_ID_PREFIX)
-      );
-      const currencyCode = normalizeCurrencyCode(input.totals.currencyCode);
-      const order: OrderRecord = {
-        billingAddress: input.billingAddress ?? null,
-        cartId: input.cartId,
-        completedAt: null,
-        createdAt: now,
-        currencyCode,
-        customerId: input.customerId ?? null,
-        email: input.email ?? null,
-        fulfillmentReferences: [...(input.fulfillmentReferences ?? [])],
-        id: orderId,
-        metadata: input.metadata ?? {},
-        paymentReferences: [...(input.paymentReferences ?? [])],
-        shippingAddress: input.shippingAddress ?? null,
-        status: "placed",
-        totals: {
-          ...input.totals,
-          currencyCode,
-        },
-        updatedAt: now,
-      };
-      const lineItems: OrderLineItemRecord[] = [];
-
-      for (const item of input.lineItems) {
-        lineItems.push({
-          createdAt: now,
-          id: yield* createOrderLineItemIdEffect(
-            createPrefixedId(idGenerator, ORDER_LINE_ITEM_ID_PREFIX)
-          ),
-          itemSnapshot: {
-            ...item.itemSnapshot,
-            metadata: item.itemSnapshot.metadata
-              ? { ...item.itemSnapshot.metadata }
-              : undefined,
-          },
-          metadata: item.metadata ?? {},
-          orderId,
-          quantity: item.quantity,
-          taxTotal: item.taxTotal ?? 0,
-          title: item.title.trim(),
-          total: item.total,
-          unitPrice: item.unitPrice,
-          updatedAt: now,
-        });
-      }
-
-      const aggregate = yield* repository.saveOrderAggregate(
-        {
-          lineItems,
-          operations: [],
-          order,
-          stateTransitions: [
-            {
-              changedAt: now,
-              fromStatus: null,
-              metadata: {},
-              orderId,
-              toStatus: "placed",
-            },
-          ],
-          transactions: [],
-        },
-        input.idempotencyKey
-      );
-
-      yield* publishOrderEvent({
-        causationId: input.causationId,
-        correlationId: input.correlationId,
-        eventPublisher,
-        idGenerator,
-        name: ORDER_PLACED_EVENT,
-        orderId,
-        payload: {
-          cartId: input.cartId,
-          orderId,
-          total: order.totals.total,
-        },
-        workflowRunId: input.workflowRunId,
-      });
-
-      return aggregate;
-    }),
-  getOrder: (id) => repository.getOrderAggregate(id),
-  listOrders: repository.listOrders,
-  recordTransaction: (input) =>
-    Effect.gen(function* recordOrderTransactionEffect() {
-      const orderId = yield* createOrderIdEffect(input.orderId);
-      yield* requireOrder(repository, orderId);
-
-      const now = clock.now();
-      const transaction = yield* repository.saveOrderTransaction(
-        {
-          amount: input.amount,
-          createdAt: now,
-          currencyCode: normalizeCurrencyCode(input.currencyCode),
-          id: yield* createOrderTransactionIdEffect(
-            createPrefixedId(idGenerator, ORDER_TRANSACTION_ID_PREFIX)
-          ),
-          metadata: input.metadata ?? {},
-          orderId,
-          referenceId: input.referenceId ?? null,
-          type: input.type,
-          updatedAt: now,
-        },
-        input.idempotencyKey
-      );
-
-      yield* publishOrderEvent({
-        causationId: input.causationId,
-        correlationId: input.correlationId,
-        eventPublisher,
-        idGenerator,
-        name: ORDER_TRANSACTION_RECORDED_EVENT,
-        orderId,
-        payload: {
-          amount: transaction.amount,
-          orderId,
-          transactionId: transaction.id,
-          type: transaction.type,
-        },
-        workflowRunId: input.workflowRunId,
-      });
-
-      return transaction;
-    }),
-  transitionStatus: (input) =>
-    Effect.gen(function* transitionOrderStatusEffect() {
-      const orderId = yield* createOrderIdEffect(input.orderId);
-      const duplicateTransition =
-        yield* repository.findStateTransitionByIdempotencyKey(
+  transactionBoundary,
+}: CreateOrderServiceOptions): OrderServiceShape => {
+  const service = {
+    createOrderFromCheckout: (input: CreateOrderFromCheckoutInput) =>
+      Effect.gen(function* createOrderFromCheckoutEffect() {
+        const duplicate = yield* repository.findOrderByIdempotencyKey(
           input.idempotencyKey
         );
 
-      if (duplicateTransition) {
-        if (
-          duplicateTransition.orderId !== orderId ||
-          duplicateTransition.toStatus !== input.status
-        ) {
-          return yield* new OrderValidationFailure({
-            message: `Order status transition idempotency key "${input.idempotencyKey}" was already used.`,
+        if (duplicate) {
+          return yield* requireAggregate(repository, duplicate.id);
+        }
+
+        const now = clock.now();
+        const orderId = yield* createOrderIdEffect(
+          createPrefixedId(idGenerator, ORDER_ID_PREFIX)
+        );
+        const currencyCode = normalizeCurrencyCode(input.totals.currencyCode);
+        const order: OrderRecord = {
+          billingAddress: input.billingAddress ?? null,
+          cartId: input.cartId,
+          completedAt: null,
+          createdAt: now,
+          currencyCode,
+          customerId: input.customerId ?? null,
+          email: input.email ?? null,
+          fulfillmentReferences: [...(input.fulfillmentReferences ?? [])],
+          id: orderId,
+          metadata: input.metadata ?? {},
+          paymentReferences: [...(input.paymentReferences ?? [])],
+          shippingAddress: input.shippingAddress ?? null,
+          status: "placed",
+          totals: {
+            ...input.totals,
+            currencyCode,
+          },
+          updatedAt: now,
+        };
+        const lineItems: OrderLineItemRecord[] = [];
+
+        for (const item of input.lineItems) {
+          lineItems.push({
+            createdAt: now,
+            id: yield* createOrderLineItemIdEffect(
+              createPrefixedId(idGenerator, ORDER_LINE_ITEM_ID_PREFIX)
+            ),
+            itemSnapshot: {
+              ...item.itemSnapshot,
+              metadata: item.itemSnapshot.metadata
+                ? { ...item.itemSnapshot.metadata }
+                : undefined,
+            },
+            metadata: item.metadata ?? {},
+            orderId,
+            quantity: item.quantity,
+            taxTotal: item.taxTotal ?? 0,
+            title: item.title.trim(),
+            total: item.total,
+            unitPrice: item.unitPrice,
+            updatedAt: now,
           });
         }
 
-        return yield* requireAggregate(repository, orderId);
-      }
+        const aggregate = yield* repository.saveOrderAggregate(
+          {
+            lineItems,
+            operations: [],
+            order,
+            stateTransitions: [
+              {
+                changedAt: now,
+                fromStatus: null,
+                metadata: {},
+                orderId,
+                toStatus: "placed",
+              },
+            ],
+            transactions: [],
+          },
+          input.idempotencyKey
+        );
 
-      const existing = yield* requireOrder(repository, orderId);
-
-      if (existing.status === input.status) {
-        return yield* requireAggregate(repository, orderId);
-      }
-
-      const now = clock.now();
-      yield* repository.updateOrder({
-        ...existing,
-        completedAt: input.status === "completed" ? now : existing.completedAt,
-        status: input.status,
-        updatedAt: now,
-      });
-      yield* repository.saveStateTransition(
-        {
-          changedAt: now,
-          fromStatus: existing.status,
-          metadata: input.metadata ?? {},
+        yield* publishOrderEvent({
+          causationId: input.causationId,
+          correlationId: input.correlationId,
+          idGenerator,
+          idempotencyKey: input.idempotencyKey,
+          name: ORDER_PLACED_EVENT,
           orderId,
-          toStatus: input.status,
-        },
-        input.idempotencyKey
-      );
+          outboxWriter,
+          payload: {
+            cartId: input.cartId,
+            orderId,
+            total: order.totals.total,
+          },
+          workflowRunId: input.workflowRunId,
+        });
 
-      yield* publishOrderEvent({
-        causationId: input.causationId,
-        correlationId: input.correlationId,
-        eventPublisher,
-        idGenerator,
-        name: ORDER_STATUS_TRANSITIONED_EVENT,
-        orderId,
-        payload: {
-          fromStatus: existing.status,
+        return aggregate;
+      }),
+    getOrder: (id: OrderId) => repository.getOrderAggregate(id),
+    listOrders: repository.listOrders,
+    recordTransaction: (input: RecordOrderTransactionInput) =>
+      Effect.gen(function* recordOrderTransactionEffect() {
+        const orderId = yield* createOrderIdEffect(input.orderId);
+        yield* requireOrder(repository, orderId);
+
+        const now = clock.now();
+        const transaction = yield* repository.saveOrderTransaction(
+          {
+            amount: input.amount,
+            createdAt: now,
+            currencyCode: normalizeCurrencyCode(input.currencyCode),
+            id: yield* createOrderTransactionIdEffect(
+              createPrefixedId(idGenerator, ORDER_TRANSACTION_ID_PREFIX)
+            ),
+            metadata: input.metadata ?? {},
+            orderId,
+            referenceId: input.referenceId ?? null,
+            type: input.type,
+            updatedAt: now,
+          },
+          input.idempotencyKey
+        );
+
+        yield* publishOrderEvent({
+          causationId: input.causationId,
+          correlationId: input.correlationId,
+          idGenerator,
+          idempotencyKey: input.idempotencyKey,
+          name: ORDER_TRANSACTION_RECORDED_EVENT,
           orderId,
-          toStatus: input.status,
-        },
-        workflowRunId: input.workflowRunId,
-      });
+          outboxWriter,
+          payload: {
+            amount: transaction.amount,
+            orderId,
+            transactionId: transaction.id,
+            type: transaction.type,
+          },
+          workflowRunId: input.workflowRunId,
+        });
 
-      return yield* requireAggregate(repository, orderId);
-    }),
-});
+        return transaction;
+      }),
+    transitionStatus: (input: TransitionOrderStatusInput) =>
+      Effect.gen(function* transitionOrderStatusEffect() {
+        const orderId = yield* createOrderIdEffect(input.orderId);
+        const duplicateTransition =
+          yield* repository.findStateTransitionByIdempotencyKey(
+            input.idempotencyKey
+          );
+
+        if (duplicateTransition) {
+          if (
+            duplicateTransition.orderId !== orderId ||
+            duplicateTransition.toStatus !== input.status
+          ) {
+            return yield* new OrderValidationFailure({
+              message: `Order status transition idempotency key "${input.idempotencyKey}" was already used.`,
+            });
+          }
+
+          return yield* requireAggregate(repository, orderId);
+        }
+
+        const existing = yield* requireOrder(repository, orderId);
+
+        if (existing.status === input.status) {
+          return yield* requireAggregate(repository, orderId);
+        }
+
+        const now = clock.now();
+        yield* repository.updateOrder({
+          ...existing,
+          completedAt:
+            input.status === "completed" ? now : existing.completedAt,
+          status: input.status,
+          updatedAt: now,
+        });
+        yield* repository.saveStateTransition(
+          {
+            changedAt: now,
+            fromStatus: existing.status,
+            metadata: input.metadata ?? {},
+            orderId,
+            toStatus: input.status,
+          },
+          input.idempotencyKey
+        );
+
+        yield* publishOrderEvent({
+          causationId: input.causationId,
+          correlationId: input.correlationId,
+          idGenerator,
+          idempotencyKey: input.idempotencyKey,
+          name: ORDER_STATUS_TRANSITIONED_EVENT,
+          orderId,
+          outboxWriter,
+          payload: {
+            fromStatus: existing.status,
+            orderId,
+            toStatus: input.status,
+          },
+          workflowRunId: input.workflowRunId,
+        });
+
+        return yield* requireAggregate(repository, orderId);
+      }),
+  };
+
+  const transactionalOrderMutation = <A, E>(
+    operation: string,
+    effect: EffectValue<A, E, CurrentTransactionService>
+  ) =>
+    executeTransactionalMutation<A, E, never>({
+      effect,
+      moduleName: "order",
+      operation,
+      outboxMessages: () => [],
+      outboxWriter,
+      transactionBoundary,
+    });
+
+  return {
+    ...service,
+    createOrderFromCheckout: (input) =>
+      transactionalOrderMutation(
+        "createOrderFromCheckout",
+        service.createOrderFromCheckout(input)
+      ),
+    recordTransaction: (input) =>
+      transactionalOrderMutation(
+        "recordTransaction",
+        service.recordTransaction(input)
+      ),
+    transitionStatus: (input) =>
+      transactionalOrderMutation(
+        "transitionStatus",
+        service.transitionStatus(input)
+      ),
+  };
+};
 
 export const createOrderServiceLayer = (service: OrderServiceShape) =>
   Layer.succeed(OrderService, service);
@@ -372,6 +412,12 @@ export const orderServiceFromRepositoryLayer = Layer.effect(
   OrderService,
   Effect.gen(function* createOrderServiceFromRepositoryEffect() {
     const repository = yield* OrderRepositoryService;
-    return createOrderService({ repository });
+    const outboxWriter = yield* OutboxWriterService;
+    const transactionBoundary = yield* TransactionBoundaryService;
+    return createOrderService({
+      outboxWriter,
+      repository,
+      transactionBoundary,
+    });
   })
 );

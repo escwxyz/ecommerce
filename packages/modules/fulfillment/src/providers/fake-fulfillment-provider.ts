@@ -20,6 +20,7 @@ export interface FakeFulfillmentProvider extends FulfillmentProvider {
 export const createFakeFulfillmentProvider = ({
   id = "fake",
 }: FakeFulfillmentProviderOptions = {}): FakeFulfillmentProvider => {
+  const completedCancellationKeys = new Set<string>();
   let nextSequence = 1;
   const shipments = new Map<string, FulfillmentProviderShipment>();
   const nextId = (prefix: string) => {
@@ -31,6 +32,11 @@ export const createFakeFulfillmentProvider = ({
   return defineFulfillmentProvider({
     cancelFulfillment: (input) =>
       Effect.sync(() => {
+        if (completedCancellationKeys.has(input.idempotencyKey)) {
+          return;
+        }
+
+        completedCancellationKeys.add(input.idempotencyKey);
         shipments.delete(input.providerFulfillmentId);
       }),
     createFulfillment: (input) =>

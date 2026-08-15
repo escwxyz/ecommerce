@@ -3,7 +3,6 @@ import { defineCommerceModule } from "@ecommerce/core";
 import { taxAdminSurfaces } from "../admin";
 import { taxPermissionList } from "../permissions";
 import {
-  TAX_CALCULATED_EVENT,
   TAX_CATEGORY_CREATED_EVENT,
   TAX_PROVIDER_CONFIGURED_EVENT,
   TAX_RATE_CREATED_EVENT,
@@ -26,7 +25,6 @@ export const taxModule = defineCommerceModule({
       TAX_PROVIDER_CONFIGURED_EVENT,
       TAX_REGION_CREATED_EVENT,
       TAX_RATE_CREATED_EVENT,
-      TAX_CALCULATED_EVENT,
     ],
     permissions: taxPermissionList,
   },

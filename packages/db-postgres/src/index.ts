@@ -553,11 +553,14 @@ export {
 export {
   CurrentPostgresTransactionService,
   createPostgresDrizzleLayer,
+  createPostgresTransactionBoundaryLayer,
+  PostgresTransactionBoundaryLayer,
   PostgresDrizzleService,
   type PostgresDrizzleConfig,
   type PostgresDrizzleDatabase,
   type PostgresDrizzleService as PostgresDrizzleServiceShape,
   type PostgresDrizzleTransaction,
+  type PostgresTransactionBoundaryLayerOptions,
 } from "./postgres-drizzle";
 
 /**

@@ -1,12 +1,16 @@
 import type {
   ClockServiceShape,
-  EventPublisherServiceShape,
   IdGeneratorServiceShape,
+  OutboxWriterServiceShape,
+  TransactionBoundaryServiceShape,
 } from "@ecommerce/core";
 import {
+  COMMERCE_EVENTS_OUTBOX_TOPIC,
   ClockService,
-  EventPublisherService,
   IdGeneratorService,
+  OutboxWriterService,
+  TransactionBoundaryService,
+  executeTransactionalMutation,
 } from "@ecommerce/core";
 import { createEventEnvelope } from "@ecommerce/core/events";
 import { Context, Effect, Layer } from "effect";
@@ -24,7 +28,6 @@ import {
   STORE_ID_PREFIX,
   StoreCurrencyListEmpty,
   StoreDefaultCurrencyUnsupported,
-  StoreEventPublishFailure,
   StoreRepositoryService,
   createStoreIdEffect,
 } from "../domain";
@@ -52,10 +55,11 @@ export const StoreService = Context.Service<StoreServiceShape>(
 
 export interface CreateStoreServiceOptions {
   readonly clock?: ClockServiceShape;
-  readonly eventPublisher?: EventPublisherServiceShape;
   readonly idGenerator?: IdGeneratorServiceShape;
   readonly initialSettings?: StoreSettings;
+  readonly outboxWriter: OutboxWriterServiceShape;
   readonly repository: StoreRepository;
+  readonly transactionBoundary: TransactionBoundaryServiceShape;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -64,12 +68,6 @@ const createDefaultClock = (): ClockServiceShape => ({
 
 const createDefaultIdGenerator = (): IdGeneratorServiceShape => ({
   nextId: () => `${STORE_ID_PREFIX}${nanoid()}`,
-});
-
-const createNoopEventPublisher = (): EventPublisherServiceShape => ({
-  publish: () => {
-    // Optional event publication should not force a runtime dependency.
-  },
 });
 
 const defaultSupportedCurrencyCodes = ["USD"] as const;
@@ -176,15 +174,6 @@ const getUpdatedFields = (
   return fields;
 };
 
-const toStoreEventPublishFailure = (
-  settings: StoreSettings
-): StoreEventPublishFailure =>
-  new StoreEventPublishFailure({
-    eventName: STORE_SETTINGS_UPDATED_EVENT,
-    reason: "publisher-rejected",
-    storeId: settings.id,
-  });
-
 const pickDefaults = (settings: StoreSettings): StoreDefaults => ({
   defaultCurrencyCode: settings.defaultCurrencyCode,
   defaultLocale: settings.defaultLocale,
@@ -196,10 +185,11 @@ const pickDefaults = (settings: StoreSettings): StoreDefaults => ({
 
 export const createStoreService = ({
   clock = createDefaultClock(),
-  eventPublisher = createNoopEventPublisher(),
   idGenerator = createDefaultIdGenerator(),
   initialSettings,
+  outboxWriter,
   repository,
+  transactionBoundary,
 }: CreateStoreServiceOptions): StoreServiceShape => {
   const loadOrCreateSettings = Effect.fn("StoreService.loadOrCreateSettings")(
     function* loadOrCreateSettingsEffect() {
@@ -225,65 +215,78 @@ export const createStoreService = ({
   );
 
   const updateStoreSettings = Effect.fn("StoreService.updateStoreSettings")(
-    function* updateStoreSettingsEffect(input: UpdateStoreSettingsInput) {
-      const current = yield* loadOrCreateSettings();
-      const supportedCurrencyCodes = yield* normalizeCurrencyCodesEffect(
-        input.supportedCurrencyCodes ?? current.supportedCurrencyCodes
-      );
-      const defaultCurrencyCode = normalizeCurrencyCode(
-        input.defaultCurrencyCode ?? current.defaultCurrencyCode
-      );
+    (input: UpdateStoreSettingsInput) =>
+      executeTransactionalMutation({
+        effect: Effect.gen(function* updateStoreSettingsEffect() {
+          const current = yield* loadOrCreateSettings();
+          const supportedCurrencyCodes = yield* normalizeCurrencyCodesEffect(
+            input.supportedCurrencyCodes ?? current.supportedCurrencyCodes
+          );
+          const defaultCurrencyCode = normalizeCurrencyCode(
+            input.defaultCurrencyCode ?? current.defaultCurrencyCode
+          );
 
-      yield* assertDefaultCurrencySupportedEffect(
-        defaultCurrencyCode,
-        supportedCurrencyCodes
-      );
+          yield* assertDefaultCurrencySupportedEffect(
+            defaultCurrencyCode,
+            supportedCurrencyCodes
+          );
 
-      const updated: StoreSettings = {
-        ...current,
-        defaultCurrencyCode,
-        defaultLocale: input.defaultLocale?.trim() ?? current.defaultLocale,
-        defaultRegionId:
-          input.defaultRegionId === undefined
-            ? current.defaultRegionId
-            : input.defaultRegionId,
-        defaultSalesChannelId:
-          input.defaultSalesChannelId === undefined
-            ? current.defaultSalesChannelId
-            : input.defaultSalesChannelId,
-        metadata: input.metadata ?? current.metadata,
-        name: input.name?.trim() ?? current.name,
-        supportedCurrencyCodes,
-        timezone: input.timezone?.trim() ?? current.timezone,
-        updatedAt: clock.now(),
-      };
+          const updated: StoreSettings = {
+            ...current,
+            defaultCurrencyCode,
+            defaultLocale: input.defaultLocale?.trim() ?? current.defaultLocale,
+            defaultRegionId:
+              input.defaultRegionId === undefined
+                ? current.defaultRegionId
+                : input.defaultRegionId,
+            defaultSalesChannelId:
+              input.defaultSalesChannelId === undefined
+                ? current.defaultSalesChannelId
+                : input.defaultSalesChannelId,
+            metadata: input.metadata ?? current.metadata,
+            name: input.name?.trim() ?? current.name,
+            supportedCurrencyCodes,
+            timezone: input.timezone?.trim() ?? current.timezone,
+            updatedAt: clock.now(),
+          };
+          const saved = yield* repository.saveStoreSettings(updated);
+          const updatedFields = getUpdatedFields(current, saved);
 
-      const saved = yield* repository.saveStoreSettings(updated);
-      const updatedFields = getUpdatedFields(current, saved);
-
-      if (updatedFields.length > 0) {
-        const event = createEventEnvelope({
-          id: idGenerator.nextId(),
-          name: STORE_SETTINGS_UPDATED_EVENT,
-          payload: {
-            id: saved.id,
-            updatedFields,
-          } satisfies StoreSettingsUpdatedEventPayload,
-          sourceModule: "store",
-          subject: {
-            id: saved.id,
-            type: "store",
-          },
-        });
-
-        yield* Effect.tryPromise({
-          catch: () => toStoreEventPublishFailure(saved),
-          try: () => Promise.resolve(eventPublisher.publish(event)),
-        });
-      }
-
-      return saved;
-    }
+          return {
+            event:
+              updatedFields.length === 0
+                ? undefined
+                : createEventEnvelope({
+                    id: idGenerator.nextId(),
+                    name: STORE_SETTINGS_UPDATED_EVENT,
+                    payload: {
+                      id: saved.id,
+                      updatedFields,
+                    } satisfies StoreSettingsUpdatedEventPayload,
+                    sourceModule: "store",
+                    subject: {
+                      id: saved.id,
+                      type: "store",
+                    },
+                  }),
+            saved,
+          };
+        }),
+        moduleName: "store",
+        operation: "updateStoreSettings",
+        outboxMessages: ({ event }) =>
+          event
+            ? [
+                {
+                  event,
+                  idempotencyKey: `${event.name}:${event.id}`,
+                  topic: COMMERCE_EVENTS_OUTBOX_TOPIC,
+                },
+              ]
+            : [],
+        outboxWriter,
+        transactionBoundary,
+      }).pipe(Effect.map(({ saved }) => saved))
   );
 
   return {
@@ -306,16 +309,18 @@ export const createStoreServiceFromDependenciesLayer = (
     StoreService,
     Effect.gen(function* createStoreServiceFromDependenciesEffect() {
       const clock = yield* ClockService;
-      const eventPublisher = yield* EventPublisherService;
       const idGenerator = yield* IdGeneratorService;
+      const outboxWriter = yield* OutboxWriterService;
       const repository = yield* StoreRepositoryService;
+      const transactionBoundary = yield* TransactionBoundaryService;
 
       return createStoreService({
         clock,
-        eventPublisher,
         idGenerator,
         initialSettings: options.initialSettings,
+        outboxWriter,
         repository,
+        transactionBoundary,
       });
     })
   );

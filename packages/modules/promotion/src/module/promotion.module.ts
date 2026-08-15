@@ -3,7 +3,6 @@ import { defineCommerceModule } from "@ecommerce/core";
 import { promotionAdminSurfaces } from "../admin";
 import { promotionPermissionList } from "../permissions";
 import {
-  PROMOTION_ADJUSTMENTS_CALCULATED_EVENT,
   PROMOTION_CREATED_EVENT,
   PROMOTION_REDEMPTION_RECORDED_EVENT,
   PromotionService,
@@ -19,11 +18,7 @@ export const promotionModule = defineCommerceModule({
   contributions: {
     adminSurfaces: promotionAdminSurfaces,
     apiFragments: [],
-    eventTypes: [
-      PROMOTION_CREATED_EVENT,
-      PROMOTION_ADJUSTMENTS_CALCULATED_EVENT,
-      PROMOTION_REDEMPTION_RECORDED_EVENT,
-    ],
+    eventTypes: [PROMOTION_CREATED_EVENT, PROMOTION_REDEMPTION_RECORDED_EVENT],
     permissions: promotionPermissionList,
   },
   dependencies: [],

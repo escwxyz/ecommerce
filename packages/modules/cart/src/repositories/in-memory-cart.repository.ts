@@ -1,3 +1,4 @@
+import type { InMemoryTransactionResource } from "@ecommerce/core/testing";
 import { Effect, Layer } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 
@@ -12,7 +13,8 @@ import type {
 } from "../domain";
 import { CartRepositoryService } from "../domain";
 
-export interface ResettableCartRepository extends CartRepository {
+export interface ResettableCartRepository
+  extends CartRepository, InMemoryTransactionResource {
   readonly clear: EffectValue<void, never>;
 }
 
@@ -52,6 +54,38 @@ export class InMemoryCartRepository implements ResettableCartRepository {
   readonly #carts = new Map<string, CartRecord>();
   readonly #lineItemIdempotency = new Map<string, CartLineItemRecord>();
   readonly #lineItems = new Map<string, CartLineItemRecord>();
+
+  readonly captureRollback = Effect.sync(() => {
+    const adjustmentIdempotency = new Map(this.#adjustmentIdempotency);
+    const adjustments = new Map(this.#adjustments);
+    const carts = new Map(this.#carts);
+    const lineItemIdempotency = new Map(this.#lineItemIdempotency);
+    const lineItems = new Map(this.#lineItems);
+
+    return Effect.sync(() => {
+      InMemoryCartRepository.#restoreMap(
+        this.#adjustmentIdempotency,
+        adjustmentIdempotency
+      );
+      InMemoryCartRepository.#restoreMap(this.#adjustments, adjustments);
+      InMemoryCartRepository.#restoreMap(this.#carts, carts);
+      InMemoryCartRepository.#restoreMap(
+        this.#lineItemIdempotency,
+        lineItemIdempotency
+      );
+      InMemoryCartRepository.#restoreMap(this.#lineItems, lineItems);
+    });
+  });
+
+  static #restoreMap<Key, Value>(
+    target: Map<Key, Value>,
+    snapshot: Map<Key, Value>
+  ) {
+    target.clear();
+    for (const entry of snapshot) {
+      target.set(...entry);
+    }
+  }
 
   readonly clear = Effect.sync(() => {
     this.#adjustmentIdempotency.clear();

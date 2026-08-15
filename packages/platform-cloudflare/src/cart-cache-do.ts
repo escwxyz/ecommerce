@@ -10,6 +10,12 @@ import type {
 } from "@ecommerce/cart/domain";
 import { DurableObject } from "cloudflare:workers";
 
+import {
+  createCartMutationLease,
+  pruneCartMutationLeases,
+} from "./cart-cache-lease";
+import type { StoredCartMutationLeases } from "./cart-cache-lease";
+
 type StoredCartRecord = Omit<
   CartRecord,
   "completedAt" | "createdAt" | "updatedAt"
@@ -42,6 +48,12 @@ interface StoredAggregate {
 }
 
 type CartCacheOperation =
+  | {
+      readonly cartId: string;
+      readonly mutationId: string;
+      readonly scope: CartOwnershipScope;
+      readonly type: "beginMutation" | "completeMutation";
+    }
   | {
       readonly aggregate: StoredCartAggregate;
       readonly scope: CartOwnershipScope;
@@ -106,6 +118,8 @@ const ownerStorageKey = "owner";
 const adjustmentIdempotencyStorageKey = "adjustment-idempotency";
 const lineItemIdempotencyStorageKey = "line-item-idempotency";
 const projectionFailuresStorageKey = "projection-failures";
+const activeMutationsStorageKey = "active-mutations";
+const aggregateStaleStorageKey = "aggregate-stale";
 
 const emptyAggregate = (): StoredAggregate => ({
   adjustments: {},
@@ -193,6 +207,14 @@ export class CartCacheDurableObject extends DurableObject {
 
   async #handleOperation(operation: CartCacheOperation): Promise<unknown> {
     switch (operation.type) {
+      case "beginMutation": {
+        await this.#beginMutation(operation);
+        return null;
+      }
+      case "completeMutation": {
+        await this.#completeMutation(operation);
+        return null;
+      }
       case "findAdjustmentByIdempotencyKey": {
         return this.#findAdjustmentByIdempotencyKey(operation);
       }
@@ -248,6 +270,44 @@ export class CartCacheDurableObject extends DurableObject {
         message: `Cart is owned by ${serializeCartOwnershipScope(owner)}.`,
       });
     }
+  }
+
+  async #beginMutation({
+    mutationId,
+    scope,
+  }: Extract<
+    CartCacheOperation,
+    { readonly type: "beginMutation" | "completeMutation" }
+  >): Promise<void> {
+    await this.#assertAccess(scope);
+    const active = await this.#readActiveMutations();
+    const now = Date.now();
+    await this.ctx.storage.put(activeMutationsStorageKey, {
+      ...active.entries,
+      [mutationId]: createCartMutationLease(now),
+    });
+    await this.ctx.storage.put(aggregateStaleStorageKey, true);
+  }
+
+  async #completeMutation({
+    mutationId,
+    scope,
+  }: Extract<
+    CartCacheOperation,
+    { readonly type: "beginMutation" | "completeMutation" }
+  >): Promise<void> {
+    await this.#assertAccess(scope);
+    const active = await this.#readActiveMutations();
+    const remaining = Object.fromEntries(
+      Object.entries(active.entries).filter(
+        ([activeId]) => activeId !== mutationId
+      )
+    );
+    await this.ctx.storage.put(activeMutationsStorageKey, remaining);
+    await this.ctx.storage.put(
+      aggregateStaleStorageKey,
+      Object.keys(remaining).length > 0
+    );
   }
 
   async #assignOwner(
@@ -335,6 +395,11 @@ export class CartCacheDurableObject extends DurableObject {
     scope: CartOwnershipScope
   ): Promise<StoredCartAggregate | null> {
     await this.#assertAccess(scope);
+    await this.#readActiveMutations();
+
+    if (await this.ctx.storage.get<boolean>(aggregateStaleStorageKey)) {
+      return null;
+    }
 
     return toStoredCartAggregate(await this.#readAggregate());
   }
@@ -346,6 +411,11 @@ export class CartCacheDurableObject extends DurableObject {
     CartCacheOperation,
     { readonly type: "hydrateCartAggregate" }
   >): Promise<void> {
+    const active = await this.#readActiveMutations();
+    if (active.hasActive) {
+      return;
+    }
+
     await this.#assignOwner(aggregate.cart, scope);
     await this.ctx.storage.put(aggregateStorageKey, {
       adjustments: Object.fromEntries(
@@ -356,6 +426,7 @@ export class CartCacheDurableObject extends DurableObject {
         aggregate.lineItems.map((item) => [item.id, item])
       ),
     } satisfies StoredAggregate);
+    await this.ctx.storage.put(aggregateStaleStorageKey, false);
   }
 
   async #readAggregate(): Promise<StoredAggregate> {
@@ -363,6 +434,26 @@ export class CartCacheDurableObject extends DurableObject {
       (await this.ctx.storage.get<StoredAggregate>(aggregateStorageKey)) ??
       emptyAggregate()
     );
+  }
+
+  async #readActiveMutations(): Promise<
+    ReturnType<typeof pruneCartMutationLeases>
+  > {
+    const stored =
+      (await this.ctx.storage.get<StoredCartMutationLeases>(
+        activeMutationsStorageKey
+      )) ?? {};
+    const active = pruneCartMutationLeases(stored, Date.now());
+
+    if (active.expiredAny) {
+      await this.ctx.storage.put(activeMutationsStorageKey, active.entries);
+
+      if (!active.hasActive) {
+        await this.ctx.storage.put(aggregateStaleStorageKey, false);
+      }
+    }
+
+    return active;
   }
 
   async #recordProjectionSyncFailure({

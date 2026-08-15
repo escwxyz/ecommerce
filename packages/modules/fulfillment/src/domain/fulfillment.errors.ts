@@ -1,4 +1,7 @@
-import type { RepositoryFailure } from "@ecommerce/core";
+import type {
+  RepositoryFailure,
+  TransactionalMutationFailure,
+} from "@ecommerce/core";
 /* eslint-disable max-classes-per-file -- fulfillment expected failures form one schema-backed domain vocabulary */
 import { Schema } from "effect";
 
@@ -77,4 +80,5 @@ export type FulfillmentExpectedError =
   | RepositoryFailure
   | ServiceZoneNotFound
   | ShippingOptionNotFound
-  | ShippingProfileNotFound;
+  | ShippingProfileNotFound
+  | TransactionalMutationFailure;

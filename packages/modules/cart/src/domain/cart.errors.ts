@@ -1,4 +1,7 @@
-import type { RepositoryFailure } from "@ecommerce/core";
+import type {
+  RepositoryFailure,
+  TransactionalMutationFailure,
+} from "@ecommerce/core";
 /* eslint-disable max-classes-per-file -- cart expected failures form one schema-backed module vocabulary */
 import { Schema } from "effect";
 
@@ -59,4 +62,5 @@ export type CartExpectedError =
   | CartNotActive
   | CartNotFound
   | CartValidationFailure
-  | RepositoryFailure;
+  | RepositoryFailure
+  | TransactionalMutationFailure;

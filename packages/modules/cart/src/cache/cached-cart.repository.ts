@@ -134,11 +134,12 @@ export const createCachedCartRepository = ({
     });
 
   return {
-    findAdjustmentByIdempotencyKey: (idempotencyKey) =>
+    findAdjustmentByIdempotencyKey: (idempotencyKey, cartId) =>
       Effect.gen(function* findAdjustmentByIdempotencyKeyEffect() {
         const currentScope = getScope();
         const cached = yield* cache
           .findAdjustmentByIdempotencyKey({
+            cartId,
             idempotencyKey,
             scope: currentScope,
           })
@@ -151,7 +152,8 @@ export const createCachedCartRepository = ({
         return (
           cached ??
           (yield* projectionRepository.findAdjustmentByIdempotencyKey(
-            idempotencyKey
+            idempotencyKey,
+            cartId
           ))
         );
       }),
@@ -178,11 +180,12 @@ export const createCachedCartRepository = ({
           cached ?? (yield* projectionRepository.findLineItemById(id, cartId))
         );
       }),
-    findLineItemByIdempotencyKey: (idempotencyKey) =>
+    findLineItemByIdempotencyKey: (idempotencyKey, cartId) =>
       Effect.gen(function* findLineItemByIdempotencyKeyEffect() {
         const currentScope = getScope();
         const cached = yield* cache
           .findLineItemByIdempotencyKey({
+            cartId,
             idempotencyKey,
             scope: currentScope,
           })
@@ -195,7 +198,8 @@ export const createCachedCartRepository = ({
         return (
           cached ??
           (yield* projectionRepository.findLineItemByIdempotencyKey(
-            idempotencyKey
+            idempotencyKey,
+            cartId
           ))
         );
       }),

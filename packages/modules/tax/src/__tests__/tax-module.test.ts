@@ -13,7 +13,6 @@ describe("tax module declaration", () => {
       "tax.provider-configured",
       "tax.region-created",
       "tax.rate-created",
-      "tax.calculated",
     ]);
     expect(taxModule.contributions?.apiFragments).toEqual([]);
     expect(taxModule).not.toHaveProperty("schema");

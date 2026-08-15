@@ -1,14 +1,22 @@
 export { cartAdminSurfaces } from "./admin";
 export {
   createCachedCartRepository,
+  createCartMutationCacheCoordinator,
+  createCommittedCartCacheSynchronizer,
   createCustomerCartScope,
   createSystemCartScope,
   createVisitorCartScope,
   syncCartProjection,
   type CartActiveCache,
+  type CartCommittedMutation,
+  type CartCommittedMutationSynchronizer,
+  type CartMutationCacheCoordinator,
+  type CartMutationCacheGuardInput,
   type CartOwnershipScope,
   type CartProjectionSyncFailure,
   type CreateCachedCartRepositoryOptions,
+  type CreateCommittedCartCacheSynchronizerOptions,
+  type CreateCartMutationCacheCoordinatorOptions,
 } from "./cache";
 export {
   AddCartLineItemInputSchema,

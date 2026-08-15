@@ -11,7 +11,6 @@ describe("promotion module declaration", () => {
     expect(promotionModule.contributions?.apiFragments).toEqual([]);
     expect(promotionModule.contributions?.eventTypes).toEqual([
       "promotion.created",
-      "promotion.adjustments-calculated",
       "promotion.redemption-recorded",
     ]);
   });

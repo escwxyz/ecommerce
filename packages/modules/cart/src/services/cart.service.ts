@@ -1,22 +1,31 @@
 import type {
   ClockServiceShape,
-  EventPublisherServiceShape,
   IdGeneratorServiceShape,
+  OutboxWriterServiceShape,
+  TransactionBoundaryServiceShape,
+  CurrentTransactionService,
 } from "@ecommerce/core";
 import {
+  COMMERCE_EVENTS_OUTBOX_TOPIC,
   ClockService,
-  EventPublisherService,
   IdGeneratorService,
+  OutboxWriterService,
+  TransactionBoundaryService,
+  executeTransactionalMutation,
 } from "@ecommerce/core";
+import type { CommerceEventEnvelope } from "@ecommerce/core/events";
 import { createEventEnvelope } from "@ecommerce/core/events";
-import {
-  KeyedActorCommandSchema,
-  KeyedActorService,
-} from "@ecommerce/core/stateful";
-import { Context, Effect, Layer, Schema } from "effect";
+import type { KeyedActorService } from "@ecommerce/core/stateful";
+import { Context, Effect, Layer } from "effect";
 import type { Effect as EffectValue } from "effect/Effect";
 import { nanoid } from "nanoid";
 
+import type {
+  CartCommittedMutation,
+  CartCommittedMutationSynchronizer,
+  CartMutationCacheCoordinator,
+  CartMutationCacheGuardInput,
+} from "../cache";
 import type {
   AddCartLineItemInput,
   ApplyCartAdjustmentInput,
@@ -43,9 +52,10 @@ import {
   CartNotActive,
   CartNotFound,
   CartRepositoryService,
-  CartValidationFailure,
   createCartAdjustmentIdEffect,
+  createCartId,
   createCartIdEffect,
+  createCartLineItemId,
   createCartLineItemIdEffect,
 } from "../domain";
 
@@ -100,11 +110,16 @@ export const CartService = Context.Service<CartServiceShape>(
 );
 
 export interface CreateCartServiceOptions {
-  readonly actorService: KeyedActorService;
+  /** @deprecated Cart mutations coordinate through committed events and cache synchronization. */
+  readonly actorService?: KeyedActorService;
   readonly clock?: ClockServiceShape;
-  readonly eventPublisher?: EventPublisherServiceShape;
+  readonly committedMutationSynchronizer?: CartCommittedMutationSynchronizer;
   readonly idGenerator?: IdGeneratorServiceShape;
+  readonly mutationCacheCoordinator?: CartMutationCacheCoordinator;
+  readonly mutationRepository?: CartRepository;
+  readonly outboxWriter: OutboxWriterServiceShape;
   readonly repository: CartRepository;
+  readonly transactionBoundary: TransactionBoundaryServiceShape;
 }
 
 const createDefaultClock = (): ClockServiceShape => ({
@@ -113,12 +128,6 @@ const createDefaultClock = (): ClockServiceShape => ({
 
 const createDefaultIdGenerator = (): IdGeneratorServiceShape => ({
   nextId: () => nanoid(),
-});
-
-const createNoopEventPublisher = (): EventPublisherServiceShape => ({
-  publish: () => {
-    // Cart events are optional until a runtime event bus is composed.
-  },
 });
 
 const createEmptyTotals = (currencyCode: string): CartTotalsSnapshot => ({
@@ -178,125 +187,71 @@ const publishCartEvent = ({
   cartId,
   causationId,
   correlationId,
-  eventPublisher,
   idGenerator,
+  idempotencyKey,
   name,
+  outboxWriter,
   payload,
   workflowRunId,
 }: {
   readonly cartId: CartId;
   readonly causationId?: string;
   readonly correlationId: string;
-  readonly eventPublisher: EventPublisherServiceShape;
   readonly idGenerator: IdGeneratorServiceShape;
+  readonly idempotencyKey: string;
   readonly name: string;
+  readonly outboxWriter: OutboxWriterServiceShape;
   readonly payload: unknown;
   readonly workflowRunId?: string;
-}): EffectValue<void, CartValidationFailure> =>
-  Effect.tryPromise({
-    catch: () =>
-      new CartValidationFailure({
-        message: "Cart event publication failed.",
-      }),
-    try: () =>
-      Promise.resolve(
-        eventPublisher.publish(
-          createEventEnvelope({
-            causationId,
-            correlationId,
-            id: createPrefixedId(idGenerator, "evt_"),
-            name,
-            payload,
-            sourceModule: "cart",
-            subject: {
-              id: cartId,
-              type: "cart",
-            },
-            workflowRunId,
-          })
-        )
-      ),
-  }).pipe(Effect.asVoid);
-
-const coordinateCart = (
-  actorService: KeyedActorService,
-  input:
-    | AddCartLineItemInput
-    | ApplyCartAdjustmentInput
-    | AssociateCartCustomerInput
-    | SetCartAddressesInput
-    | SetCartCheckoutReferencesInput
-    | SetCartRegionChannelInput
-    | UpdateCartLineItemInput
-    | UpdateCartTotalsInput,
-  operationName: string
-): EffectValue<{ readonly duplicate: boolean }, CartValidationFailure> =>
-  Effect.gen(function* coordinateCartThroughActor() {
-    const command = yield* Schema.decodeUnknownEffect(KeyedActorCommandSchema)({
-      actor: {
-        key: input.cartId,
-        type: "cart",
-      },
-      causationId: input.causationId,
-      commandId: input.idempotencyKey,
-      commandName: operationName,
-      correlationId: input.correlationId,
-      idempotencyKey: input.idempotencyKey,
-      issuedAt: new Date().toISOString(),
-      payload: input,
-      schemaVersion: 1,
-      subject: {
-        id: input.cartId,
-        type: "cart",
-      },
-      workflowRunId: input.workflowRunId,
-    }).pipe(
-      Effect.mapError(
-        () =>
-          new CartValidationFailure({ message: "Cart coordination failed." })
-      )
-    );
-
-    return yield* actorService
-      .dispatch(command)
-      .pipe(
-        Effect.mapError(
-          () =>
-            new CartValidationFailure({ message: "Cart coordination failed." })
-        )
-      );
+}) => {
+  const event: CommerceEventEnvelope = createEventEnvelope({
+    causationId,
+    correlationId,
+    id: createPrefixedId(idGenerator, "evt_"),
+    name,
+    payload,
+    sourceModule: "cart",
+    subject: {
+      id: cartId,
+      type: "cart",
+    },
+    workflowRunId,
   });
 
+  return outboxWriter
+    .enqueue({
+      event,
+      idempotencyKey: `${event.name}:${idempotencyKey}`,
+      topic: COMMERCE_EVENTS_OUTBOX_TOPIC,
+    })
+    .pipe(Effect.asVoid);
+};
+
 export const createCartService = ({
-  actorService,
   clock = createDefaultClock(),
-  eventPublisher = createNoopEventPublisher(),
+  committedMutationSynchronizer,
   idGenerator = createDefaultIdGenerator(),
+  mutationCacheCoordinator,
+  mutationRepository: configuredMutationRepository,
+  outboxWriter,
   repository,
+  transactionBoundary,
 }: CreateCartServiceOptions): CartServiceShape => {
-  const service: CartServiceShape = {
-    addLineItem: (input) =>
+  const mutationRepository = configuredMutationRepository ?? repository;
+  const service = {
+    addLineItem: (input: AddCartLineItemInput) =>
       Effect.gen(function* addCartLineItemEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
         const duplicate = yield* repository.findLineItemByIdempotencyKey(
-          input.idempotencyKey
+          input.idempotencyKey,
+          cartId
         );
 
         if (duplicate) {
-          return yield* requireAggregate(repository, cartId);
+          return yield* requireAggregate(mutationRepository, cartId);
         }
 
-        const coordination = yield* coordinateCart(
-          actorService,
-          input,
-          "cart.addLineItem"
-        );
-
-        if (coordination.duplicate) {
-          return yield* requireAggregate(repository, cartId);
-        }
-
-        yield* requireCart(repository, cartId);
+        yield* requireCart(mutationRepository, cartId);
 
         const now = clock.now();
         const lineItem: CartLineItemRecord = {
@@ -314,14 +269,15 @@ export const createCartService = ({
           variantId: input.variantId,
         };
 
-        yield* repository.saveLineItem(lineItem, input.idempotencyKey);
+        yield* mutationRepository.saveLineItem(lineItem, input.idempotencyKey);
         yield* publishCartEvent({
           cartId,
           causationId: input.causationId,
           correlationId: input.correlationId,
-          eventPublisher,
           idGenerator,
+          idempotencyKey: input.idempotencyKey,
           name: CART_LINE_ITEM_ADDED_EVENT,
+          outboxWriter,
           payload: {
             cartId,
             lineItemId: lineItem.id,
@@ -331,36 +287,27 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
-    applyAdjustment: (input) =>
+    applyAdjustment: (input: ApplyCartAdjustmentInput) =>
       Effect.gen(function* applyCartAdjustmentEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
         const duplicate = yield* repository.findAdjustmentByIdempotencyKey(
-          input.idempotencyKey
+          input.idempotencyKey,
+          cartId
         );
 
         if (duplicate) {
-          return yield* requireAggregate(repository, cartId);
+          return yield* requireAggregate(mutationRepository, cartId);
         }
 
-        const coordination = yield* coordinateCart(
-          actorService,
-          input,
-          "cart.applyAdjustment"
-        );
-
-        if (coordination.duplicate) {
-          return yield* requireAggregate(repository, cartId);
-        }
-
-        yield* requireCart(repository, cartId);
+        yield* requireCart(mutationRepository, cartId);
         const lineItemId = input.lineItemId
           ? yield* createCartLineItemIdEffect(input.lineItemId)
           : null;
 
         if (lineItemId) {
-          const lineItem = yield* repository.findLineItemById(
+          const lineItem = yield* mutationRepository.findLineItemById(
             lineItemId,
             cartId
           );
@@ -374,7 +321,7 @@ export const createCartService = ({
         }
 
         const now = clock.now();
-        const adjustment = yield* repository.saveAdjustment(
+        const adjustment = yield* mutationRepository.saveAdjustment(
           {
             amount: input.amount,
             cartId,
@@ -395,9 +342,10 @@ export const createCartService = ({
           cartId,
           causationId: input.causationId,
           correlationId: input.correlationId,
-          eventPublisher,
           idGenerator,
+          idempotencyKey: input.idempotencyKey,
           name: CART_ADJUSTMENT_APPLIED_EVENT,
+          outboxWriter,
           payload: {
             adjustmentId: adjustment.id,
             amount: adjustment.amount,
@@ -407,15 +355,15 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
-    associateCustomer: (input) =>
+    associateCustomer: (input: AssociateCartCustomerInput) =>
       Effect.gen(function* associateCartCustomerEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        const cart = yield* requireCart(repository, cartId);
+        const cart = yield* requireCart(mutationRepository, cartId);
         const now = clock.now();
 
-        yield* repository.saveCart({
+        yield* mutationRepository.saveCart({
           ...cart,
           customerId: input.customerId ?? cart.customerId,
           email: input.email ?? cart.email,
@@ -425,9 +373,10 @@ export const createCartService = ({
           cartId,
           causationId: input.causationId,
           correlationId: input.correlationId,
-          eventPublisher,
           idGenerator,
+          idempotencyKey: input.idempotencyKey,
           name: CART_CUSTOMER_ASSOCIATED_EVENT,
+          outboxWriter,
           payload: {
             cartId,
             customerId: input.customerId ?? cart.customerId,
@@ -436,9 +385,9 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
-    createCart: (input) =>
+    createCart: (input: CreateCartInput) =>
       Effect.gen(function* createCartEffect() {
         const now = clock.now();
         const currencyCode = normalizeCurrencyCode(input.currencyCode);
@@ -463,13 +412,14 @@ export const createCartService = ({
           updatedAt: now,
         };
 
-        const saved = yield* repository.saveCart(cart);
+        const saved = yield* mutationRepository.saveCart(cart);
         yield* publishCartEvent({
           cartId: saved.id,
           correlationId: saved.id,
-          eventPublisher,
           idGenerator,
+          idempotencyKey: `${CART_CREATED_EVENT}:${saved.id}`,
           name: CART_CREATED_EVENT,
+          outboxWriter,
           payload: {
             cartId: saved.id,
             currencyCode: saved.currencyCode,
@@ -478,26 +428,26 @@ export const createCartService = ({
 
         return saved;
       }),
-    getCart: (id) => repository.getCartAggregate(id),
+    getCart: (id: CartId) => repository.getCartAggregate(id),
     listCarts: repository.listCarts,
-    setAddresses: (input) =>
+    setAddresses: (input: SetCartAddressesInput) =>
       Effect.gen(function* setCartAddressesEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        const cart = yield* requireCart(repository, cartId);
-        yield* repository.saveCart({
+        const cart = yield* requireCart(mutationRepository, cartId);
+        yield* mutationRepository.saveCart({
           ...cart,
           billingAddress: input.billingAddress ?? cart.billingAddress,
           shippingAddress: input.shippingAddress ?? cart.shippingAddress,
           updatedAt: clock.now(),
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
-    setCheckoutReferences: (input) =>
+    setCheckoutReferences: (input: SetCartCheckoutReferencesInput) =>
       Effect.gen(function* setCartCheckoutReferencesEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        const cart = yield* requireCart(repository, cartId);
-        yield* repository.saveCart({
+        const cart = yield* requireCart(mutationRepository, cartId);
+        yield* mutationRepository.saveCart({
           ...cart,
           paymentCollectionId:
             input.paymentCollectionId ?? cart.paymentCollectionId,
@@ -508,9 +458,10 @@ export const createCartService = ({
           cartId,
           causationId: input.causationId,
           correlationId: input.correlationId,
-          eventPublisher,
           idGenerator,
+          idempotencyKey: input.idempotencyKey,
           name: CART_CHECKOUT_REFERENCE_SET_EVENT,
+          outboxWriter,
           payload: {
             cartId,
             paymentCollectionId:
@@ -520,17 +471,17 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
-    setRegionChannel: (input) =>
+    setRegionChannel: (input: SetCartRegionChannelInput) =>
       Effect.gen(function* setCartRegionChannelEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        const cart = yield* requireCart(repository, cartId);
+        const cart = yield* requireCart(mutationRepository, cartId);
         const currencyCode = input.currencyCode
           ? normalizeCurrencyCode(input.currencyCode)
           : cart.currencyCode;
 
-        yield* repository.saveCart({
+        yield* mutationRepository.saveCart({
           ...cart,
           currencyCode,
           regionId: input.regionId ?? cart.regionId,
@@ -542,22 +493,25 @@ export const createCartService = ({
           updatedAt: clock.now(),
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
-    updateLineItem: (input) =>
+    updateLineItem: (input: UpdateCartLineItemInput) =>
       Effect.gen(function* updateCartLineItemEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        yield* requireCart(repository, cartId);
+        yield* requireCart(mutationRepository, cartId);
         const lineItemId = yield* createCartLineItemIdEffect(input.lineItemId);
-        const lineItem = yield* repository.findLineItemById(lineItemId, cartId);
+        const lineItem = yield* mutationRepository.findLineItemById(
+          lineItemId,
+          cartId
+        );
 
         if (!lineItem || lineItem.cartId !== cartId) {
           return yield* new CartLineItemNotFound({ cartId, lineItemId });
         }
 
         yield* input.quantity === 0
-          ? repository.removeLineItem(lineItemId, cartId)
-          : repository
+          ? mutationRepository.removeLineItem(lineItemId, cartId)
+          : mutationRepository
               .saveLineItem({
                 ...lineItem,
                 quantity: input.quantity,
@@ -569,9 +523,10 @@ export const createCartService = ({
           cartId,
           causationId: input.causationId,
           correlationId: input.correlationId,
-          eventPublisher,
           idGenerator,
+          idempotencyKey: input.idempotencyKey,
           name: CART_LINE_ITEM_UPDATED_EVENT,
+          outboxWriter,
           payload: {
             cartId,
             lineItemId,
@@ -580,18 +535,18 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
-    updateTotals: (input) =>
+    updateTotals: (input: UpdateCartTotalsInput) =>
       Effect.gen(function* updateCartTotalsEffect() {
         const cartId = yield* createCartIdEffect(input.cartId);
-        const cart = yield* requireCart(repository, cartId);
+        const cart = yield* requireCart(mutationRepository, cartId);
         const totals = {
           ...input.totals,
           currencyCode: normalizeCurrencyCode(input.totals.currencyCode),
         };
 
-        yield* repository.saveCart({
+        yield* mutationRepository.saveCart({
           ...cart,
           currencyCode: totals.currencyCode,
           totals,
@@ -601,9 +556,10 @@ export const createCartService = ({
           cartId,
           causationId: input.causationId,
           correlationId: input.correlationId,
-          eventPublisher,
           idGenerator,
+          idempotencyKey: input.idempotencyKey,
           name: CART_TOTALS_UPDATED_EVENT,
+          outboxWriter,
           payload: {
             cartId,
             total: totals.total,
@@ -611,11 +567,145 @@ export const createCartService = ({
           workflowRunId: input.workflowRunId,
         });
 
-        return yield* requireAggregate(repository, cartId);
+        return yield* requireAggregate(mutationRepository, cartId);
       }),
   };
 
-  return service;
+  const transactionalCartMutation = <A, E>(
+    operation: string,
+    effect: EffectValue<A, E, CurrentTransactionService>,
+    toCommittedMutation: (result: A) => CartCommittedMutation,
+    cacheGuard?: CartMutationCacheGuardInput
+  ) => {
+    const transactionalEffect = executeTransactionalMutation<A, E, never>({
+      effect,
+      moduleName: "cart",
+      operation,
+      outboxMessages: () => [],
+      outboxWriter,
+      transactionBoundary,
+    }).pipe(
+      Effect.tap((result) =>
+        committedMutationSynchronizer
+          ? committedMutationSynchronizer(toCommittedMutation(result))
+          : Effect.void
+      )
+    );
+
+    if (!cacheGuard || !mutationCacheCoordinator) {
+      return transactionalEffect;
+    }
+
+    return mutationCacheCoordinator
+      .begin(cacheGuard)
+      .pipe(
+        Effect.andThen(transactionalEffect),
+        Effect.ensuring(mutationCacheCoordinator.complete(cacheGuard))
+      );
+  };
+
+  return {
+    ...service,
+    addLineItem: (input) =>
+      transactionalCartMutation(
+        "addLineItem",
+        service.addLineItem(input),
+        (aggregate) => ({
+          cartId: aggregate.cart.id,
+          idempotencyKey: input.idempotencyKey,
+          type: "line-item",
+        }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `addLineItem:${input.idempotencyKey}:${nanoid()}`,
+        }
+      ),
+    applyAdjustment: (input) =>
+      transactionalCartMutation(
+        "applyAdjustment",
+        service.applyAdjustment(input),
+        (aggregate) => ({
+          cartId: aggregate.cart.id,
+          idempotencyKey: input.idempotencyKey,
+          type: "adjustment",
+        }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `applyAdjustment:${input.idempotencyKey}:${nanoid()}`,
+        }
+      ),
+    associateCustomer: (input) =>
+      transactionalCartMutation(
+        "associateCustomer",
+        service.associateCustomer(input),
+        (aggregate) => ({ cartId: aggregate.cart.id, type: "aggregate" }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `associateCustomer:${input.idempotencyKey}:${nanoid()}`,
+        }
+      ),
+    createCart: (input) =>
+      transactionalCartMutation(
+        "createCart",
+        service.createCart(input),
+        (cart) => ({ cartId: cart.id, type: "aggregate" })
+      ),
+    setAddresses: (input) =>
+      transactionalCartMutation(
+        "setAddresses",
+        service.setAddresses(input),
+        (aggregate) => ({ cartId: aggregate.cart.id, type: "aggregate" }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `setAddresses:${input.idempotencyKey}:${nanoid()}`,
+        }
+      ),
+    setCheckoutReferences: (input) =>
+      transactionalCartMutation(
+        "setCheckoutReferences",
+        service.setCheckoutReferences(input),
+        (aggregate) => ({ cartId: aggregate.cart.id, type: "aggregate" }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `setCheckoutReferences:${input.idempotencyKey}:${nanoid()}`,
+        }
+      ),
+    setRegionChannel: (input) =>
+      transactionalCartMutation(
+        "setRegionChannel",
+        service.setRegionChannel(input),
+        (aggregate) => ({ cartId: aggregate.cart.id, type: "aggregate" }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `setRegionChannel:${input.idempotencyKey}:${nanoid()}`,
+        }
+      ),
+    updateLineItem: (input) =>
+      transactionalCartMutation(
+        "updateLineItem",
+        service.updateLineItem(input),
+        (aggregate) => ({
+          cartId: aggregate.cart.id,
+          lineItemId: createCartLineItemId(input.lineItemId),
+          remove: input.quantity === 0,
+          type: "line-item-update",
+        }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `updateLineItem:${input.idempotencyKey}:${nanoid()}`,
+        }
+      ),
+    updateTotals: (input) =>
+      transactionalCartMutation(
+        "updateTotals",
+        service.updateTotals(input),
+        (aggregate) => ({ cartId: aggregate.cart.id, type: "aggregate" }),
+        {
+          cartId: createCartId(input.cartId),
+          mutationId: `updateTotals:${input.idempotencyKey}:${nanoid()}`,
+        }
+      ),
+  };
 };
 
 export const createCartServiceLayer = (service: CartServiceShape) =>
@@ -628,18 +718,18 @@ export const createCartServiceFromDependenciesLayer = () =>
   Layer.effect(
     CartService,
     Effect.gen(function* createCartServiceFromDependencies() {
-      const actorService = yield* KeyedActorService;
       const clock = yield* ClockService;
-      const eventPublisher = yield* EventPublisherService;
       const idGenerator = yield* IdGeneratorService;
+      const outboxWriter = yield* OutboxWriterService;
       const repository = yield* CartRepositoryService;
+      const transactionBoundary = yield* TransactionBoundaryService;
 
       return createCartService({
-        actorService,
         clock,
-        eventPublisher,
         idGenerator,
+        outboxWriter,
         repository,
+        transactionBoundary,
       });
     })
   );

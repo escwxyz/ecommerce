@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import {
-  createEventCollector,
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
@@ -11,12 +12,13 @@ import { createInMemoryPricingRepository } from "../repositories";
 import { createPricingService } from "../services";
 
 describe("pricing Effect service", () => {
-  it("calculates traceable rule-based prices without discounts or tax", async () => {
+  it("calculates traceable rule-based prices without opening a transaction", async () => {
     const repository = createInMemoryPricingRepository();
-    const eventCollector = createEventCollector();
+    const outbox = createInMemoryOutbox({
+      recordIds: ["outbox_1", "outbox_2", "outbox_3"],
+    });
     const service = createPricingService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
-      eventPublisher: eventCollector.publisher,
       idGenerator: createSequenceIdGenerator([
         "pset_hat",
         "evt_price_set",
@@ -24,10 +26,21 @@ describe("pricing Effect service", () => {
         "prule_vip",
         "amt_base",
         "amt_vip",
-        "evt_calculated",
-        "evt_calculated_fallback",
       ]),
+      outboxWriter: outbox.writer,
       repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+        transactionIds: [
+          "tx_1",
+          "tx_2",
+          "tx_3",
+          "tx_4",
+          "tx_5",
+          "tx_6",
+          "tx_7",
+        ],
+      }),
     });
 
     const priceSet = await Effect.runPromise(
@@ -65,9 +78,19 @@ describe("pricing Effect service", () => {
         },
       })
     );
+    const calculationService = createPricingService({
+      clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+      idGenerator: createSequenceIdGenerator([]),
+      outboxWriter: outbox.writer,
+      repository,
+      transactionBoundary: createInMemoryTransactionBoundary({
+        failBegin: true,
+        resources: [outbox],
+      }),
+    });
 
     const calculatedPrice = await Effect.runPromise(
-      service.calculatePrice({
+      calculationService.calculatePrice({
         context: {
           customerGroupId: "vip",
           regionId: "reg_us",
@@ -93,7 +116,7 @@ describe("pricing Effect service", () => {
     });
 
     const fallbackPrice = await Effect.runPromise(
-      service.calculatePrice({
+      calculationService.calculatePrice({
         context: {
           customerGroupId: "guest",
           regionId: "reg_us",
@@ -113,14 +136,13 @@ describe("pricing Effect service", () => {
         source: "base",
       },
     });
-    expect(eventCollector.events.map((event) => event.name)).toEqual([
+    expect(outbox.records.map((record) => record.event.name)).toEqual([
       "pricing.price-set-created",
-      "pricing.price-calculated",
-      "pricing.price-calculated",
     ]);
   });
 
   it("returns typed failures for duplicate currencies and missing prices", async () => {
+    const outbox = createInMemoryOutbox();
     const service = createPricingService({
       clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
       idGenerator: createSequenceIdGenerator([
@@ -129,7 +151,11 @@ describe("pricing Effect service", () => {
         "pset_empty",
         "evt_empty",
       ]),
+      outboxWriter: outbox.writer,
       repository: createInMemoryPricingRepository(),
+      transactionBoundary: createInMemoryTransactionBoundary({
+        resources: [outbox],
+      }),
     });
 
     await Effect.runPromise(

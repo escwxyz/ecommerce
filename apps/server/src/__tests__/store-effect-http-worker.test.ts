@@ -6,11 +6,16 @@ import {
   storeEffectHttpApiContribution,
 } from "@ecommerce/api";
 import {
+  createInMemoryOutbox,
+  createInMemoryTransactionBoundary,
   createSequenceIdGenerator,
   createStaticClock,
 } from "@ecommerce/core/testing";
 import { createStoreService, createStoreServiceLayer } from "@ecommerce/store";
-import { createInMemoryStoreRepository } from "@ecommerce/store/testing";
+import {
+  createResettableInMemoryStoreRepository,
+  storeRepositoryTransactionResource,
+} from "@ecommerce/store/testing";
 
 import { createEffectHttpWorkerRuntime } from "../effect-http-worker-runtime";
 
@@ -36,11 +41,16 @@ const createBetterAuthSession = (permissions: readonly string[]) => ({
 });
 
 const createStoreRuntime = (permissions: readonly string[]) => {
-  const repository = createInMemoryStoreRepository();
+  const repository = createResettableInMemoryStoreRepository();
+  const outbox = createInMemoryOutbox();
   const storeService = createStoreService({
     clock: createStaticClock(fixedDate),
     idGenerator: createSequenceIdGenerator(["store_effect_http", "evt_store"]),
+    outboxWriter: outbox.writer,
     repository,
+    transactionBoundary: createInMemoryTransactionBoundary({
+      resources: [storeRepositoryTransactionResource(repository), outbox],
+    }),
   });
 
   return createEffectHttpWorkerRuntime({

@@ -3,6 +3,9 @@ import { describe, expect, it } from "bun:test";
 import * as Infrastructure from "./alchemy.run";
 import Stack, {
   cartCache,
+  commerceEventDeadLetterQueue,
+  commerceEventQueue,
+  commerceEventQueueConsumer,
   database,
   notificationEventDeadLetterQueue,
   notificationEventOutboxDrainCrons,
@@ -79,9 +82,16 @@ describe("notification event queue bindings", () => {
     }
 
     expect(getNotificationEventQueueEnv(false)).toEqual({
+      COMMERCE_EVENT_QUEUE: commerceEventQueue,
+      COMMERCE_EVENT_DEAD_LETTER_QUEUE: commerceEventDeadLetterQueue,
       NOTIFICATION_EVENT_DEAD_LETTER_QUEUE: notificationEventDeadLetterQueue,
       NOTIFICATION_EVENT_QUEUE: notificationEventQueue,
     });
+  });
+
+  it("configures commerce event queue failure handling before deployment", () => {
+    expect(commerceEventDeadLetterQueue).toBeDefined();
+    expect(commerceEventQueueConsumer).toBeDefined();
   });
 });
 
@@ -135,7 +145,9 @@ describe("alchemy stack exports", () => {
   it("defines the stack and deployable resources without executing deploy", () => {
     expect(Stack).toBeDefined();
     expect(cartCache).toBeDefined();
+    expect(commerceEventDeadLetterQueue).toBeDefined();
     expect(database).toBeDefined();
+    expect(commerceEventQueueConsumer).toBeDefined();
     expect(notificationEventDeadLetterQueue).toBeDefined();
     expect(notificationEventQueue).toBeDefined();
     expect(notificationEventQueueConsumer).toBeDefined();

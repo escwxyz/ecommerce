@@ -61,8 +61,15 @@ export type CartAdjustmentApiRecord = typeof CartAdjustmentApiRecordSchema.Type;
 export type CartAggregateApiRecord = typeof CartAggregateApiSchema.Type;
 
 export interface CartRepository {
+  /**
+   * Finds the adjustment previously stored for `idempotencyKey`. The optional
+   * `cartId` scopes the idempotency lookup to one cart when the adapter can
+   * enforce scoped indexes; callers that require isolation must treat a record
+   * for another cart as no match.
+   */
   readonly findAdjustmentByIdempotencyKey: (
-    idempotencyKey: string
+    idempotencyKey: string,
+    cartId?: CartId
   ) => EffectValue<CartAdjustmentRecord | null, CartExpectedError>;
   readonly findCartById: (
     id: CartId
@@ -71,8 +78,15 @@ export interface CartRepository {
     id: CartLineItemId,
     cartId?: CartId
   ) => EffectValue<CartLineItemRecord | null, CartExpectedError>;
+  /**
+   * Finds the line item previously stored for `idempotencyKey`. The optional
+   * `cartId` scopes the idempotency lookup to one cart when the adapter can
+   * enforce scoped indexes; callers that require isolation must treat a record
+   * for another cart as no match.
+   */
   readonly findLineItemByIdempotencyKey: (
-    idempotencyKey: string
+    idempotencyKey: string,
+    cartId?: CartId
   ) => EffectValue<CartLineItemRecord | null, CartExpectedError>;
   readonly getCartAggregate: (
     id: CartId

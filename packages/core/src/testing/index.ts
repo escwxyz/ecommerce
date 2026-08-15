@@ -14,6 +14,17 @@ import type { Context } from "effect";
 
 import type { CommerceEventEnvelope } from "../events/index";
 import { createEventEnvelope } from "../events/index";
+import {
+  CurrentTransactionService,
+  OutboxPersistenceFailure,
+  TransactionFailure,
+} from "../persistence/index";
+import type {
+  OutboxMessage,
+  OutboxRecord,
+  OutboxWriterService,
+  TransactionBoundaryService,
+} from "../persistence/index";
 import type {
   AuthContextService,
   ClockService,
@@ -90,6 +101,190 @@ export interface InMemoryRepositoryTestLayer<Identifier, State> {
   readonly snapshot: Effect.Effect<State>;
   readonly state: Ref.Ref<State>;
 }
+
+/** Reversible state participant used by the deterministic transaction adapter. */
+export interface InMemoryTransactionResource {
+  readonly captureRollback: Effect.Effect<Effect.Effect<void>>;
+}
+
+export interface CreateInMemoryTransactionBoundaryOptions {
+  readonly adapter?: string;
+  readonly failBegin?: boolean;
+  readonly failCommit?: boolean;
+  readonly now?: Date;
+  readonly resources: readonly InMemoryTransactionResource[];
+  readonly transactionIds?: readonly string[];
+}
+
+/**
+ * Creates a deterministic local transaction boundary for public module tests.
+ * Every registered resource captures a rollback Effect before mutation work
+ * begins, so state and outbox intent are restored together on typed failure,
+ * defect, or interruption.
+ */
+export const createInMemoryTransactionBoundary = ({
+  adapter = "in-memory",
+  failBegin = false,
+  failCommit = false,
+  now = new Date("2026-01-01T00:00:00.000Z"),
+  resources,
+  transactionIds = ["transaction_1"],
+}: CreateInMemoryTransactionBoundaryOptions): TransactionBoundaryService => {
+  let transactionIndex = 0;
+
+  return {
+    withTransaction: <A, E, R>(
+      effect: Effect.Effect<A, E, R | CurrentTransactionService>
+    ) =>
+      Effect.gen(function* inMemoryTransactionEffect() {
+        if (failBegin) {
+          return yield* Effect.fail(
+            new TransactionFailure({
+              adapter,
+              operation: "begin",
+            })
+          );
+        }
+
+        const rollbackEffects = yield* Effect.all(
+          resources.map((resource) => resource.captureRollback)
+        );
+        const transactionId =
+          transactionIds[transactionIndex] ?? transactionIds.at(-1);
+
+        if (!transactionId) {
+          throw new Error("No in-memory transaction id is configured.");
+        }
+
+        transactionIndex += 1;
+        const exit = yield* Effect.exit(
+          effect.pipe(
+            Effect.provideService(
+              CurrentTransactionService,
+              CurrentTransactionService.of({
+                adapter,
+                startedAt: now,
+                transactionId,
+              })
+            )
+          )
+        );
+
+        if (exit._tag === "Success" && !failCommit) {
+          return exit.value;
+        }
+
+        const rollbackExit = yield* Effect.exit(
+          // ES2022-compatible reverse-order compensation for browser test builds.
+          // oxlint-disable-next-line unicorn/no-array-reverse
+          Effect.all([...rollbackEffects].reverse(), {
+            discard: true,
+          })
+        );
+
+        if (rollbackExit._tag === "Failure") {
+          const originalCause: Cause.Cause<E | TransactionFailure> =
+            exit._tag === "Failure"
+              ? exit.cause
+              : Cause.fail(
+                  new TransactionFailure({
+                    adapter,
+                    operation: "commit",
+                  })
+                );
+
+          return yield* Effect.failCause(
+            Cause.combine(originalCause, rollbackExit.cause)
+          );
+        }
+
+        if (exit._tag === "Success") {
+          return yield* Effect.fail(
+            new TransactionFailure({
+              adapter,
+              operation: "commit",
+            })
+          );
+        }
+
+        return yield* Effect.failCause(exit.cause);
+      }),
+  };
+};
+
+export interface InMemoryOutbox extends InMemoryTransactionResource {
+  readonly records: OutboxRecord[];
+  readonly writer: OutboxWriterService;
+}
+
+export interface CreateInMemoryOutboxOptions {
+  readonly failEnqueue?: boolean;
+  readonly now?: Date;
+  readonly recordIds?: readonly string[];
+}
+
+/** Deterministic transactional outbox used by module conformance tests. */
+export const createInMemoryOutbox = ({
+  failEnqueue = false,
+  now = new Date("2026-01-01T00:00:00.000Z"),
+  recordIds = ["outbox_1"],
+}: CreateInMemoryOutboxOptions = {}): InMemoryOutbox => {
+  const records: OutboxRecord[] = [];
+  let recordIndex = 0;
+
+  return {
+    captureRollback: Effect.sync(() => {
+      const snapshot = [...records];
+      return Effect.sync(() => {
+        records.splice(0, records.length, ...snapshot);
+      });
+    }),
+    records,
+    writer: {
+      enqueue: <EventName extends string, Payload>(
+        message: OutboxMessage<EventName, Payload>
+      ) =>
+        CurrentTransactionService.use((transaction) => {
+          const duplicate = records.find(
+            (record) =>
+              record.topic === message.topic &&
+              record.idempotencyKey === message.idempotencyKey
+          );
+
+          if (duplicate) {
+            return Effect.succeed({
+              record: duplicate as OutboxRecord<EventName, Payload>,
+            });
+          }
+
+          if (failEnqueue) {
+            return Effect.fail(
+              new OutboxPersistenceFailure({
+                operation: "enqueue",
+                topic: message.topic,
+              })
+            );
+          }
+
+          const recordId = recordIds[recordIndex] ?? recordIds.at(-1);
+          if (!recordId) {
+            throw new Error("No in-memory outbox record id is configured.");
+          }
+          recordIndex += 1;
+          const record: OutboxRecord<EventName, Payload> = {
+            ...message,
+            attempts: 0,
+            createdAt: now,
+            recordId,
+            status: "pending",
+            transactionId: transaction.transactionId,
+          };
+          records.push(record);
+          return Effect.succeed({ record });
+        }),
+    },
+  };
+};
 
 /** Creates a legacy clock fixture for code not yet migrated to Effect Clock. */
 export const createStaticClock = (date: Date): ClockService => ({
