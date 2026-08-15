@@ -16,7 +16,11 @@ import {
   clockLayer,
   idGeneratorLayer,
 } from "@ecommerce/core";
-import type { CommerceQueueMessage } from "@ecommerce/core";
+import type {
+  CommerceQueueConsumer,
+  CommerceQueueConsumeContext,
+  CommerceQueueMessage,
+} from "@ecommerce/core";
 import { createCustomerServiceFromDependenciesLayer } from "@ecommerce/customer";
 import {
   PostgresCartRepositoryLayer,
@@ -158,6 +162,7 @@ export interface ProductionCommerceRuntimeComposition {
 
 export interface CreateProductionCommerceRuntimeCompositionOptions {
   readonly bindings: ProductionCommerceRuntimeBindings;
+  readonly commerceEventConsumer?: CommerceQueueConsumer;
   readonly mode: ProductionCommerceRuntimeMode;
 }
 
@@ -207,18 +212,42 @@ const isCommerceQueueMessage = (
   typeof message.correlationId === "string" &&
   typeof message.idempotencyKey === "string";
 
-const processCommerceEventQueueBatch = (
-  batch: MessageBatch<unknown>
+const getMessageAttempt = (message: Message<unknown>): number =>
+  "attempts" in message && typeof message.attempts === "number"
+    ? message.attempts
+    : 1;
+
+const processCommerceEventQueueBatch = async (
+  batch: MessageBatch<unknown>,
+  consumer: CommerceQueueConsumer
 ): Promise<void> => {
+  const failures: unknown[] = [];
+
   for (const message of batch.messages) {
     if (isCommerceQueueMessage(message.body)) {
-      message.ack();
+      const context: CommerceQueueConsumeContext = {
+        attempt: getMessageAttempt(message),
+        retryPolicy: {
+          backoffSeconds: [30, 120, 300],
+          maxAttempts: 3,
+        },
+      };
+
+      try {
+        await consumer.consume(message.body, context);
+        message.ack();
+      } catch (error) {
+        message.retry();
+        failures.push(error);
+      }
     } else {
       message.retry();
     }
   }
 
-  return Promise.resolve();
+  if (failures.length > 0) {
+    throw failures[0];
+  }
 };
 
 const requirePostgresConnectionString = (
@@ -257,6 +286,7 @@ const createRuntimeIdGenerator = () => ({
  */
 export const createProductionCommerceRuntimeComposition = ({
   bindings,
+  commerceEventConsumer,
   mode,
 }: CreateProductionCommerceRuntimeCompositionOptions): ProductionCommerceRuntimeComposition => {
   const runtimeMode = requireRuntimeMode(mode);
@@ -550,6 +580,23 @@ export const createProductionCommerceRuntimeComposition = ({
         )
       ).pipe(Effect.provide(notificationEventRepositoryLayer))
     );
+  const durableCommerceEventConsumer: CommerceQueueConsumer =
+    commerceEventConsumer ?? {
+      consume: (message) =>
+        Effect.runPromise(
+          NotificationEventService.use((service) =>
+            service.publishEvent({
+              causationId: message.causationId,
+              correlationId: message.correlationId,
+              name: message.type,
+              payload: message.payload,
+              sourceModule: "commerce-events",
+              subject: message.subject,
+              workflowRunId: message.workflowRunId,
+            })
+          ).pipe(Effect.asVoid, Effect.provide(notificationEventServiceLayer))
+        ),
+    };
   const drainNotificationOutbox = (): Promise<void> =>
     Effect.runPromise(
       NotificationEventRepositoryService.use((repository) =>
@@ -600,7 +647,8 @@ export const createProductionCommerceRuntimeComposition = ({
     },
     drainCommerceEventOutbox,
     drainNotificationEventOutbox: drainNotificationOutbox,
-    processCommerceEventQueue: processCommerceEventQueueBatch,
+    processCommerceEventQueue: (batch) =>
+      processCommerceEventQueueBatch(batch, durableCommerceEventConsumer),
     processNotificationEventQueue,
   };
 };

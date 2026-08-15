@@ -171,15 +171,28 @@ describe("production commerce runtime composition", () => {
     expect(workerSource).toContain("composition.processCommerceEventQueue");
   });
 
-  it("acks valid commerce events and retries malformed queue messages", async () => {
-    const composition = createProductionCommerceRuntimeComposition({
+  it("acks valid commerce events after durable handling and retries handler failures", async () => {
+    const handled: string[] = [];
+    const options = {
       bindings: {
         ...createBindings(),
         commerceEventQueue: undefined,
         notificationEventQueue: undefined,
       },
+      commerceEventConsumer: {
+        consume: (message: { readonly id: string }) => {
+          handled.push(message.id);
+
+          if (message.id === "outbox_failed") {
+            throw new Error("handler unavailable");
+          }
+        },
+      },
       mode: "development",
-    });
+    } satisfies Parameters<
+      typeof createProductionCommerceRuntimeComposition
+    >[0];
+    const composition = createProductionCommerceRuntimeComposition(options);
     let acknowledged = 0;
     let retried = 0;
     const batch = {
@@ -205,6 +218,55 @@ describe("production commerce runtime composition", () => {
             acknowledged += 1;
           },
           body: {
+            correlationId: "correlation_2",
+            id: "outbox_failed",
+            idempotencyKey: "event_2",
+            payload: {},
+            queueName: COMMERCE_EVENTS_OUTBOX_TOPIC,
+            type: "store.settings-updated",
+          },
+          retry: () => {
+            retried += 1;
+          },
+        },
+      ],
+    } as MessageBatch<unknown>;
+
+    await expect(composition.processCommerceEventQueue(batch)).rejects.toThrow(
+      "handler unavailable"
+    );
+
+    expect(acknowledged).toBe(1);
+    expect(retried).toBe(1);
+    expect(handled).toEqual(["outbox_1", "outbox_failed"]);
+  });
+
+  it("retries malformed commerce queue messages without acknowledging them", async () => {
+    const options = {
+      bindings: {
+        ...createBindings(),
+        commerceEventQueue: undefined,
+        notificationEventQueue: undefined,
+      },
+      commerceEventConsumer: {
+        consume: () => {
+          throw new Error("invalid payloads must not reach handlers");
+        },
+      },
+      mode: "development",
+    } satisfies Parameters<
+      typeof createProductionCommerceRuntimeComposition
+    >[0];
+    const composition = createProductionCommerceRuntimeComposition(options);
+    let acknowledged = 0;
+    let retried = 0;
+    const batch = {
+      messages: [
+        {
+          ack: () => {
+            acknowledged += 1;
+          },
+          body: {
             id: "invalid",
             queueName: "wrong-topic",
           },
@@ -217,7 +279,7 @@ describe("production commerce runtime composition", () => {
 
     await composition.processCommerceEventQueue(batch);
 
-    expect(acknowledged).toBe(1);
+    expect(acknowledged).toBe(0);
     expect(retried).toBe(1);
   });
 
