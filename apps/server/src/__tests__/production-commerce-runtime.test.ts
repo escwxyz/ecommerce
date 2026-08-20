@@ -185,6 +185,23 @@ describe("production commerce runtime composition", () => {
     expect(workerSource).toContain("routeCommerceServerQueueBatch");
   });
 
+  it("keeps one managed application runtime for default commerce event delivery", async () => {
+    const productionSource = await Bun.file(
+      new URL("../production-commerce-runtime.ts", import.meta.url)
+    ).text();
+    const workerSource = await Bun.file(
+      new URL("../index.ts", import.meta.url)
+    ).text();
+
+    expect(productionSource).toContain(
+      "ManagedRuntime.make(resolvedApplicationLayer)"
+    );
+    expect(productionSource).not.toContain(
+      "Effect.provide(resolvedApplicationLayer)"
+    );
+    expect(workerSource).toContain("onDispose: composition.dispose");
+  });
+
   it("acks valid commerce events after durable handling and retries handler failures", async () => {
     const handled: string[] = [];
     const options = {

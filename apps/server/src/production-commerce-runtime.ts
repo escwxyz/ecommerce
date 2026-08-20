@@ -49,7 +49,7 @@ import {
   processNotificationEventQueueBatch,
 } from "@ecommerce/platform-cloudflare";
 import type { NotificationEventQueueMessage } from "@ecommerce/platform-cloudflare";
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 
 export type ProductionCommerceRuntimeMode = "development" | "production";
 
@@ -362,6 +362,35 @@ export const createProductionCommerceRuntimeComposition = ({
     Layer.provide(serviceDependenciesLayer)
   );
   const applicationLayer = resolvedApplicationLayer.pipe(Layer.orDie);
+  const commerceEventRuntime =
+    commerceEventConsumer === undefined
+      ? (() => {
+          const runtime = ManagedRuntime.make(resolvedApplicationLayer);
+
+          return {
+            consumer: {
+              consume: (message: CommerceQueueMessage) =>
+                runtime.runPromise(
+                  NotificationEventService.use((service) =>
+                    service.publishEvent({
+                      causationId: message.causationId,
+                      correlationId: message.correlationId,
+                      name: message.type,
+                      payload: message.payload,
+                      sourceModule: "commerce-events",
+                      subject: message.subject,
+                      workflowRunId: message.workflowRunId,
+                    })
+                  ).pipe(Effect.asVoid)
+                ),
+            } satisfies CommerceQueueConsumer,
+            dispose: runtime.dispose,
+          };
+        })()
+      : {
+          consumer: commerceEventConsumer,
+          dispose: () => Promise.resolve(),
+        };
   const notificationEventRepositoryLayer =
     PostgresNotificationEventRepositoryLayer.pipe(Layer.provide(databaseLayer));
   const processNotificationEventQueue = (
@@ -383,23 +412,6 @@ export const createProductionCommerceRuntimeComposition = ({
         )
       ).pipe(Effect.provide(notificationEventRepositoryLayer))
     );
-  const durableCommerceEventConsumer: CommerceQueueConsumer =
-    commerceEventConsumer ?? {
-      consume: (message) =>
-        Effect.runPromise(
-          NotificationEventService.use((service) =>
-            service.publishEvent({
-              causationId: message.causationId,
-              correlationId: message.correlationId,
-              name: message.type,
-              payload: message.payload,
-              sourceModule: "commerce-events",
-              subject: message.subject,
-              workflowRunId: message.workflowRunId,
-            })
-          ).pipe(Effect.asVoid, Effect.provide(resolvedApplicationLayer))
-        ),
-    };
   const drainNotificationOutbox = (): Promise<void> =>
     Effect.runPromise(
       NotificationEventRepositoryService.use((repository) =>
@@ -457,10 +469,11 @@ export const createProductionCommerceRuntimeComposition = ({
       },
       modules: moduleComposition.orderedKeys,
     },
+    dispose: commerceEventRuntime.dispose,
     drainCommerceEventOutbox,
     drainNotificationEventOutbox: drainNotificationOutbox,
     processCommerceEventQueue: (batch: MessageBatch<unknown>) =>
-      processCommerceEventQueueBatch(batch, durableCommerceEventConsumer),
+      processCommerceEventQueueBatch(batch, commerceEventRuntime.consumer),
     processNotificationEventQueue,
     permissions: moduleComposition.permissions,
   };

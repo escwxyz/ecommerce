@@ -36,6 +36,8 @@ export interface CreateEffectHttpWorkerRuntimeOptions<RuntimeOutput = never> {
   readonly auth?: BetterAuthCompatibleService;
   readonly contributions: readonly EffectHttpApiGroupContribution[];
   readonly corsOrigin?: string;
+  /** Releases isolate-scoped resources owned outside the HTTP Layer graph. */
+  readonly onDispose?: () => Promise<void>;
   readonly runtimeLayers?: readonly EffectLayer<RuntimeOutput, never, never>[];
   readonly storefrontRoot?: HttpApi.AnyWithProps;
 }
@@ -266,11 +268,17 @@ export const createEffectHttpWorkerRuntime = <RuntimeOutput>(
   const runtime = HttpRouter.toWebHandler(application, {
     disableLogger: true,
   });
-  const { corsOrigin } = options;
+  const { corsOrigin, onDispose } = options;
 
   return {
     admin,
-    dispose: runtime.dispose,
+    dispose: async () => {
+      try {
+        await runtime.dispose();
+      } finally {
+        await onDispose?.();
+      }
+    },
     fetch: async (request) => {
       if (corsOrigin) {
         const preflight = createCorsPreflightResponse(request, corsOrigin);

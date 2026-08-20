@@ -62,6 +62,7 @@ const effectHttpRuntime = createEffectHttpWorkerRuntime({
   auth,
   contributions: composition.apiGroups,
   corsOrigin: serverEnv.CORS_ORIGIN,
+  onDispose: composition.dispose,
   runtimeLayers: [composition.applicationLayer],
 });
 

@@ -194,6 +194,23 @@ const fetchProtectedRuntime = async ({
 };
 
 describe("Cloudflare Effect HTTP Worker runtime", () => {
+  it("disposes attached runtime resources before the first request", async () => {
+    let disposeCount = 0;
+    const runtime = createEffectHttpWorkerRuntime({
+      adminRoot: adminHttpApi,
+      contributions: [],
+      onDispose: () => {
+        disposeCount += 1;
+        return Promise.resolve();
+      },
+      storefrontRoot: storefrontHttpApi,
+    });
+
+    await runtime.dispose();
+
+    expect(disposeCount).toBe(1);
+  });
+
   it("serves admin and storefront endpoints discovered from one module composition", async () => {
     const toModuleContribution = (
       contribution: ReturnType<typeof createContribution>
