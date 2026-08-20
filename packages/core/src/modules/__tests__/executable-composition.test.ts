@@ -300,6 +300,27 @@ describe("executable commerce module composition", () => {
     ).toThrow(CommerceModuleCompositionError);
   });
 
+  it("continues validating API groups whose group has no endpoint collection", () => {
+    const apiGroup = (groupIdentifier: string) => ({
+      _tag: "ApiGroup",
+      group: { identifier: groupIdentifier },
+      handlers: Layer.empty,
+      key: "catalog:shared",
+      owner: "module",
+      surface: "admin",
+    });
+    const invalidModule = {
+      contributions: {
+        apiGroups: [apiGroup("catalog-one"), apiGroup("catalog-two")],
+      },
+      key: "catalog",
+    } as unknown as CommerceModuleDefinition;
+
+    expect(() =>
+      composeCommerceApplication({ modules: [invalidModule] as const })
+    ).toThrow(CommerceModuleCompositionError);
+  });
+
   it("rejects providers and event handlers without executable fields", () => {
     const invalidContributions = [
       {

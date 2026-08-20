@@ -640,13 +640,20 @@ const isEndpointWithRoute = (
 
 const getApiRoutes = (
   contribution: CommerceModuleApiGroupContribution
-): readonly string[] =>
-  Object.values((contribution.group as HttpApiGroupWithEndpoints).endpoints)
+): readonly string[] => {
+  const { endpoints } =
+    contribution.group as Partial<HttpApiGroupWithEndpoints>;
+  if (!endpoints) {
+    return [];
+  }
+
+  return Object.values(endpoints)
     .filter(isEndpointWithRoute)
     .map(
       (endpoint) =>
         `${contribution.surface}:${endpoint.method.toUpperCase()} ${endpoint.path}`
     );
+};
 
 const getWorkflowKey = (
   workflow:
