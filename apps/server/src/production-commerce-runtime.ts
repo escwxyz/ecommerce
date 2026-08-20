@@ -36,9 +36,17 @@ import {
   createPostgresPoolConfig,
 } from "@ecommerce/db-postgres";
 import {
+  FulfillmentProviderRegistryService,
+  emptyFulfillmentProviderRegistry,
+} from "@ecommerce/fulfillment";
+import {
   NotificationEventRepositoryService,
   NotificationEventService,
 } from "@ecommerce/notification-event";
+import {
+  PaymentProviderRegistryService,
+  emptyPaymentProviderRegistry,
+} from "@ecommerce/payment";
 import {
   createCloudflareCartActiveCache,
   createCloudflareCartCacheRepository,
@@ -350,13 +358,21 @@ export const createProductionCommerceRuntimeComposition = ({
   const actorLayer = createCloudflareKeyedActorLayer({
     namespace: statefulCoordinator,
   });
+  const providerRegistriesLayer = Layer.merge(
+    Layer.succeed(
+      FulfillmentProviderRegistryService,
+      emptyFulfillmentProviderRegistry
+    ),
+    Layer.succeed(PaymentProviderRegistryService, emptyPaymentProviderRegistry)
+  );
   const serviceDependenciesLayer = Layer.mergeAll(
     repositoryLayer,
     cartRuntimeAdaptersLayer,
     clockDependencyLayer,
     idGeneratorDependencyLayer,
     mutationPersistenceLayer,
-    actorLayer
+    actorLayer,
+    providerRegistriesLayer
   );
   const resolvedApplicationLayer = moduleComposition.applicationLayer.pipe(
     Layer.provide(serviceDependenciesLayer)

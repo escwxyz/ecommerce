@@ -12,11 +12,19 @@ import {
   TransactionBoundaryService,
 } from "@ecommerce/core";
 import { CustomerRepositoryService } from "@ecommerce/customer";
-import { FulfillmentRepositoryService } from "@ecommerce/fulfillment";
+import {
+  FulfillmentProviderRegistryService,
+  FulfillmentRepositoryService,
+  emptyFulfillmentProviderRegistry,
+} from "@ecommerce/fulfillment";
 import { InventoryRepositoryService } from "@ecommerce/inventory";
 import { NotificationEventRepositoryService } from "@ecommerce/notification-event";
 import { OrderRepositoryService } from "@ecommerce/order";
-import { PaymentRepositoryService } from "@ecommerce/payment";
+import {
+  PaymentProviderRegistryService,
+  PaymentRepositoryService,
+  emptyPaymentProviderRegistry,
+} from "@ecommerce/payment";
 import { PricingRepositoryService } from "@ecommerce/pricing";
 import { ProductRepositoryService } from "@ecommerce/product";
 import { PromotionRepositoryService } from "@ecommerce/promotion";
@@ -61,6 +69,10 @@ describe("built-in executable commerce module catalog", () => {
       Layer.succeed(ClockService, {} as never),
       Layer.succeed(CustomerRepositoryService, {} as never),
       Layer.succeed(EventPublisherService, {} as never),
+      Layer.succeed(
+        FulfillmentProviderRegistryService,
+        emptyFulfillmentProviderRegistry
+      ),
       Layer.succeed(FulfillmentRepositoryService, {} as never),
       Layer.succeed(IdGeneratorService, {} as never),
       Layer.succeed(InventoryRepositoryService, {} as never),
@@ -68,6 +80,10 @@ describe("built-in executable commerce module catalog", () => {
       Layer.succeed(NotificationEventRepositoryService, {} as never),
       Layer.succeed(OrderRepositoryService, {} as never),
       Layer.succeed(OutboxWriterService, {} as never),
+      Layer.succeed(
+        PaymentProviderRegistryService,
+        emptyPaymentProviderRegistry
+      ),
       Layer.succeed(PaymentRepositoryService, {} as never),
       Layer.succeed(PricingRepositoryService, {} as never),
       Layer.succeed(ProductRepositoryService, {} as never),

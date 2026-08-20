@@ -11,7 +11,7 @@ import { Effect, Layer } from "effect";
 import { fulfillmentAdminSurfaces } from "../admin";
 import { FulfillmentRepositoryService } from "../domain";
 import { fulfillmentPermissionList } from "../permissions";
-import { createFulfillmentProviderRegistry } from "../providers";
+import { FulfillmentProviderRegistryService } from "../providers";
 import {
   FULFILLMENT_CANCELED_EVENT,
   FULFILLMENT_CREATED_EVENT,
@@ -29,7 +29,7 @@ const fulfillmentServiceLayer = Layer.effect(
       clock: yield* ClockService,
       idGenerator: yield* IdGeneratorService,
       outboxWriter: yield* OutboxWriterService,
-      providerRegistry: createFulfillmentProviderRegistry([]),
+      providerRegistry: yield* FulfillmentProviderRegistryService,
       repository: yield* FulfillmentRepositoryService,
       transactionBoundary: yield* TransactionBoundaryService,
     });

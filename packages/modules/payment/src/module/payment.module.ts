@@ -9,7 +9,7 @@ import { Effect, Layer } from "effect";
 import { paymentAdminSurfaces } from "../admin";
 import { PaymentRepositoryService } from "../domain";
 import { paymentPermissionList } from "../permissions";
-import { createPaymentProviderRegistry } from "../providers";
+import { PaymentProviderRegistryService } from "../providers";
 import {
   PAYMENT_AUTHORIZED_EVENT,
   PAYMENT_CANCELED_EVENT,
@@ -28,7 +28,7 @@ const paymentServiceLayer = Layer.effect(
     return createPaymentService({
       clock: yield* ClockService,
       idGenerator: yield* IdGeneratorService,
-      providerRegistry: createPaymentProviderRegistry([]),
+      providerRegistry: yield* PaymentProviderRegistryService,
       repository: yield* PaymentRepositoryService,
     });
   })
