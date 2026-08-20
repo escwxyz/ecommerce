@@ -34,6 +34,24 @@ import {
 } from "../builtin-commerce-modules";
 
 describe("built-in executable commerce module catalog", () => {
+  it("appends attached HTTP groups after module-declared API groups", async () => {
+    const source = await Bun.file(
+      new URL("../builtin-commerce-modules.ts", import.meta.url)
+    ).text();
+
+    const declaredGroupsIndex = source.indexOf(
+      "...(definition.contributions?.apiGroups ?? [])"
+    );
+    const attachedGroupsIndex = source.indexOf(
+      "...apiGroups",
+      declaredGroupsIndex
+    );
+
+    expect(source).toContain("...definition.contributions,");
+    expect(declaredGroupsIndex).toBeGreaterThan(-1);
+    expect(attachedGroupsIndex).toBeGreaterThan(declaredGroupsIndex);
+  });
+
   it("validates every handler and acquires services without HTTP middleware", async () => {
     const composition = composeBuiltinCommerceApplication();
     const deterministicHostLayer = Layer.mergeAll(

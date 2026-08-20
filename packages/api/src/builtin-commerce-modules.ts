@@ -38,7 +38,11 @@ import { storeEffectHttpApiContribution } from "./store-effect-http-api";
 import { taxEffectHttpApiContribution } from "./tax-effect-http-api";
 
 const attachHttpGroups = <
-  const Definition extends CommerceModuleDefinition,
+  const Definition extends CommerceModuleDefinition & {
+    readonly contributions?: {
+      readonly apiGroups?: readonly CommerceModuleApiGroupContribution[];
+    };
+  },
   const Groups extends readonly EffectHttpApiGroupContribution[],
 >(
   definition: Definition,
@@ -61,7 +65,7 @@ const attachHttpGroups = <
     ...definition,
     contributions: {
       ...definition.contributions,
-      apiGroups,
+      apiGroups: [...(definition.contributions?.apiGroups ?? []), ...apiGroups],
     },
   };
 };
