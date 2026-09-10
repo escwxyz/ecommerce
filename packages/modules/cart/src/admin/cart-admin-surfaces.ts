@@ -12,7 +12,7 @@ export const cartAdminMetadata = {
     {
       description: "Review and manage active pre-order cart aggregates.",
       kind: "navigation",
-      key: "cart:navigation",
+      key: "navigation",
       label: "Carts",
       operations: {
         create: { key: "cartCreate" },
@@ -28,7 +28,7 @@ export const cartAdminMetadata = {
       description:
         "Manage cart-owned customer, line item, address, checkout reference, adjustment, and totals snapshots.",
       kind: "resource",
-      key: "cart:resource",
+      key: "resource",
       label: "Cart aggregates",
       operations: {
         addLineItem: {

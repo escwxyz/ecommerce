@@ -13,7 +13,7 @@ export const storeAdminMetadata = {
       description:
         "Review platform-wide commerce defaults used by other modules.",
       kind: "navigation",
-      key: "store:navigation",
+      key: "navigation",
       label: "Store",
       operations: {
         read: { key: "storeSettingsGet" },
@@ -27,7 +27,7 @@ export const storeAdminMetadata = {
       description:
         "Manage store identity, currencies, locale, timezone, and administrative metadata.",
       kind: "resource",
-      key: "store:resource",
+      key: "resource",
       label: "Store settings",
       operations: {
         read: {

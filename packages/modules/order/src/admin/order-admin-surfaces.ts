@@ -12,7 +12,7 @@ export const orderAdminMetadata = {
     {
       description: "Review placed orders and post-checkout history.",
       kind: "navigation",
-      key: "order:navigation",
+      key: "navigation",
       label: "Orders",
       operations: {
         list: { key: "orderList" },
@@ -27,7 +27,7 @@ export const orderAdminMetadata = {
       description:
         "Manage order-owned snapshots, references, status transitions, and transaction history.",
       kind: "resource",
-      key: "order:resource",
+      key: "resource",
       label: "Orders",
       operations: {
         createFromCheckout: {

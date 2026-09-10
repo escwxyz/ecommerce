@@ -13,7 +13,7 @@ export const paymentAdminMetadata = {
       description:
         "Review payment collections, sessions, authorizations, captures, and refunds.",
       kind: "navigation",
-      key: "payment:navigation",
+      key: "navigation",
       label: "Payments",
       operations: {
         list: { key: "paymentCollectionList" },
@@ -27,7 +27,7 @@ export const paymentAdminMetadata = {
       description:
         "Manage ecommerce payment state through normalized provider actions.",
       kind: "resource",
-      key: "payment:resource",
+      key: "resource",
       label: "Payment collections",
       operations: {
         authorize: {

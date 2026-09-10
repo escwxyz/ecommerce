@@ -850,7 +850,7 @@ const validateMetadataContributionKeys = (
   for (const surface of module.contributions?.adminSurfaces ?? []) {
     assertUniqueValue({
       contributionKind: "admin surface",
-      key: surface.key,
+      key: `${module.key}:${surface.key}`,
       owner: module.key,
       seen: getSeenContributionKeys(seenByKind, "admin-surface"),
     });

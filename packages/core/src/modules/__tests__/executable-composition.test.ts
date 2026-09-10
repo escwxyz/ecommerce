@@ -239,15 +239,11 @@ describe("executable commerce module composition", () => {
           module("alpha", {
             adminSurfaces: [
               { key: "shared", kind: "navigation", label: "One" },
-            ],
-          }),
-          module("beta", {
-            adminSurfaces: [
               { key: "shared", kind: "navigation", label: "Two" },
             ],
           }),
         ],
-        owners: ["alpha", "beta"],
+        owners: ["alpha", "alpha"],
       },
       {
         contributionKind: "storage namespace",
@@ -275,6 +271,22 @@ describe("executable commerce module composition", () => {
         }
       }
     }
+  });
+
+  it("scopes admin surface keys by module owner", () => {
+    const module = (key: string, label: string) =>
+      defineCommerceModule({
+        contributions: {
+          adminSurfaces: [{ key: "navigation", kind: "navigation", label }],
+        },
+        key,
+      });
+
+    expect(() =>
+      composeCommerceApplication({
+        modules: [module("alpha", "Alpha"), module("beta", "Beta")] as const,
+      })
+    ).not.toThrow();
   });
 
   it("rejects an API group without an executable handler Layer", () => {
