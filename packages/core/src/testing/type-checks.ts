@@ -5,7 +5,10 @@ import {
   defineCommerceModule,
   defineCommerceModuleServiceContribution,
 } from "../modules/index";
-import type { ValidateModuleDependencies } from "../modules/index";
+import type {
+  CommerceModuleLifecycleError,
+  ValidateModuleDependencies,
+} from "../modules/index";
 import {
   ClockService,
   IdGeneratorService,
@@ -100,29 +103,33 @@ defineCommerceModule({
 
 type Expect<Actual extends true> = Actual;
 type IsAny<Value> = 0 extends 1 & Value ? true : false;
-type Extends<Actual, Expected> = Actual extends Expected ? true : false;
+type Equal<Actual, Expected> = [Actual] extends [Expected]
+  ? [Expected] extends [Actual]
+    ? true
+    : false
+  : false;
 
 type HeterogeneousApplicationLayer =
   typeof heterogeneousComposition.applicationLayer;
 
 export type ModuleLayerOutputPreserved = Expect<
-  Extends<
-    Context.Service.Identifier<typeof TypecheckOutput>,
-    Layer.Success<HeterogeneousApplicationLayer>
+  Equal<
+    Layer.Success<HeterogeneousApplicationLayer>,
+    Context.Service.Identifier<typeof TypecheckOutput>
   >
 >;
 
 export type ModuleLayerFailurePreserved = Expect<
-  Extends<
-    TypecheckLayerFailureError,
-    Layer.Error<HeterogeneousApplicationLayer>
+  Equal<
+    Layer.Error<HeterogeneousApplicationLayer>,
+    CommerceModuleLifecycleError | TypecheckLayerFailureError
   >
 >;
 
 export type ModuleLayerRequirementPreserved = Expect<
-  Extends<
-    Context.Service.Identifier<typeof TypecheckHost>,
-    Layer.Services<HeterogeneousApplicationLayer>
+  Equal<
+    Layer.Services<HeterogeneousApplicationLayer>,
+    Context.Service.Identifier<typeof TypecheckHost>
   >
 >;
 
