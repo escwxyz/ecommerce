@@ -12,7 +12,7 @@ export const checkoutAdminMetadata = {
     {
       description: "Observe checkout workflow runs and completion outcomes.",
       kind: "resource",
-      key: "resource",
+      key: "checkout:resource",
       label: "Checkout",
       operations: {
         complete: {

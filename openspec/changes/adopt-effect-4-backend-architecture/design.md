@@ -67,7 +67,16 @@ Alternative considered: standardize on `Error` or one generic application error.
 
 Admin and storefront APIs are composable `HttpApiGroup`s backed by handler Layers. Effect Schema declares paths, parameters, bodies, successes, and failures. OpenAPI is derived from the canonical contract. Authentication, authorization, request context, tracing, timeouts, and error serialization are Effect HTTP middleware.
 
-Modules and trusted plugins contribute API groups through typed composition contracts. The Cloudflare Worker entrypoint provides platform Layers and serves the assembled Effect HTTP application.
+`CommerceModuleDefinition` is the canonical executable registration for a
+built-in module. It owns namespaced service tags paired with Layers, Effect
+HTTP groups and handler Layers, workflows, event handlers, permissions, admin
+metadata, schema ownership, dependencies, and lifecycle hooks. Trusted plugins
+use the compatible executable contribution vocabulary while retaining plugin
+ownership metadata. One immutable composition validates the complete selected
+catalog before Layer acquisition, orders peers deterministically, and exposes
+the application Layer plus all registries. The Cloudflare Worker selects the
+catalog once, provides platform and persistence Layers, and serves the assembled
+Effect HTTP application without parallel module route or service registries.
 
 Alternative considered: retain oRPC for shared client types. Rejected because it would preserve a second transport and schema model.
 

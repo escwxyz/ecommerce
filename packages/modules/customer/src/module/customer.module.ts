@@ -1,4 +1,7 @@
-import { defineCommerceModule } from "@ecommerce/core";
+import {
+  defineCommerceModule,
+  defineCommerceModuleServiceContribution,
+} from "@ecommerce/core";
 import { Effect } from "effect";
 
 import { customerAdminSurfaces } from "../admin";
@@ -8,6 +11,7 @@ import {
   CUSTOMER_CREATED_EVENT,
   CUSTOMER_UPDATED_EVENT,
   CustomerService,
+  createCustomerServiceFromDependenciesLayer,
 } from "../services";
 
 export const customerExtensionPoints = {
@@ -18,13 +22,19 @@ export const customerExtensionPoints = {
 export const customerModule = defineCommerceModule({
   contributions: {
     adminSurfaces: customerAdminSurfaces,
-    apiFragments: [],
     eventTypes: [
       CUSTOMER_CREATED_EVENT,
       CUSTOMER_UPDATED_EVENT,
       CUSTOMER_AUTH_LINKED_EVENT,
     ],
     permissions: customerPermissionList,
+    services: [
+      defineCommerceModuleServiceContribution({
+        key: "customer:service",
+        layer: createCustomerServiceFromDependenciesLayer(),
+        service: CustomerService,
+      }),
+    ],
     workflowSteps: [
       {
         name: "customer.resolve-for-checkout",
@@ -33,7 +43,6 @@ export const customerModule = defineCommerceModule({
     ],
   },
   key: "customer",
-  providedServices: [{ key: "customer-service", service: CustomerService }],
   schema: {
     tables: [
       "customer",

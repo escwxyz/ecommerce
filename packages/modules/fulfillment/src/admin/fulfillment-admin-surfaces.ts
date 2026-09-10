@@ -13,7 +13,7 @@ export const fulfillmentAdminMetadata = {
       description:
         "Review fulfillment sets, shipping options, fulfillments, and shipments.",
       kind: "navigation",
-      key: "navigation",
+      key: "fulfillment:navigation",
       label: "Fulfillment",
       operations: {
         list: { key: "fulfillmentList" },
@@ -27,7 +27,7 @@ export const fulfillmentAdminMetadata = {
       description:
         "Manage provider-backed shipping options and fulfillment lifecycle actions.",
       kind: "resource",
-      key: "resource",
+      key: "fulfillment:resource",
       label: "Fulfillments",
       operations: {
         cancel: {

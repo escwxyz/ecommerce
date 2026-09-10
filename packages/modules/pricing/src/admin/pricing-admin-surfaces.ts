@@ -13,7 +13,7 @@ export const pricingAdminMetadata = {
       description:
         "Manage currencies, price sets, price lists, rules, and calculated price traces.",
       kind: "navigation",
-      key: "navigation",
+      key: "pricing:navigation",
       label: "Pricing",
       operations: {
         read: { key: "pricingCurrencyList" },
@@ -27,7 +27,7 @@ export const pricingAdminMetadata = {
       description:
         "Configure base and rule-based prices without owning promotions or tax.",
       kind: "resource",
-      key: "resource",
+      key: "pricing:resource",
       label: "Pricing",
       operations: {
         calculate: {

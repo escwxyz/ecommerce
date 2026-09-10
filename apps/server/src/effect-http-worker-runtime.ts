@@ -31,12 +31,14 @@ import { Etag, HttpPlatform, HttpRouter } from "effect/unstable/http";
 import type { HttpApi } from "effect/unstable/httpapi";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-export interface CreateEffectHttpWorkerRuntimeOptions {
+export interface CreateEffectHttpWorkerRuntimeOptions<RuntimeOutput = never> {
   readonly adminRoot?: HttpApi.AnyWithProps;
   readonly auth?: BetterAuthCompatibleService;
   readonly contributions: readonly EffectHttpApiGroupContribution[];
   readonly corsOrigin?: string;
-  readonly runtimeLayers?: readonly EffectLayer<never, never, never>[];
+  /** Releases isolate-scoped resources owned outside the HTTP Layer graph. */
+  readonly onDispose?: () => Promise<void>;
+  readonly runtimeLayers?: readonly EffectLayer<RuntimeOutput, never, never>[];
   readonly storefrontRoot?: HttpApi.AnyWithProps;
 }
 
@@ -101,13 +103,13 @@ const failClosedEffectAuthLayer = effectAuthServiceLayer(
 const mergeHandlerLayers = (handlers: readonly EffectHttpApiHandlerLayer[]) =>
   Layer.mergeAll(Layer.empty, ...handlers);
 
-const createRuntimeSupportLayer = ({
+const createRuntimeSupportLayer = <RuntimeOutput>({
   auth,
   runtimeLayers,
 }: {
   readonly auth?: BetterAuthCompatibleService;
-  readonly runtimeLayers: readonly EffectLayer<never, never, never>[];
-}): EffectLayer<never, never, never> => {
+  readonly runtimeLayers: readonly EffectLayer<RuntimeOutput, never, never>[];
+}) => {
   const authBoundaryLayer = auth
     ? betterAuthEffectAuthLayer(auth)
     : failClosedEffectAuthLayer;
@@ -207,13 +209,13 @@ const createCorsPreflightResponse = (
  * the same isolate-scoped services while request services remain middleware
  * scoped.
  */
-export const createEffectHttpWorkerApplicationLayer = ({
+export const createEffectHttpWorkerApplicationLayer = <RuntimeOutput>({
   adminRoot = adminHttpApi,
   auth,
   contributions,
   runtimeLayers = [],
   storefrontRoot = storefrontHttpApi,
-}: CreateEffectHttpWorkerRuntimeOptions) => {
+}: CreateEffectHttpWorkerRuntimeOptions<RuntimeOutput>) => {
   const admin = createEffectHttpApiAssembly({
     contributions,
     root: adminRoot,
@@ -248,7 +250,7 @@ export const createEffectHttpWorkerApplicationLayer = ({
 
 /** Creates the request Effect expected by Alchemy's Effect-native Worker. */
 export const createEffectHttpWorkerHttpEffect = (
-  options: CreateEffectHttpWorkerRuntimeOptions
+  options: CreateEffectHttpWorkerRuntimeOptions<unknown>
 ) =>
   HttpRouter.toHttpEffect(
     createEffectHttpWorkerApplicationLayer(options).application
@@ -258,19 +260,25 @@ export const createEffectHttpWorkerHttpEffect = (
  * Creates a Fetch-compatible runtime for credential-free tests and temporary
  * interop with the legacy async Worker entrypoint during vertical migration.
  */
-export const createEffectHttpWorkerRuntime = (
-  options: CreateEffectHttpWorkerRuntimeOptions
+export const createEffectHttpWorkerRuntime = <RuntimeOutput>(
+  options: CreateEffectHttpWorkerRuntimeOptions<RuntimeOutput>
 ): EffectHttpWorkerRuntime => {
   const { admin, application, storefront } =
     createEffectHttpWorkerApplicationLayer(options);
   const runtime = HttpRouter.toWebHandler(application, {
     disableLogger: true,
   });
-  const { corsOrigin } = options;
+  const { corsOrigin, onDispose } = options;
 
   return {
     admin,
-    dispose: runtime.dispose,
+    dispose: async () => {
+      try {
+        await runtime.dispose();
+      } finally {
+        await onDispose?.();
+      }
+    },
     fetch: async (request) => {
       if (corsOrigin) {
         const preflight = createCorsPreflightResponse(request, corsOrigin);

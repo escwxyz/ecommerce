@@ -1,8 +1,15 @@
-import { defineCommerceModule } from "@ecommerce/core";
-import { Effect } from "effect";
+import {
+  ClockService,
+  IdGeneratorService,
+  defineCommerceModule,
+  defineCommerceModuleServiceContribution,
+} from "@ecommerce/core";
+import { Effect, Layer } from "effect";
 
 import { paymentAdminSurfaces } from "../admin";
+import { PaymentRepositoryService } from "../domain";
 import { paymentPermissionList } from "../permissions";
+import { PaymentProviderRegistryService } from "../providers";
 import {
   PAYMENT_AUTHORIZED_EVENT,
   PAYMENT_CANCELED_EVENT,
@@ -12,7 +19,20 @@ import {
   PAYMENT_SESSION_CREATED_EVENT,
   PAYMENT_WEBHOOK_APPLIED_EVENT,
   PaymentService,
+  createPaymentService,
 } from "../services";
+
+const paymentServiceLayer = Layer.effect(
+  PaymentService,
+  Effect.gen(function* createModulePaymentService() {
+    return createPaymentService({
+      clock: yield* ClockService,
+      idGenerator: yield* IdGeneratorService,
+      providerRegistry: yield* PaymentProviderRegistryService,
+      repository: yield* PaymentRepositoryService,
+    });
+  })
+);
 
 export const paymentExtensionPoints = {
   providerRegistered: "payment.provider-registered",
@@ -22,7 +42,6 @@ export const paymentExtensionPoints = {
 export const paymentModule = defineCommerceModule({
   contributions: {
     adminSurfaces: paymentAdminSurfaces,
-    apiFragments: [],
     eventTypes: [
       PAYMENT_COLLECTION_CREATED_EVENT,
       PAYMENT_SESSION_CREATED_EVENT,
@@ -33,6 +52,13 @@ export const paymentModule = defineCommerceModule({
       PAYMENT_WEBHOOK_APPLIED_EVENT,
     ],
     permissions: paymentPermissionList,
+    services: [
+      defineCommerceModuleServiceContribution({
+        key: "payment:service",
+        layer: paymentServiceLayer,
+        service: PaymentService,
+      }),
+    ],
     workflowSteps: [
       {
         name: "payment.authorize-session",
@@ -53,6 +79,5 @@ export const paymentModule = defineCommerceModule({
     ],
   },
   key: "payment",
-  providedServices: [{ key: "payment-service", service: PaymentService }],
   schema: { tables: [] },
 });

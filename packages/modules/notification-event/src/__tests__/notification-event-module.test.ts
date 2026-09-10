@@ -198,7 +198,9 @@ describe("notification event module foundation", () => {
     expect(notificationEventModule.contributions?.eventTypes).toContain(
       "notification.dispatch-requested"
     );
-    expect(notificationEventModule.contributions?.apiFragments).toEqual([]);
+    expect(
+      notificationEventModule.contributions?.services?.map(({ key }) => key)
+    ).toEqual(["notification-event:service"]);
     expect(notificationEventModule.schema?.tables).toEqual([
       "event_outbox",
       "event_dead_letter",

@@ -14,6 +14,7 @@ const MAX_TELEMETRY_ATTRIBUTE_COUNT = 32;
 
 export const commerceOperationNames = [
   "checkout.complete",
+  "module.lifecycle",
   "plugin.lifecycle",
   "plugin.sandbox.bridge",
   "store.read",

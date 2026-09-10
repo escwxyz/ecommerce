@@ -21,3 +21,12 @@ The platform SHALL use Effect 4 services and Layers for module dependencies, pla
 - **WHEN** a test provides a deterministic Layer for a service
 - **THEN** business logic MUST run without production bindings or global mutation
 
+### Requirement: Executable module catalog
+The running built-in module set SHALL come from one immutable catalog of
+executable `CommerceModuleDefinition` values. Composition SHALL validate module
+dependencies and contribution collisions before resource acquisition, order
+same-level modules by stable key, and run shutdown in reverse dependency order.
+
+#### Scenario: Required module is disabled
+- **WHEN** a selected module depends on a definition absent from the catalog
+- **THEN** composition MUST fail before any module Layer or lifecycle hook runs

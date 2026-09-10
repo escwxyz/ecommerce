@@ -1,14 +1,39 @@
-import { defineCommerceModule } from "@ecommerce/core";
+import {
+  ClockService,
+  IdGeneratorService,
+  OutboxWriterService,
+  TransactionBoundaryService,
+  defineCommerceModule,
+  defineCommerceModuleServiceContribution,
+} from "@ecommerce/core";
+import { Effect, Layer } from "effect";
 
 import { taxAdminSurfaces } from "../admin";
+import { TaxRepositoryService } from "../domain";
 import { taxPermissionList } from "../permissions";
+import { manualTaxProvider } from "../providers";
 import {
   TAX_CATEGORY_CREATED_EVENT,
   TAX_PROVIDER_CONFIGURED_EVENT,
   TAX_RATE_CREATED_EVENT,
   TAX_REGION_CREATED_EVENT,
   TaxService,
+  createTaxService,
 } from "../services";
+
+const taxServiceLayer = Layer.effect(
+  TaxService,
+  Effect.gen(function* createModuleTaxService() {
+    return createTaxService({
+      clock: yield* ClockService,
+      idGenerator: yield* IdGeneratorService,
+      outboxWriter: yield* OutboxWriterService,
+      providers: [manualTaxProvider],
+      repository: yield* TaxRepositoryService,
+      transactionBoundary: yield* TransactionBoundaryService,
+    });
+  })
+);
 
 export const taxExtensionPoints = {
   providerCalculators: "tax.provider-calculators",
@@ -19,7 +44,6 @@ export const taxExtensionPoints = {
 export const taxModule = defineCommerceModule({
   contributions: {
     adminSurfaces: taxAdminSurfaces,
-    apiFragments: [],
     eventTypes: [
       TAX_CATEGORY_CREATED_EVENT,
       TAX_PROVIDER_CONFIGURED_EVENT,
@@ -27,8 +51,14 @@ export const taxModule = defineCommerceModule({
       TAX_RATE_CREATED_EVENT,
     ],
     permissions: taxPermissionList,
+    services: [
+      defineCommerceModuleServiceContribution({
+        key: "tax:service",
+        layer: taxServiceLayer,
+        service: TaxService,
+      }),
+    ],
   },
   dependencies: [],
   key: "tax",
-  providedServices: [{ key: "tax-service", service: TaxService }],
 });

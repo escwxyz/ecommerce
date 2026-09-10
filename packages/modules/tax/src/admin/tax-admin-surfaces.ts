@@ -13,7 +13,7 @@ export const taxAdminMetadata = {
       description:
         "Manage tax regions, rates, categories, providers, and calculation policy.",
       kind: "navigation",
-      key: "navigation",
+      key: "tax:navigation",
       label: "Taxes",
       operations: {
         read: { key: "taxCalculate" },
@@ -27,7 +27,7 @@ export const taxAdminMetadata = {
       description:
         "Configure tax-owned calculation inputs while keeping region and market policy outside the tax module.",
       kind: "resource",
-      key: "resource",
+      key: "tax:resource",
       label: "Taxes",
       operations: {
         calculate: {

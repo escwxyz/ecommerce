@@ -1,10 +1,14 @@
-import { defineCommerceModule } from "@ecommerce/core";
+import {
+  defineCommerceModule,
+  defineCommerceModuleServiceContribution,
+} from "@ecommerce/core";
 
 import { promotionAdminSurfaces } from "../admin";
 import { promotionPermissionList } from "../permissions";
 import {
   PROMOTION_CREATED_EVENT,
   PROMOTION_REDEMPTION_RECORDED_EVENT,
+  PromotionServiceLive,
   PromotionService,
 } from "../services";
 
@@ -17,11 +21,16 @@ export const promotionExtensionPoints = {
 export const promotionModule = defineCommerceModule({
   contributions: {
     adminSurfaces: promotionAdminSurfaces,
-    apiFragments: [],
     eventTypes: [PROMOTION_CREATED_EVENT, PROMOTION_REDEMPTION_RECORDED_EVENT],
     permissions: promotionPermissionList,
+    services: [
+      defineCommerceModuleServiceContribution({
+        key: "promotion:service",
+        layer: PromotionServiceLive,
+        service: PromotionService,
+      }),
+    ],
   },
   dependencies: [],
   key: "promotion",
-  providedServices: [{ key: "promotion-service", service: PromotionService }],
 });

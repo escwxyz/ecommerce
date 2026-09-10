@@ -1,18 +1,13 @@
+import { composeBuiltinCommerceApplication } from "@ecommerce/api";
 import {
   CartRepositoryService,
-  CartService,
+  CartRuntimeAdapters,
   createCartMutationCacheCoordinator,
   createCommittedCartCacheSynchronizer,
-  createCartService,
 } from "@ecommerce/cart";
 import {
   COMMERCE_EVENTS_OUTBOX_TOPIC,
-  ClockService,
   deliverOutboxBatch,
-  EventPublisherService,
-  IdGeneratorService,
-  OutboxWriterService,
-  TransactionBoundaryService,
   clockLayer,
   idGeneratorLayer,
 } from "@ecommerce/core";
@@ -21,7 +16,6 @@ import type {
   CommerceQueueConsumeContext,
   CommerceQueueMessage,
 } from "@ecommerce/core";
-import { createCustomerServiceFromDependenciesLayer } from "@ecommerce/customer";
 import {
   PostgresCartRepositoryLayer,
   PostgresCustomerRepositoryLayer,
@@ -42,27 +36,16 @@ import {
   createPostgresPoolConfig,
 } from "@ecommerce/db-postgres";
 import {
-  FulfillmentRepositoryService,
-  FulfillmentService,
-  createFulfillmentProviderRegistry,
-  createFulfillmentService,
+  FulfillmentProviderRegistryService,
+  emptyFulfillmentProviderRegistry,
 } from "@ecommerce/fulfillment";
-import { createInventoryServiceFromDependenciesLayer } from "@ecommerce/inventory";
 import {
   NotificationEventRepositoryService,
   NotificationEventService,
-  createNotificationEventService,
 } from "@ecommerce/notification-event";
 import {
-  OrderRepositoryService,
-  OrderService,
-  createOrderService,
-} from "@ecommerce/order";
-import {
-  PaymentRepositoryService,
-  PaymentService,
-  createPaymentProviderRegistry,
-  createPaymentService,
+  PaymentProviderRegistryService,
+  emptyPaymentProviderRegistry,
 } from "@ecommerce/payment";
 import {
   createCloudflareCartActiveCache,
@@ -74,42 +57,7 @@ import {
   processNotificationEventQueueBatch,
 } from "@ecommerce/platform-cloudflare";
 import type { NotificationEventQueueMessage } from "@ecommerce/platform-cloudflare";
-import { createPricingServiceFromDependenciesLayer } from "@ecommerce/pricing";
-import { createProductServiceFromDependenciesLayer } from "@ecommerce/product";
-import {
-  PromotionRepositoryService,
-  PromotionService,
-  createPromotionService,
-} from "@ecommerce/promotion";
-import {
-  createRegionServiceFromDependenciesLayer,
-  createSalesChannelServiceFromDependenciesLayer,
-} from "@ecommerce/region-sales-channel";
-import { createStoreServiceFromDependenciesLayer } from "@ecommerce/store";
-import {
-  TaxRepositoryService,
-  TaxService,
-  createTaxService,
-  manualTaxProvider,
-} from "@ecommerce/tax";
-import { Effect, Layer, Schema } from "effect";
-import type { Layer as EffectLayer } from "effect/Layer";
-
-const productionModuleKeys = [
-  "store",
-  "customer",
-  "product",
-  "pricing",
-  "inventory",
-  "cart",
-  "region-sales-channel",
-  "promotion",
-  "tax",
-  "fulfillment",
-  "payment",
-  "order",
-  "notification-event",
-] as const;
+import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 
 export type ProductionCommerceRuntimeMode = "development" | "production";
 
@@ -144,20 +92,15 @@ export interface ProductionCommerceRuntimeDiagnostics {
     };
     readonly relational: "effect-postgres";
   };
-  readonly modules: typeof productionModuleKeys;
-}
-
-export interface ProductionCommerceRuntimeComposition {
-  readonly applicationLayer: EffectLayer<never, never, never>;
-  readonly diagnostics: ProductionCommerceRuntimeDiagnostics;
-  readonly drainCommerceEventOutbox: () => Promise<void>;
-  readonly processCommerceEventQueue: (
-    batch: MessageBatch<unknown>
-  ) => Promise<void>;
-  readonly processNotificationEventQueue: (
-    batch: MessageBatch<NotificationEventQueueMessage>
-  ) => Promise<void>;
-  readonly drainNotificationEventOutbox: () => Promise<void>;
+  readonly contributionCounts: {
+    readonly adminSurfaces: number;
+    readonly apiGroups: number;
+    readonly eventHandlers: number;
+    readonly providers: number;
+    readonly services: number;
+    readonly workflows: number;
+  };
+  readonly modules: readonly string[];
 }
 
 export interface CreateProductionCommerceRuntimeCompositionOptions {
@@ -288,7 +231,13 @@ export const createProductionCommerceRuntimeComposition = ({
   bindings,
   commerceEventConsumer,
   mode,
-}: CreateProductionCommerceRuntimeCompositionOptions): ProductionCommerceRuntimeComposition => {
+}: CreateProductionCommerceRuntimeCompositionOptions) => {
+  // Checkout remains disabled until its completion-store contract has a
+  // durable production adapter. Selection happens before graph validation, so
+  // its routes, permissions, workflow, and service disappear together.
+  const moduleComposition = composeBuiltinCommerceApplication({
+    disabledModuleKeys: ["checkout"],
+  });
   const runtimeMode = requireRuntimeMode(mode);
   const cartCache = requireBinding({
     binding: "CART_CACHE",
@@ -339,8 +288,40 @@ export const createProductionCommerceRuntimeComposition = ({
       url: postgresConnectionString,
     }),
   }).pipe(Layer.orDie);
+  const postgresCartRepositoryLayer = PostgresCartRepositoryLayer.pipe(
+    Layer.provide(databaseLayer)
+  );
+  const cartRepositoryLayer = Layer.effect(
+    CartRepositoryService,
+    CartRepositoryService.use((projectionRepository) =>
+      Effect.succeed(
+        createCloudflareCartCacheRepository({
+          namespace: cartCache,
+          projectionRepository,
+        })
+      )
+    )
+  ).pipe(Layer.provide(postgresCartRepositoryLayer));
+  const cartRuntimeAdaptersLayer = Layer.effect(
+    CartRuntimeAdapters,
+    CartRepositoryService.use((projectionRepository) => {
+      const activeCache = createCloudflareCartActiveCache({
+        namespace: cartCache,
+      });
+      return Effect.succeed({
+        committedMutationSynchronizer: createCommittedCartCacheSynchronizer({
+          cache: activeCache,
+          projectionRepository,
+        }),
+        mutationCacheCoordinator: createCartMutationCacheCoordinator({
+          cache: activeCache,
+        }),
+        mutationRepository: projectionRepository,
+      });
+    })
+  ).pipe(Layer.provide(postgresCartRepositoryLayer));
   const repositoryLayer = Layer.mergeAll(
-    PostgresCartRepositoryLayer,
+    cartRepositoryLayer,
     PostgresCustomerRepositoryLayer,
     PostgresFulfillmentRepositoryLayer,
     PostgresInventoryRepositoryLayer,
@@ -374,191 +355,58 @@ export const createProductionCommerceRuntimeComposition = ({
   });
   const clockDependencyLayer = clockLayer(clock);
   const idGeneratorDependencyLayer = idGeneratorLayer(idGenerator);
-  const notificationEventServiceLayer = Layer.effect(
-    NotificationEventService,
-    Effect.gen(function* createProductionNotificationEventService() {
-      const repository = yield* NotificationEventRepositoryService;
-
-      return createNotificationEventService({
-        clock,
-        idGenerator,
-        notificationProviders: [],
-        repository,
-      });
-    })
-  ).pipe(Layer.provide(repositoryLayer));
-  const domainEventPublisherLayer = Layer.effect(
-    EventPublisherService,
-    NotificationEventService.use((service) =>
-      Effect.succeed({
-        publish: async (event) => {
-          await Effect.runPromise(
-            service.publishEvent({
-              causationId: event.causationId,
-              correlationId: event.correlationId,
-              name: event.name,
-              payload: event.payload,
-              sourceModule: event.sourceModule ?? "server",
-              subject: event.subject,
-              workflowRunId: event.workflowRunId,
-            })
-          );
-        },
-      })
-    )
-  ).pipe(Layer.provide(notificationEventServiceLayer));
   const actorLayer = createCloudflareKeyedActorLayer({
     namespace: statefulCoordinator,
   });
+  const providerRegistriesLayer = Layer.merge(
+    Layer.succeed(
+      FulfillmentProviderRegistryService,
+      emptyFulfillmentProviderRegistry
+    ),
+    Layer.succeed(PaymentProviderRegistryService, emptyPaymentProviderRegistry)
+  );
   const serviceDependenciesLayer = Layer.mergeAll(
     repositoryLayer,
+    cartRuntimeAdaptersLayer,
     clockDependencyLayer,
     idGeneratorDependencyLayer,
-    domainEventPublisherLayer,
     mutationPersistenceLayer,
-    actorLayer
+    actorLayer,
+    providerRegistriesLayer
   );
-  const cartServiceLayer = Layer.effect(
-    CartService,
-    Effect.gen(function* createProductionCartService() {
-      const projectionRepository = yield* CartRepositoryService;
-      const runtimeClock = yield* ClockService;
-      const runtimeIdGenerator = yield* IdGeneratorService;
-      const outboxWriter = yield* OutboxWriterService;
-      const transactionBoundary = yield* TransactionBoundaryService;
-      const activeCache = createCloudflareCartActiveCache({
-        namespace: cartCache,
-      });
-      const cachedRepository = createCloudflareCartCacheRepository({
-        namespace: cartCache,
-        projectionRepository,
-      });
+  const resolvedApplicationLayer = moduleComposition.applicationLayer.pipe(
+    Layer.provide(serviceDependenciesLayer)
+  );
+  const applicationLayer = resolvedApplicationLayer.pipe(Layer.orDie);
+  const commerceEventRuntime =
+    commerceEventConsumer === undefined
+      ? (() => {
+          const runtime = ManagedRuntime.make(resolvedApplicationLayer);
 
-      return createCartService({
-        clock: runtimeClock,
-        committedMutationSynchronizer: createCommittedCartCacheSynchronizer({
-          cache: activeCache,
-          projectionRepository,
-        }),
-        idGenerator: runtimeIdGenerator,
-        mutationCacheCoordinator: createCartMutationCacheCoordinator({
-          cache: activeCache,
-        }),
-        mutationRepository: projectionRepository,
-        outboxWriter,
-        repository: cachedRepository,
-        transactionBoundary,
-      });
-    })
-  );
-  const fulfillmentProviderRegistry = createFulfillmentProviderRegistry([]);
-  const paymentProviderRegistry = createPaymentProviderRegistry([]);
-  const fulfillmentServiceLayer = Layer.effect(
-    FulfillmentService,
-    Effect.gen(function* createProductionFulfillmentService() {
-      const repository = yield* FulfillmentRepositoryService;
-      const runtimeClock = yield* ClockService;
-      const runtimeIdGenerator = yield* IdGeneratorService;
-      const outboxWriter = yield* OutboxWriterService;
-      const transactionBoundary = yield* TransactionBoundaryService;
-
-      return createFulfillmentService({
-        clock: runtimeClock,
-        idGenerator: runtimeIdGenerator,
-        outboxWriter,
-        providerRegistry: fulfillmentProviderRegistry,
-        repository,
-        transactionBoundary,
-      });
-    })
-  );
-  const paymentServiceLayer = Layer.effect(
-    PaymentService,
-    Effect.gen(function* createProductionPaymentService() {
-      const repository = yield* PaymentRepositoryService;
-      const runtimeClock = yield* ClockService;
-      const runtimeIdGenerator = yield* IdGeneratorService;
-
-      return createPaymentService({
-        clock: runtimeClock,
-        idGenerator: runtimeIdGenerator,
-        providerRegistry: paymentProviderRegistry,
-        repository,
-      });
-    })
-  );
-  const promotionServiceLayer = Layer.effect(
-    PromotionService,
-    Effect.gen(function* createProductionPromotionService() {
-      const repository = yield* PromotionRepositoryService;
-      const runtimeClock = yield* ClockService;
-      const runtimeIdGenerator = yield* IdGeneratorService;
-      const outboxWriter = yield* OutboxWriterService;
-      const transactionBoundary = yield* TransactionBoundaryService;
-
-      return createPromotionService({
-        clock: runtimeClock,
-        idGenerator: runtimeIdGenerator,
-        outboxWriter,
-        repository,
-        transactionBoundary,
-      });
-    })
-  );
-  const taxServiceLayer = Layer.effect(
-    TaxService,
-    Effect.gen(function* createProductionTaxService() {
-      const repository = yield* TaxRepositoryService;
-      const runtimeClock = yield* ClockService;
-      const runtimeIdGenerator = yield* IdGeneratorService;
-      const outboxWriter = yield* OutboxWriterService;
-      const transactionBoundary = yield* TransactionBoundaryService;
-
-      return createTaxService({
-        clock: runtimeClock,
-        idGenerator: runtimeIdGenerator,
-        outboxWriter,
-        providers: [manualTaxProvider],
-        repository,
-        transactionBoundary,
-      });
-    })
-  );
-  const orderServiceLayer = Layer.effect(
-    OrderService,
-    Effect.gen(function* createProductionOrderService() {
-      const repository = yield* OrderRepositoryService;
-      const runtimeClock = yield* ClockService;
-      const runtimeIdGenerator = yield* IdGeneratorService;
-      const outboxWriter = yield* OutboxWriterService;
-      const transactionBoundary = yield* TransactionBoundaryService;
-
-      return createOrderService({
-        clock: runtimeClock,
-        idGenerator: runtimeIdGenerator,
-        outboxWriter,
-        repository,
-        transactionBoundary,
-      });
-    })
-  );
-  const moduleServiceLayer = Layer.mergeAll(
-    createStoreServiceFromDependenciesLayer(),
-    createCustomerServiceFromDependenciesLayer(),
-    createProductServiceFromDependenciesLayer(),
-    createPricingServiceFromDependenciesLayer(),
-    createInventoryServiceFromDependenciesLayer(),
-    cartServiceLayer,
-    createRegionServiceFromDependenciesLayer(),
-    createSalesChannelServiceFromDependenciesLayer(),
-    promotionServiceLayer,
-    taxServiceLayer,
-    fulfillmentServiceLayer,
-    paymentServiceLayer,
-    orderServiceLayer,
-    notificationEventServiceLayer
-  ).pipe(Layer.provide(serviceDependenciesLayer));
-  const applicationLayer: EffectLayer<never, never, never> = moduleServiceLayer;
+          return {
+            consumer: {
+              consume: (message: CommerceQueueMessage) =>
+                runtime.runPromise(
+                  NotificationEventService.use((service) =>
+                    service.publishEvent({
+                      causationId: message.causationId,
+                      correlationId: message.correlationId,
+                      name: message.type,
+                      payload: message.payload,
+                      sourceModule: "commerce-events",
+                      subject: message.subject,
+                      workflowRunId: message.workflowRunId,
+                    })
+                  ).pipe(Effect.asVoid)
+                ),
+            } satisfies CommerceQueueConsumer,
+            dispose: runtime.dispose,
+          };
+        })()
+      : {
+          consumer: commerceEventConsumer,
+          dispose: () => Promise.resolve(),
+        };
   const notificationEventRepositoryLayer =
     PostgresNotificationEventRepositoryLayer.pipe(Layer.provide(databaseLayer));
   const processNotificationEventQueue = (
@@ -580,23 +428,6 @@ export const createProductionCommerceRuntimeComposition = ({
         )
       ).pipe(Effect.provide(notificationEventRepositoryLayer))
     );
-  const durableCommerceEventConsumer: CommerceQueueConsumer =
-    commerceEventConsumer ?? {
-      consume: (message) =>
-        Effect.runPromise(
-          NotificationEventService.use((service) =>
-            service.publishEvent({
-              causationId: message.causationId,
-              correlationId: message.correlationId,
-              name: message.type,
-              payload: message.payload,
-              sourceModule: "commerce-events",
-              subject: message.subject,
-              workflowRunId: message.workflowRunId,
-            })
-          ).pipe(Effect.asVoid, Effect.provide(notificationEventServiceLayer))
-        ),
-    };
   const drainNotificationOutbox = (): Promise<void> =>
     Effect.runPromise(
       NotificationEventRepositoryService.use((repository) =>
@@ -630,6 +461,7 @@ export const createProductionCommerceRuntimeComposition = ({
 
   return {
     applicationLayer,
+    apiGroups: moduleComposition.apiGroups,
     diagnostics: {
       adapters: {
         actor: "cloudflare-durable-object",
@@ -643,12 +475,22 @@ export const createProductionCommerceRuntimeComposition = ({
         },
         relational: "effect-postgres",
       },
-      modules: productionModuleKeys,
+      contributionCounts: {
+        adminSurfaces: moduleComposition.adminSurfaces.length,
+        apiGroups: moduleComposition.apiGroups.length,
+        eventHandlers: moduleComposition.eventHandlers.length,
+        providers: moduleComposition.providers.length,
+        services: moduleComposition.services.length,
+        workflows: moduleComposition.workflows.length,
+      },
+      modules: moduleComposition.orderedKeys,
     },
+    dispose: commerceEventRuntime.dispose,
     drainCommerceEventOutbox,
     drainNotificationEventOutbox: drainNotificationOutbox,
-    processCommerceEventQueue: (batch) =>
-      processCommerceEventQueueBatch(batch, durableCommerceEventConsumer),
+    processCommerceEventQueue: (batch: MessageBatch<unknown>) =>
+      processCommerceEventQueueBatch(batch, commerceEventRuntime.consumer),
     processNotificationEventQueue,
+    permissions: moduleComposition.permissions,
   };
 };

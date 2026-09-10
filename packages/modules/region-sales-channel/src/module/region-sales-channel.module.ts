@@ -1,4 +1,7 @@
-import { defineCommerceModule } from "@ecommerce/core";
+import {
+  defineCommerceModule,
+  defineCommerceModuleServiceContribution,
+} from "@ecommerce/core";
 
 import { regionSalesChannelAdminSurfaces } from "../admin";
 import { regionSalesChannelPermissionList } from "../permissions";
@@ -8,6 +11,8 @@ import {
   SALES_CHANNEL_CREATED_EVENT,
   SALES_CHANNEL_PRODUCT_PUBLISHED_EVENT,
   SalesChannelService,
+  createRegionServiceFromDependenciesLayer,
+  createSalesChannelServiceFromDependenciesLayer,
 } from "../services";
 
 export const regionExtensionPoints = {
@@ -23,18 +28,25 @@ export const salesChannelExtensionPoints = {
 export const regionSalesChannelModule = defineCommerceModule({
   contributions: {
     adminSurfaces: regionSalesChannelAdminSurfaces,
-    apiFragments: [],
     eventTypes: [
       REGION_CREATED_EVENT,
       SALES_CHANNEL_CREATED_EVENT,
       SALES_CHANNEL_PRODUCT_PUBLISHED_EVENT,
     ],
     permissions: regionSalesChannelPermissionList,
+    services: [
+      defineCommerceModuleServiceContribution({
+        key: "region-sales-channel:region-service",
+        layer: createRegionServiceFromDependenciesLayer(),
+        service: RegionService,
+      }),
+      defineCommerceModuleServiceContribution({
+        key: "region-sales-channel:sales-channel-service",
+        layer: createSalesChannelServiceFromDependenciesLayer(),
+        service: SalesChannelService,
+      }),
+    ],
   },
-  dependencies: [],
+  dependencies: ["notification-event"],
   key: "region-sales-channel",
-  providedServices: [
-    { key: "region-service", service: RegionService },
-    { key: "sales-channel-service", service: SalesChannelService },
-  ],
 });

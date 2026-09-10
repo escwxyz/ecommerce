@@ -148,3 +148,12 @@
 - [x] 13.5 Wire the production Worker and Effect HTTP error contracts to the atomic mutation services and add a source gate rejecting direct publisher regression
 - [ ] 13.6 Run targeted module, core persistence, PostgreSQL adapter, API, server, repository-wide typecheck, test, lint/static-analysis, and build verification
 - [ ] 13.7 Move best-effort post-commit Cart and Inventory actor synchronization behind a durable `commerce.events` consumer with retry/failure evidence
+
+## 14. Executable commerce module definitions (Issue 23)
+
+- [x] 14.1 Replace legacy API-fragment and provided-service metadata with typed executable service, HTTP, workflow, event-handler, provider, lifecycle, and schema contribution contracts
+- [x] 14.2 Add deterministic dependency and contribution validation before Layer acquisition, including namespaced services and duplicate HTTP, workflow, event, permission, admin, and storage keys
+- [x] 14.3 Add instance-scoped lifecycle start, failed-bootstrap rollback, reverse-order shutdown, and Effect Cause preservation
+- [x] 14.4 Compose all built-in definitions through one explicit catalog and make module disablement remove every contribution together
+- [x] 14.5 Make the Worker consume HTTP groups, permissions, diagnostics, and application Layers from the selected composition instead of parallel entrypoint arrays
+- [x] 14.6 Run targeted package verification, repository tests, formatting/static analysis, typecheck, and build; record completion evidence

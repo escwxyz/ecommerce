@@ -13,7 +13,7 @@ export const inventoryAdminMetadata = {
       description:
         "Manage inventory items, stock locations, levels, reservations, and adjustment events.",
       kind: "navigation",
-      key: "navigation",
+      key: "inventory:navigation",
       label: "Inventory",
       operations: {
         read: { key: "inventoryAvailabilityCheck" },
@@ -27,7 +27,7 @@ export const inventoryAdminMetadata = {
       description:
         "Reserve stock and inspect availability through declared location and channel scope.",
       kind: "resource",
-      key: "resource",
+      key: "inventory:resource",
       label: "Inventory",
       operations: {
         adjust: {

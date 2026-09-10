@@ -1,4 +1,7 @@
-import { defineCommerceModule } from "@ecommerce/core";
+import {
+  defineCommerceModule,
+  defineCommerceModuleServiceContribution,
+} from "@ecommerce/core";
 import { Effect } from "effect";
 
 import { cartAdminSurfaces } from "../admin";
@@ -12,6 +15,7 @@ import {
   CART_LINE_ITEM_UPDATED_EVENT,
   CART_TOTALS_UPDATED_EVENT,
   CartService,
+  createCartServiceFromDependenciesLayer,
 } from "../services";
 
 export const cartExtensionPoints = {
@@ -33,6 +37,13 @@ export const cartModule = defineCommerceModule({
       CART_TOTALS_UPDATED_EVENT,
     ],
     permissions: cartPermissionList,
+    services: [
+      defineCommerceModuleServiceContribution({
+        key: "cart:service",
+        layer: createCartServiceFromDependenciesLayer(),
+        service: CartService,
+      }),
+    ],
     workflowSteps: [
       {
         name: "cart.prepare-checkout",
@@ -58,7 +69,6 @@ export const cartModule = defineCommerceModule({
     "tax",
   ],
   key: "cart",
-  providedServices: [{ key: "cart-service", service: CartService }],
   schema: {
     tables: ["cart", "cart_line_item", "cart_adjustment"],
   },

@@ -43,4 +43,25 @@ describe("server API boundary", () => {
 
     expect(violations).toEqual([]);
   });
+
+  it("discovers built-in HTTP groups from the executable module composition", () => {
+    const workerSource = readFileSync(join(sourceRoot, "index.ts"), "utf8");
+    const compositionSource = readFileSync(
+      join(sourceRoot, "production-commerce-runtime.ts"),
+      "utf8"
+    );
+
+    expect(workerSource).not.toMatch(/\w+EffectHttpApiContribution/);
+    expect(workerSource).not.toMatch(/contributions:\s*\[/);
+    expect(workerSource).toContain("composition.apiGroups");
+    expect(compositionSource).toContain("composeBuiltinCommerceApplication");
+    expect(compositionSource).not.toContain("productionModuleKeys");
+    expect(compositionSource).not.toContain("moduleServiceLayer");
+    expect(compositionSource).not.toMatch(
+      /from\s+["']@ecommerce\/[^"']+\/module["']/
+    );
+    expect(compositionSource).not.toMatch(
+      /\bcreate[A-Z]\w*Service(?:FromDependencies)?(?:Layer)?\b/
+    );
+  });
 });

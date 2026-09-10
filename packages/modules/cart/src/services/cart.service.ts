@@ -122,6 +122,18 @@ export interface CreateCartServiceOptions {
   readonly transactionBoundary: TransactionBoundaryServiceShape;
 }
 
+export type CartRuntimeAdaptersShape = Pick<
+  CreateCartServiceOptions,
+  | "committedMutationSynchronizer"
+  | "mutationCacheCoordinator"
+  | "mutationRepository"
+>;
+
+/** Runtime-selected cache and synchronization adapters for the cart service. */
+export const CartRuntimeAdapters = Context.Service<CartRuntimeAdaptersShape>(
+  "@ecommerce/cart/CartRuntimeAdapters"
+);
+
 const createDefaultClock = (): ClockServiceShape => ({
   now: () => new Date(),
 });
@@ -722,10 +734,12 @@ export const createCartServiceFromDependenciesLayer = () =>
       const idGenerator = yield* IdGeneratorService;
       const outboxWriter = yield* OutboxWriterService;
       const repository = yield* CartRepositoryService;
+      const runtimeAdapters = yield* CartRuntimeAdapters;
       const transactionBoundary = yield* TransactionBoundaryService;
 
       return createCartService({
         clock,
+        ...runtimeAdapters,
         idGenerator,
         outboxWriter,
         repository,

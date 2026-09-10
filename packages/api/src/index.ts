@@ -1,4 +1,10 @@
 export {
+  builtinCommerceModuleCatalog,
+  composeBuiltinCommerceApplication,
+  type BuiltinCommerceModuleKey,
+  type ComposeBuiltinCommerceApplicationOptions,
+} from "./builtin-commerce-modules";
+export {
   createAdminMetadataModel,
   type AdminMetadataContext,
 } from "./admin-metadata";

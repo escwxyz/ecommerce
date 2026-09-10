@@ -5,7 +5,6 @@ import {
   DuplicateModuleError,
   MissingModuleDependencyError,
 } from "../errors/index";
-import { ClockService } from "../services/index";
 import {
   composeCommerceModulePermissions,
   composeCommerceModules,
@@ -17,7 +16,6 @@ describe("commerce module composition", () => {
   it("orders modules after their dependencies", () => {
     const catalogModule = defineCommerceModule({
       key: "catalog",
-      providedServices: [{ key: "clock", service: ClockService }],
     });
     const pricingModule = defineCommerceModule({
       key: "pricing",
@@ -41,14 +39,6 @@ describe("commerce module composition", () => {
     const productModule = defineCommerceModule({
       key: "product",
       contributions: {
-        apiFragments: [
-          {
-            key: "module:product",
-            router: {
-              productList: {},
-            },
-          },
-        ],
         adminSurfaces: [
           {
             key: "product:navigation",
@@ -70,9 +60,6 @@ describe("commerce module composition", () => {
     const graph = composeCommerceModules([productModule] as const);
 
     expect(graph.orderedKeys).toEqual(["product"]);
-    expect(productModule.contributions?.apiFragments?.[0]?.key).toBe(
-      "module:product"
-    );
     expect(productModule.contributions?.adminSurfaces?.[0]?.label).toBe(
       "Products"
     );
