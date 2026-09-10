@@ -11,5 +11,8 @@ describe("pricing module declaration", () => {
     expect(pricingModule.contributions?.eventTypes).toEqual([
       "pricing.price-set-created",
     ]);
+    expect(
+      pricingModule.contributions?.permissions?.map(({ key }) => key)
+    ).toEqual(["pricing:read", "pricing:write"]);
   });
 });

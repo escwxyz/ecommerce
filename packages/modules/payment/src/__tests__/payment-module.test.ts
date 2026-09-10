@@ -43,6 +43,11 @@ describe("payment module", () => {
     expect(contributions.services?.map(({ key }) => key)).toEqual([
       "payment:service",
     ]);
+    expect(contributions.permissions?.map(({ key }) => key)).toEqual([
+      "payment:read",
+      "payment:write",
+    ]);
+    expect(contributions).not.toHaveProperty("apiFragments");
     expect(contributions.adminSurfaces?.[0]?.label).toBe("Payments");
   });
 
