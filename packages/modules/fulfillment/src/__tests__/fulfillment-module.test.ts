@@ -26,7 +26,7 @@ import { createFakeFulfillmentProvider } from "../providers/fake-fulfillment-pro
 import { createResettableInMemoryFulfillmentRepository } from "../repositories";
 
 describe("fulfillment module", () => {
-  it("declares fulfillment events, workflow steps, permissions, and admin metadata without legacy route fragments", () => {
+  it("declares fulfillment metadata and omits legacy route fragments", () => {
     const { contributions } = fulfillmentModule;
 
     if (!contributions) {
@@ -42,6 +42,7 @@ describe("fulfillment module", () => {
     expect(contributions.services?.map(({ key }) => key)).toEqual([
       "fulfillment:service",
     ]);
+    expect(contributions).not.toHaveProperty("apiFragments");
     expect(contributions.adminSurfaces?.[0]?.label).toBe("Fulfillment");
   });
 
