@@ -17,7 +17,7 @@ import {
 
 describe("workflow runtime contracts", () => {
   it("deduplicates workflow starts by idempotency key", async () => {
-    const { publisher } = createEventCollector();
+    const { workflowPublisher: publisher } = createEventCollector();
     const runtime = createInMemoryWorkflowRuntime({
       clock: createStaticClock(new Date("2026-06-03T08:00:00.000Z")),
       ids: createSequenceIdGenerator([
@@ -44,25 +44,29 @@ describe("workflow runtime contracts", () => {
       ],
     });
 
-    const first = await runtime.start({
-      workflow,
-      input: { orderId: "ord_1" },
-      correlationId: "corr_1",
-      idempotencyKey: "order:ord_1",
-    });
+    const first = await Effect.runPromise(
+      runtime.start({
+        workflow,
+        input: { orderId: "ord_1" },
+        correlationId: "corr_1",
+        idempotencyKey: "order:ord_1",
+      })
+    );
 
-    const second = await runtime.start({
-      workflow,
-      input: { orderId: "ord_1" },
-      correlationId: "corr_1",
-      idempotencyKey: "order:ord_1",
-    });
+    const second = await Effect.runPromise(
+      runtime.start({
+        workflow,
+        input: { orderId: "ord_1" },
+        correlationId: "corr_1",
+        idempotencyKey: "order:ord_1",
+      })
+    );
 
     expect(second.runId).toBe(first.runId);
   });
 
   it("records reverse-order compensation when a later step fails", async () => {
-    const { events, publisher } = createEventCollector();
+    const { events, workflowPublisher: publisher } = createEventCollector();
     const metadata = createInMemoryWorkflowMetadataStore();
     const runtime = createInMemoryWorkflowRuntime({
       clock: createStaticClock(new Date("2026-06-03T09:00:00.000Z")),
@@ -101,12 +105,14 @@ describe("workflow runtime contracts", () => {
       ],
     });
 
-    const run = await runtime.start({
-      workflow,
-      input: { cartId: "cart_1" },
-      correlationId: "corr_2",
-      idempotencyKey: "checkout:cart_1",
-    });
+    const run = await Effect.runPromise(
+      runtime.start({
+        workflow,
+        input: { cartId: "cart_1" },
+        correlationId: "corr_2",
+        idempotencyKey: "checkout:cart_1",
+      })
+    );
 
     expect(run.status).toBe("compensated");
     expect(

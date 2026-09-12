@@ -3,10 +3,12 @@ import {
   WORKFLOW_LIFECYCLE_EVENT_NAMES,
   createEventEnvelope,
   createWorkflowRunError,
-  workflowRuntimeLayer,
+  WorkflowRuntimeError,
+  WorkflowRuntimeService,
 } from "@ecommerce/core";
 import type {
   CommerceWorkflowDuplicateQuery,
+  CommerceWorkflowDefinition,
   CommerceWorkflowMetadataRecord,
   CommerceWorkflowMetadataStore,
   CommerceWorkflowReconcileRequest,
@@ -18,9 +20,9 @@ import type {
   CommerceWorkflowRuntimeCapabilities,
   CommerceWorkflowStartRequest,
   CommerceWorkflowStateStore,
-  EventPublisherServiceShape,
+  WorkflowLifecyclePublisher,
 } from "@ecommerce/core";
-import { Schema } from "effect";
+import { Effect, Layer, Option, Schema, Semaphore } from "effect";
 
 export interface CloudflareWorkflowRuntimeBindings {
   readonly workflow: Workflow<CloudflareWorkflowPayload>;
@@ -28,29 +30,36 @@ export interface CloudflareWorkflowRuntimeBindings {
   readonly coordinator?: DurableObjectNamespace;
 }
 
-export interface CloudflareWorkflowPayload {
-  readonly workflowKey: string;
-  readonly workflowVersion: number;
-  readonly input: unknown;
-  readonly correlationId: string;
-  readonly causationId?: string;
-  readonly idempotencyKey?: string;
-  readonly runId: string;
-  readonly traceId?: string;
-  readonly metadata?: Record<string, unknown>;
-  readonly subject?: {
-    readonly type: string;
-    readonly id: string;
-  };
-}
+export const CloudflareWorkflowPayloadSchema = Schema.Struct({
+  causationId: Schema.optional(Schema.String),
+  correlationId: Schema.String,
+  idempotencyKey: Schema.optional(Schema.String),
+  input: Schema.Unknown,
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  runId: Schema.String,
+  schemaVersion: Schema.Number,
+  subject: Schema.optional(
+    Schema.Struct({ id: Schema.String, type: Schema.String })
+  ),
+  traceId: Schema.optional(Schema.String),
+  workflowKey: Schema.String,
+  workflowVersion: Schema.Number,
+});
 
-export interface CloudflareWorkflowDispatchMessage {
-  readonly runId: string;
-  readonly workflowKey: string;
-  readonly workflowVersion: number;
-  readonly correlationId: string;
-  readonly traceId?: string;
-}
+export type CloudflareWorkflowPayload =
+  typeof CloudflareWorkflowPayloadSchema.Type;
+
+export const CloudflareWorkflowDispatchMessageSchema = Schema.Struct({
+  correlationId: Schema.String,
+  runId: Schema.String,
+  schemaVersion: Schema.Number,
+  traceId: Schema.optional(Schema.String),
+  workflowKey: Schema.String,
+  workflowVersion: Schema.Number,
+});
+
+export type CloudflareWorkflowDispatchMessage =
+  typeof CloudflareWorkflowDispatchMessageSchema.Type;
 
 export interface CloudflareWorkflowRuntimeOptions {
   readonly bindings: CloudflareWorkflowRuntimeBindings;
@@ -60,33 +69,16 @@ export interface CloudflareWorkflowRuntimeOptions {
   readonly ids: {
     nextId(): string;
   };
-  readonly publisher: EventPublisherServiceShape;
+  readonly publisher: WorkflowLifecyclePublisher;
   readonly metadataStore?: CommerceWorkflowMetadataStore;
   readonly stateStore?: CommerceWorkflowStateStore;
   readonly telemetry?: CloudflareWorkflowTelemetrySink;
+  /** Definitions available after adapter restart for durable payload decoding. */
+  readonly workflowDefinitions?: readonly CommerceWorkflowDefinition[];
 }
 
-export class CloudflareWorkflowRuntimeFailure extends Schema.TaggedErrorClass<CloudflareWorkflowRuntimeFailure>()(
-  "CloudflareWorkflowRuntimeFailure",
-  {
-    cause: Schema.optional(Schema.Unknown),
-    message: Schema.NonEmptyString,
-    operation: Schema.Literals([
-      "coordinator",
-      "dedupe",
-      "get",
-      "metadata",
-      "publish-event",
-      "queue",
-      "reconcile",
-      "start",
-      "state",
-      "workflow-binding",
-    ]),
-    runId: Schema.optional(Schema.NonEmptyString),
-    workflowKey: Schema.optional(Schema.NonEmptyString),
-  }
-) {}
+/** Compatibility export; all adapters share the portable failure vocabulary. */
+export { WorkflowRuntimeError as CloudflareWorkflowRuntimeFailure };
 
 export interface CloudflareWorkflowTelemetryEvent {
   readonly kind:
@@ -112,7 +104,7 @@ export interface CloudflareWorkflowTelemetryEvent {
 }
 
 export interface CloudflareWorkflowTelemetrySink {
-  record(event: CloudflareWorkflowTelemetryEvent): Promise<void> | void;
+  record(event: CloudflareWorkflowTelemetryEvent): Effect.Effect<void, unknown>;
 }
 
 const CLOUDFLARE_TO_CORE_STATUS: Record<
@@ -144,57 +136,15 @@ const makeDuplicateKey = ({
   idempotencyKey,
 }: CommerceWorkflowDuplicateQuery) => `${workflowKey}:${idempotencyKey}`;
 
-const toWorkflowRuntimeFailure = ({
-  cause,
-  message,
-  operation,
-  runId,
-  workflowKey,
-}: {
-  readonly cause: unknown;
-  readonly message: string;
-  readonly operation: CloudflareWorkflowRuntimeFailure["operation"];
-  readonly runId?: string;
-  readonly workflowKey?: string;
-}) =>
-  new CloudflareWorkflowRuntimeFailure({
-    cause,
-    message,
-    operation,
-    runId,
-    workflowKey,
-  });
-
-const recordWorkflowTelemetry = async (
-  telemetry: CloudflareWorkflowTelemetrySink | undefined,
-  event: CloudflareWorkflowTelemetryEvent
-) => {
-  try {
-    await telemetry?.record(event);
-  } catch {
-    // Telemetry is observational and must not change workflow semantics.
-  }
-};
-
-const createCoordinatorRequest = (
-  runId: string,
-  status: CommerceWorkflowRunStatus
-) =>
-  new Request(`https://workflow-coordinator.internal/runs/${runId}`, {
-    body: JSON.stringify({ runId, status }),
-    headers: {
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-
 const toMetadataRecord = (
   run: CommerceWorkflowRunRecord
 ): CommerceWorkflowMetadataRecord => ({
   runId: run.runId,
   workflowKey: run.workflowKey,
   workflowVersion: run.workflowVersion,
+  schemaVersion: run.schemaVersion,
   status: run.status,
+  dispatchStatus: run.dispatchStatus,
   correlationId: run.correlationId,
   causationId: run.causationId,
   idempotencyKey: run.idempotencyKey,
@@ -215,10 +165,12 @@ const fromMetadataRecord = (
   metadata: record.metadata,
   runId: record.runId,
   status: record.status,
+  dispatchStatus: record.dispatchStatus,
   traceId: record.traceId,
   updatedAt: record.updatedAt,
   workflowKey: record.workflowKey,
   workflowVersion: record.workflowVersion,
+  schemaVersion: record.schemaVersion,
   causationId: record.causationId,
   idempotencyKey: record.idempotencyKey,
   subject: record.subject,
@@ -254,6 +206,7 @@ const toRunState = (
     completedAt: record.completedAt ? toIso(record.completedAt) : undefined,
     correlationId: record.correlationId,
     createdAt: toIso(record.createdAt),
+    dispatchStatus: record.dispatchStatus,
     historyReference: record.historyReference,
     idempotencyKey: record.idempotencyKey,
     traceId: record.traceId,
@@ -262,7 +215,7 @@ const toRunState = (
     nextStepIndex,
     output: record.output,
     runId: record.runId,
-    schemaVersion: record.workflowVersion,
+    schemaVersion: record.schemaVersion,
     status: record.status,
     subject: record.subject,
     updatedAt: toIso(record.updatedAt),
@@ -292,6 +245,7 @@ const fromRunState = (
   completedAt: state.completedAt ? fromIso(state.completedAt) : undefined,
   correlationId: state.correlationId,
   createdAt: fromIso(state.createdAt),
+  dispatchStatus: state.dispatchStatus,
   historyReference: state.historyReference,
   idempotencyKey: state.idempotencyKey,
   input: state.input,
@@ -304,145 +258,38 @@ const fromRunState = (
   updatedAt: fromIso(state.updatedAt),
   workflowKey: state.workflowKey,
   workflowVersion: state.workflowVersion,
+  schemaVersion: state.schemaVersion,
 });
 
-const publishLifecycleEvent = async ({
-  publisher,
-  ids,
-  metadataStore,
-  telemetry,
-  run,
-  name,
-  status,
-  runError,
-}: {
-  publisher: EventPublisherServiceShape;
-  ids: { nextId(): string };
-  metadataStore?: CommerceWorkflowMetadataStore;
-  telemetry?: CloudflareWorkflowTelemetrySink;
-  run: CommerceWorkflowRunRecord;
-  name:
-    | typeof WORKFLOW_LIFECYCLE_EVENT_NAMES.started
-    | typeof WORKFLOW_LIFECYCLE_EVENT_NAMES.completed
-    | typeof WORKFLOW_LIFECYCLE_EVENT_NAMES.failed;
-  status: CommerceWorkflowRunStatus;
-  runError?: CommerceWorkflowRunError;
-}) => {
-  const payload = {
-    correlationId: run.correlationId,
-    occurredAt: run.updatedAt,
-    runId: run.runId,
-    status,
-    workflowKey: run.workflowKey,
-    workflowVersion: run.workflowVersion,
-    causationId: run.causationId,
-    idempotencyKey: run.idempotencyKey,
-    subject: run.subject,
-    traceId: run.traceId,
-    type: name,
-    ...(runError ? { error: runError } : {}),
-    ...(run.output !== undefined &&
-    name === WORKFLOW_LIFECYCLE_EVENT_NAMES.completed
-      ? { output: run.output }
-      : {}),
-  };
-
-  const event = createEventEnvelope({
-    id: ids.nextId(),
-    name,
-    payload,
-    emittedAt: run.updatedAt,
-    correlationId: run.correlationId,
-    causationId: run.causationId,
-    traceId: run.traceId,
-    workflowRunId: run.runId,
-    subject: run.subject,
+/** Wrap only platform promises; rejection details must not expose binding secrets. */
+const platformCall = <A>(
+  operation: WorkflowRuntimeError["operation"],
+  runId: string,
+  call: (signal: AbortSignal) => Promise<A>
+) =>
+  Effect.tryPromise({
+    try: call,
+    catch: () =>
+      new WorkflowRuntimeError({
+        operation,
+        runId,
+        message: `Cloudflare workflow ${operation} failed.`,
+      }),
   });
 
-  try {
-    await publisher.publish(event);
-    await metadataStore?.appendEvent(event);
-    await recordWorkflowTelemetry(telemetry, {
-      correlationId: run.correlationId,
-      idempotencyKey: run.idempotencyKey,
-      kind: "workflow.event.succeeded",
-      runId: run.runId,
-      status,
-      traceId: run.traceId,
-      workflowKey: run.workflowKey,
-      workflowVersion: run.workflowVersion,
-    });
-  } catch (error) {
-    await recordWorkflowTelemetry(telemetry, {
-      correlationId: run.correlationId,
-      idempotencyKey: run.idempotencyKey,
-      kind: "workflow.event.failed",
-      runId: run.runId,
-      status,
-      traceId: run.traceId,
-      workflowKey: run.workflowKey,
-      workflowVersion: run.workflowVersion,
-    });
-    throw toWorkflowRuntimeFailure({
-      cause: error,
-      message: `Failed to publish workflow lifecycle event ${name}.`,
-      operation: "publish-event",
-      runId: run.runId,
-      workflowKey: run.workflowKey,
-    });
-  }
-};
+const recordTelemetry = (
+  telemetry: CloudflareWorkflowTelemetrySink | undefined,
+  event: CloudflareWorkflowTelemetryEvent
+) =>
+  telemetry
+    ? Effect.suspend(() => telemetry.record(event)).pipe(
+        Effect.timeout("1 second"),
+        Effect.catchCause(() => Effect.void)
+      )
+    : Effect.void;
 
-const persistMetadata = async (
-  metadataStore: CommerceWorkflowMetadataStore | undefined,
-  run: CommerceWorkflowRunRecord
-) => {
-  await metadataStore?.upsertRun(toMetadataRecord(run));
-};
-
-const persistState = async (
-  stateStore: CommerceWorkflowStateStore | undefined,
-  run: CommerceWorkflowRunRecord,
-  telemetry: CloudflareWorkflowTelemetrySink | undefined
-) => {
-  if (!stateStore) {
-    return;
-  }
-
-  try {
-    await stateStore.upsertRunState(toRunState(run));
-    await recordWorkflowTelemetry(telemetry, {
-      correlationId: run.correlationId,
-      idempotencyKey: run.idempotencyKey,
-      kind: "workflow.state.succeeded",
-      runId: run.runId,
-      status: run.status,
-      traceId: run.traceId,
-      workflowKey: run.workflowKey,
-      workflowVersion: run.workflowVersion,
-    });
-  } catch (error) {
-    await recordWorkflowTelemetry(telemetry, {
-      correlationId: run.correlationId,
-      idempotencyKey: run.idempotencyKey,
-      kind: "workflow.state.failed",
-      runId: run.runId,
-      status: run.status,
-      traceId: run.traceId,
-      workflowKey: run.workflowKey,
-      workflowVersion: run.workflowVersion,
-    });
-    throw toWorkflowRuntimeFailure({
-      cause: error,
-      message: `Failed to persist Cloudflare workflow run state ${run.runId}.`,
-      operation: "state",
-      runId: run.runId,
-      workflowKey: run.workflowKey,
-    });
-  }
-};
-
-export const createCloudflareWorkflowRuntime = ({
+/** Durable state is authoritative; metadata is only a discovery projection. */
+const acquireWorkflowRuntime = ({
   bindings,
   clock,
   ids,
@@ -450,506 +297,673 @@ export const createCloudflareWorkflowRuntime = ({
   metadataStore,
   stateStore,
   telemetry,
-}: CloudflareWorkflowRuntimeOptions): CommerceWorkflowRuntime => {
+  workflowDefinitions = [],
+}: CloudflareWorkflowRuntimeOptions) => {
   const runs = new Map<string, CommerceWorkflowRunRecord>();
   const idempotencyIndex = new Map<string, string>();
-
-  const recoverFromState = (
-    state: CommerceWorkflowRunState
-  ): CommerceWorkflowRunRecord => {
-    const local = runs.get(state.runId);
-    if (local) {
-      return local;
-    }
-
-    const recovered = fromRunState(state);
-    runs.set(state.runId, recovered);
-    if (state.idempotencyKey) {
+  const definitions = new Map<
+    string,
+    Pick<
+      CommerceWorkflowDefinition,
+      "inputSchema" | "key" | "outputSchema" | "schemaVersion" | "version"
+    >
+  >();
+  const definitionsByKey = new Map(
+    workflowDefinitions.map((definition) => [definition.key, definition])
+  );
+  const starts = Semaphore.makeUnsafe(1);
+  const observe = (
+    kind: CloudflareWorkflowTelemetryEvent["kind"],
+    run: CommerceWorkflowRunRecord
+  ) =>
+    recordTelemetry(telemetry, {
+      kind,
+      runId: run.runId,
+      workflowKey: run.workflowKey,
+      workflowVersion: run.workflowVersion,
+      correlationId: run.correlationId,
+      traceId: run.traceId,
+      idempotencyKey: run.idempotencyKey,
+      status: run.status,
+    });
+  const remember = (run: CommerceWorkflowRunRecord) => {
+    runs.set(run.runId, run);
+    if (run.idempotencyKey) {
       idempotencyIndex.set(
         makeDuplicateKey({
-          idempotencyKey: state.idempotencyKey,
-          workflowKey: state.workflowKey,
-        }),
-        state.runId
-      );
-    }
-    return recovered;
-  };
-
-  const recoverFromMetadata = async (
-    record: CommerceWorkflowMetadataRecord
-  ): Promise<CommerceWorkflowRunRecord> => {
-    const local = runs.get(record.runId);
-    if (local) {
-      return local;
-    }
-
-    let status: Awaited<ReturnType<WorkflowInstance["status"]>>;
-    try {
-      const instance = await bindings.workflow.get(record.runId);
-      status = await instance.status();
-    } catch (error) {
-      throw toWorkflowRuntimeFailure({
-        cause: error,
-        message: `Failed to recover Cloudflare workflow instance ${record.runId}.`,
-        operation: "workflow-binding",
-        runId: record.runId,
-        workflowKey: record.workflowKey,
-      });
-    }
-    const recovered: CommerceWorkflowRunRecord =
-      status.output === undefined
-        ? {
-            ...fromMetadataRecord(record),
-            status: CLOUDFLARE_TO_CORE_STATUS[status.status],
-            updatedAt: clock.now(),
-          }
-        : {
-            ...fromMetadataRecord(record),
-            output: status.output,
-            status: CLOUDFLARE_TO_CORE_STATUS[status.status],
-            updatedAt: clock.now(),
-          };
-
-    runs.set(record.runId, recovered);
-    if (record.idempotencyKey) {
-      idempotencyIndex.set(
-        makeDuplicateKey({
-          idempotencyKey: record.idempotencyKey,
-          workflowKey: record.workflowKey,
-        }),
-        record.runId
-      );
-    }
-    await persistState(stateStore, recovered, telemetry);
-    return recovered;
-  };
-
-  const get = async (
-    runId: string
-  ): Promise<CommerceWorkflowRunRecord | null> => {
-    const local = runs.get(runId);
-    if (local) {
-      return local;
-    }
-
-    const stateRecord = (await stateStore?.getRunState(runId)) ?? null;
-    if (stateRecord) {
-      return recoverFromState(stateRecord);
-    }
-
-    const metadataRecord = (await metadataStore?.getRun(runId)) ?? null;
-    if (metadataRecord) {
-      return recoverFromMetadata(metadataRecord);
-    }
-
-    let status: Awaited<ReturnType<WorkflowInstance["status"]>>;
-    try {
-      const instance = await bindings.workflow.get(runId);
-      status = await instance.status();
-    } catch (error) {
-      throw toWorkflowRuntimeFailure({
-        cause: error,
-        message: `Failed to read Cloudflare workflow instance ${runId}.`,
-        operation: "get",
-        runId,
-      });
-    }
-    const now = clock.now();
-
-    const recoveredBase: CommerceWorkflowRunRecord = {
-      attempts: undefined,
-      correlationId: runId,
-      createdAt: now,
-      historyReference: `cloudflare:${runId}`,
-      input: undefined,
-      runId,
-      status: CLOUDFLARE_TO_CORE_STATUS[status.status],
-      updatedAt: now,
-      workflowKey: "unknown",
-      workflowVersion: 0,
-    };
-    const recovered =
-      status.output === undefined
-        ? recoveredBase
-        : {
-            ...recoveredBase,
-            output: status.output,
-          };
-
-    runs.set(runId, recovered);
-    return recovered;
-  };
-
-  const findDuplicate = async <Output = unknown>(
-    query: CommerceWorkflowDuplicateQuery
-  ): Promise<CommerceWorkflowRunRecord<unknown, Output> | null> => {
-    const duplicateKey = makeDuplicateKey(query);
-    const localRunId = idempotencyIndex.get(duplicateKey);
-
-    if (localRunId) {
-      return (
-        ((await get(localRunId)) as CommerceWorkflowRunRecord<
-          unknown,
-          Output
-        >) ?? null
-      );
-    }
-
-    const stateRecord =
-      (await stateStore?.findRunStateByIdempotencyKey(query)) ?? null;
-    if (stateRecord) {
-      return (await recoverFromState(stateRecord)) as CommerceWorkflowRunRecord<
-        unknown,
-        Output
-      >;
-    }
-
-    const record =
-      (await metadataStore?.findRunByIdempotencyKey(query)) ?? null;
-    if (!record) {
-      return null;
-    }
-
-    return (await recoverFromMetadata(record)) as CommerceWorkflowRunRecord<
-      unknown,
-      Output
-    >;
-  };
-
-  return {
-    capabilities: cloudflareRuntimeCapabilities,
-    dedupe: <Output = unknown>(query: CommerceWorkflowDuplicateQuery) =>
-      findDuplicate<Output>(query),
-    get: async <Output = unknown>(runId: string) =>
-      (await get(runId)) as CommerceWorkflowRunRecord<unknown, Output> | null,
-    reconcile: async <Output = unknown>(
-      request: CommerceWorkflowReconcileRequest
-    ): Promise<CommerceWorkflowRunRecord<unknown, Output> | null> => {
-      const current = await get(request.runId);
-      if (!current) {
-        return null;
-      }
-
-      let instanceStatus: Awaited<ReturnType<WorkflowInstance["status"]>>;
-      try {
-        const instance = await bindings.workflow.get(request.runId);
-        instanceStatus = await instance.status();
-      } catch (error) {
-        await recordWorkflowTelemetry(telemetry, {
-          correlationId: current.correlationId,
-          idempotencyKey: current.idempotencyKey,
-          kind: "workflow.reconcile.failed",
-          runId: current.runId,
-          status: current.status,
-          traceId: current.traceId,
-          workflowKey: current.workflowKey,
-          workflowVersion: current.workflowVersion,
-        });
-        throw toWorkflowRuntimeFailure({
-          cause: error,
-          message: `Failed to reconcile Cloudflare workflow run ${request.runId}.`,
-          operation: "reconcile",
-          runId: request.runId,
-          workflowKey: current.workflowKey,
-        });
-      }
-      const reconciled: CommerceWorkflowRunRecord = {
-        ...current,
-        output: instanceStatus.output,
-        status: CLOUDFLARE_TO_CORE_STATUS[instanceStatus.status],
-        updatedAt: clock.now(),
-      };
-
-      runs.set(request.runId, reconciled);
-      await persistMetadata(metadataStore, reconciled);
-      await persistState(stateStore, reconciled, telemetry);
-      await recordWorkflowTelemetry(telemetry, {
-        correlationId: reconciled.correlationId,
-        idempotencyKey: reconciled.idempotencyKey,
-        kind: "workflow.reconcile.succeeded",
-        runId: reconciled.runId,
-        status: reconciled.status,
-        traceId: reconciled.traceId,
-        workflowKey: reconciled.workflowKey,
-        workflowVersion: reconciled.workflowVersion,
-      });
-
-      if (reconciled.status === "completed") {
-        await publishLifecycleEvent({
-          ids,
-          metadataStore,
-          telemetry,
-          name: WORKFLOW_LIFECYCLE_EVENT_NAMES.completed,
-          publisher,
-          run: reconciled,
-          status: "completed",
-        });
-      }
-
-      if (reconciled.status === "failed") {
-        await publishLifecycleEvent({
-          ids,
-          metadataStore,
-          telemetry,
-          name: WORKFLOW_LIFECYCLE_EVENT_NAMES.failed,
-          publisher,
-          runError: createWorkflowRunError(instanceStatus.error),
-          run: reconciled,
-          status: "failed",
-        });
-      }
-
-      return reconciled as CommerceWorkflowRunRecord<unknown, Output>;
-    },
-    start: async <Input, Output>(
-      request: CommerceWorkflowStartRequest<Input, Output>
-    ): Promise<CommerceWorkflowRunRecord<Input, Output>> => {
-      if (request.idempotencyKey) {
-        const duplicate = await findDuplicate<Output>({
-          idempotencyKey: request.idempotencyKey,
-          workflowKey: request.workflow.key,
-        });
-
-        if (duplicate) {
-          return duplicate as CommerceWorkflowRunRecord<Input, Output>;
-        }
-      }
-
-      const createdAt = clock.now();
-      const runId = request.runId ?? ids.nextId();
-      const run: CommerceWorkflowRunRecord<Input, Output> = {
-        correlationId: request.correlationId,
-        createdAt,
-        historyReference: `cloudflare:${runId}`,
-        input: request.input,
-        metadata: request.metadata,
-        runId,
-        status: "pending",
-        updatedAt: createdAt,
-        workflowKey: request.workflow.key,
-        workflowVersion: request.workflow.version,
-        causationId: request.causationId,
-        idempotencyKey: request.idempotencyKey,
-        subject: request.subject,
-        traceId: request.traceId,
-      };
-
-      if (stateStore) {
-        try {
-          const registration = await stateStore.registerRunState(
-            toRunState(run)
-          );
-
-          if (registration.status === "duplicate") {
-            return (await recoverFromState(
-              registration.state
-            )) as CommerceWorkflowRunRecord<Input, Output>;
-          }
-        } catch (error) {
-          await recordWorkflowTelemetry(telemetry, {
-            correlationId: run.correlationId,
-            idempotencyKey: run.idempotencyKey,
-            kind: "workflow.state.failed",
-            runId: run.runId,
-            status: run.status,
-            traceId: run.traceId,
-            workflowKey: run.workflowKey,
-            workflowVersion: run.workflowVersion,
-          });
-          throw toWorkflowRuntimeFailure({
-            cause: error,
-            message: `Failed to register Cloudflare workflow run state ${run.runId}.`,
-            operation: "state",
-            runId: run.runId,
-            workflowKey: run.workflowKey,
-          });
-        }
-      }
-
-      if (metadataStore) {
-        let registration: Awaited<ReturnType<typeof metadataStore.registerRun>>;
-        try {
-          registration = await metadataStore.registerRun(toMetadataRecord(run));
-        } catch (error) {
-          throw toWorkflowRuntimeFailure({
-            cause: error,
-            message: `Failed to register Cloudflare workflow metadata ${run.runId}.`,
-            operation: "metadata",
-            runId: run.runId,
-            workflowKey: run.workflowKey,
-          });
-        }
-
-        if (registration.status === "duplicate") {
-          return (await recoverFromMetadata(
-            registration.record
-          )) as CommerceWorkflowRunRecord<Input, Output>;
-        }
-      }
-
-      const payload: CloudflareWorkflowPayload = {
-        correlationId: request.correlationId,
-        input: request.input,
-        metadata: request.metadata,
-        runId,
-        workflowKey: request.workflow.key,
-        workflowVersion: request.workflow.version,
-        causationId: request.causationId,
-        idempotencyKey: request.idempotencyKey,
-        subject: request.subject,
-        traceId: request.traceId,
-      };
-
-      let instance: WorkflowInstance;
-      try {
-        instance = await bindings.workflow.create({
-          id: runId,
-          params: payload,
-        });
-      } catch (error) {
-        await recordWorkflowTelemetry(telemetry, {
-          correlationId: run.correlationId,
+          workflowKey: run.workflowKey,
           idempotencyKey: run.idempotencyKey,
-          kind: "workflow.start.failed",
+        }),
+        run.runId
+      );
+    }
+    return run;
+  };
+  const decodeState = (state: unknown) =>
+    Schema.decodeUnknownEffect(CommerceWorkflowRunStateSchema)(state).pipe(
+      Effect.mapError(
+        () =>
+          new WorkflowRuntimeError({
+            operation: "state",
+            message: "Invalid persisted workflow state.",
+          })
+      ),
+      Effect.flatMap((decoded) => {
+        const definition =
+          definitions.get(decoded.runId) ??
+          definitionsByKey.get(decoded.workflowKey);
+        if (
+          definition &&
+          (decoded.workflowKey !== definition.key ||
+            decoded.workflowVersion !== definition.version ||
+            decoded.schemaVersion !==
+              (definition.schemaVersion ?? definition.version))
+        ) {
+          return Effect.fail(
+            new WorkflowRuntimeError({
+              operation: "state",
+              runId: decoded.runId,
+              message: "Unsupported workflow state version.",
+            })
+          );
+        }
+        return Effect.succeed(decoded);
+      }),
+      Effect.flatMap((decoded) => {
+        const definition =
+          definitions.get(decoded.runId) ??
+          definitionsByKey.get(decoded.workflowKey);
+        if (!definition) {
+          return Effect.succeed(decoded);
+        }
+        const outputValidation =
+          decoded.status === "completed"
+            ? Schema.decodeUnknownEffect(definition.outputSchema)(
+                decoded.output
+              )
+            : Effect.void;
+        return Schema.decodeUnknownEffect(definition.inputSchema)(
+          decoded.input
+        ).pipe(
+          Effect.andThen(outputValidation),
+          Effect.as(decoded),
+          Effect.mapError(
+            () =>
+              new WorkflowRuntimeError({
+                operation: "state",
+                runId: decoded.runId,
+                message: "Invalid persisted workflow payload.",
+              })
+          )
+        );
+      }),
+      Effect.map((decoded) => remember(fromRunState(decoded)))
+    );
+  const persist = (run: CommerceWorkflowRunRecord) =>
+    Effect.gen(function* persistCloudflareWorkflowEffect() {
+      // Save replay state before updating the query projection.
+      if (stateStore) {
+        const state = yield* Effect.try({
+          try: () => toRunState(run),
+          catch: () =>
+            new WorkflowRuntimeError({
+              operation: "state",
+              runId: run.runId,
+              message: "Invalid workflow state.",
+            }),
+        });
+        yield* stateStore
+          .upsertRunState(state)
+          .pipe(Effect.tapError(() => observe("workflow.state.failed", run)));
+        yield* observe("workflow.state.succeeded", run);
+      }
+      if (metadataStore) {
+        yield* metadataStore.upsertRun(toMetadataRecord(run));
+      }
+      remember(run);
+    }).pipe(Effect.withSpan("workflow.persistence"));
+  const publish = (
+    run: CommerceWorkflowRunRecord,
+    name:
+      | typeof WORKFLOW_LIFECYCLE_EVENT_NAMES.started
+      | typeof WORKFLOW_LIFECYCLE_EVENT_NAMES.completed
+      | typeof WORKFLOW_LIFECYCLE_EVENT_NAMES.failed,
+    runError?: CommerceWorkflowRunError
+  ) =>
+    Effect.gen(function* publishCloudflareWorkflowEffect() {
+      const event = createEventEnvelope({
+        id: `workflow:${run.runId}:${name}:run:terminal`,
+        name,
+        emittedAt: run.updatedAt,
+        correlationId: run.correlationId,
+        causationId: run.causationId,
+        traceId: run.traceId,
+        workflowRunId: run.runId,
+        subject: run.subject,
+        payload: {
+          correlationId: run.correlationId,
+          occurredAt: run.updatedAt,
           runId: run.runId,
           status: run.status,
           workflowKey: run.workflowKey,
           workflowVersion: run.workflowVersion,
-        });
-        throw toWorkflowRuntimeFailure({
-          cause: error,
-          message: `Failed to create Cloudflare workflow instance ${runId}.`,
-          operation: "workflow-binding",
-          runId,
-          workflowKey: request.workflow.key,
-        });
+          causationId: run.causationId,
+          idempotencyKey: run.idempotencyKey,
+          subject: run.subject,
+          traceId: run.traceId,
+          type: name,
+          ...(runError ? { error: runError } : {}),
+          ...(name === WORKFLOW_LIFECYCLE_EVENT_NAMES.completed &&
+          run.output !== undefined
+            ? { output: run.output }
+            : {}),
+        },
+      });
+      yield* publisher
+        .publish(event)
+        .pipe(Effect.tapError(() => observe("workflow.event.failed", run)));
+      if (metadataStore) {
+        yield* metadataStore.appendEvent(event);
       }
-
-      if (bindings.dispatchQueue) {
-        try {
-          await bindings.dispatchQueue.send({
-            correlationId: request.correlationId,
+      yield* observe("workflow.event.succeeded", run);
+    }).pipe(Effect.withSpan("workflow.lifecycle"));
+  const status = (
+    runId: string,
+    operation: WorkflowRuntimeError["operation"]
+  ) =>
+    platformCall(operation, runId, async () => {
+      // Cloudflare create/get/status cannot be cancelled. A later reconcile reads
+      // durable platform state rather than assuming interruption cancelled the run.
+      const instance = await bindings.workflow.get(runId);
+      return instance.status();
+    });
+  const dispatch = (registeredRun: CommerceWorkflowRunRecord) =>
+    Effect.gen(function* dispatchCloudflareWorkflowEffect() {
+      let run = registeredRun;
+      if (
+        run.dispatchStatus === undefined ||
+        run.dispatchStatus === "registered"
+      ) {
+        const params = yield* Schema.decodeUnknownEffect(
+          CloudflareWorkflowPayloadSchema
+        )({
+          causationId: run.causationId,
+          correlationId: run.correlationId,
+          idempotencyKey: run.idempotencyKey,
+          input: run.input,
+          metadata: run.metadata,
+          runId: run.runId,
+          schemaVersion: run.schemaVersion,
+          subject: run.subject,
+          traceId: run.traceId,
+          workflowKey: run.workflowKey,
+          workflowVersion: run.workflowVersion,
+        }).pipe(
+          Effect.mapError(
+            () =>
+              new WorkflowRuntimeError({
+                operation: "validation",
+                runId: run.runId,
+                message: "Invalid Cloudflare workflow payload.",
+              })
+          )
+        );
+        const instance = yield* platformCall("start", run.runId, () =>
+          bindings.workflow.create({ id: run.runId, params })
+        ).pipe(Effect.tapError(() => observe("workflow.start.failed", run)));
+        run = {
+          ...run,
+          dispatchStatus: "workflow-created",
+          historyReference: `cloudflare:${instance.id}`,
+          updatedAt: clock.now(),
+        };
+        yield* persist(run);
+      }
+      if (run.dispatchStatus === "workflow-created") {
+        if (bindings.dispatchQueue) {
+          const queue = bindings.dispatchQueue;
+          const message = yield* Schema.decodeUnknownEffect(
+            CloudflareWorkflowDispatchMessageSchema
+          )({
+            correlationId: run.correlationId,
+            runId: run.runId,
+            schemaVersion: run.schemaVersion,
+            traceId: run.traceId,
+            workflowKey: run.workflowKey,
+            workflowVersion: run.workflowVersion,
+          }).pipe(
+            Effect.mapError(
+              () =>
+                new WorkflowRuntimeError({
+                  operation: "validation",
+                  runId: run.runId,
+                  message: "Invalid Cloudflare queue payload.",
+                })
+            )
+          );
+          yield* platformCall("queue", run.runId, () =>
+            queue.send(message)
+          ).pipe(Effect.tapError(() => observe("workflow.queue.failed", run)));
+          yield* observe("workflow.queue.succeeded", run);
+        }
+        run = {
+          ...run,
+          dispatchStatus: "queue-dispatched",
+          updatedAt: clock.now(),
+        };
+        yield* persist(run);
+      }
+      if (run.dispatchStatus === "queue-dispatched") {
+        if (bindings.coordinator) {
+          const namespace = bindings.coordinator;
+          yield* platformCall("coordinator", run.runId, async (signal) => {
+            const stub = namespace.getByName(run.runId);
+            const response = await stub.fetch(
+              new Request(
+                `https://workflow-coordinator.internal/runs/${run.runId}`,
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ runId: run.runId, status: "pending" }),
+                  signal,
+                }
+              )
+            );
+            if (!response.ok) {
+              throw new Error("Coordinator rejected request.");
+            }
+          }).pipe(
+            Effect.tapError(() => observe("workflow.coordinator.failed", run))
+          );
+          yield* observe("workflow.coordinator.succeeded", run);
+        }
+        run = { ...run, dispatchStatus: "coordinated", updatedAt: clock.now() };
+        yield* persist(run);
+      }
+      return run;
+    });
+  const recoverMetadata = (record: CommerceWorkflowMetadataRecord) =>
+    Effect.gen(function* recoverMetadataWorkflowEffect() {
+      if (stateStore) {
+        const durable = yield* stateStore.getRunState(record.runId);
+        if (Option.isSome(durable)) {
+          return yield* decodeState(durable.value);
+        }
+      }
+      const current = yield* status(record.runId, "lookup");
+      const recovered = {
+        ...fromMetadataRecord(record),
+        status: CLOUDFLARE_TO_CORE_STATUS[current.status],
+        output: current.output,
+        updatedAt: clock.now(),
+      };
+      yield* persist(recovered);
+      return recovered;
+    });
+  const get = (runId: string) =>
+    Effect.gen(function* getCloudflareWorkflowEffect() {
+      if (stateStore) {
+        const durable = yield* stateStore.getRunState(runId);
+        if (Option.isSome(durable)) {
+          return Option.some(yield* decodeState(durable.value));
+        }
+      }
+      const local = runs.get(runId);
+      if (local) {
+        return Option.some(local);
+      }
+      if (metadataStore) {
+        const record = yield* metadataStore.getRun(runId);
+        if (Option.isSome(record)) {
+          return Option.some(yield* recoverMetadata(record.value));
+        }
+      }
+      // A missing registration is absence. Arbitrary platform exceptions are never
+      // interpreted as missing runs or fabricated workflow identities.
+      return Option.none<CommerceWorkflowRunRecord>();
+    }).pipe(Effect.withSpan("workflow.lookup"));
+  const dedupe = (query: CommerceWorkflowDuplicateQuery) =>
+    Effect.gen(function* dedupeCloudflareWorkflowEffect() {
+      if (stateStore) {
+        const durable = yield* stateStore.findRunStateByIdempotencyKey(query);
+        if (Option.isSome(durable)) {
+          return Option.some(yield* decodeState(durable.value));
+        }
+      }
+      const localId = idempotencyIndex.get(makeDuplicateKey(query));
+      if (localId) {
+        return yield* get(localId);
+      }
+      if (metadataStore) {
+        const record = yield* metadataStore.findRunByIdempotencyKey(query);
+        if (Option.isSome(record)) {
+          return Option.some(yield* recoverMetadata(record.value));
+        }
+      }
+      return Option.none<CommerceWorkflowRunRecord>();
+    });
+  const runtime: CommerceWorkflowRuntime = {
+    capabilities: cloudflareRuntimeCapabilities,
+    get: <Output = unknown>(runId: string) =>
+      get(runId) as Effect.Effect<
+        Option.Option<CommerceWorkflowRunRecord<unknown, Output>>,
+        WorkflowRuntimeError
+      >,
+    dedupe: <Output = unknown>(query: CommerceWorkflowDuplicateQuery) =>
+      dedupe(query) as Effect.Effect<
+        Option.Option<CommerceWorkflowRunRecord<unknown, Output>>,
+        WorkflowRuntimeError
+      >,
+    reconcile: <Output = unknown>(request: CommerceWorkflowReconcileRequest) =>
+      // Reconciliation resumes dispatch, validates platform state, and replays events.
+      // oxlint-disable-next-line eslint/complexity
+      Effect.gen(function* reconcile() {
+        const found = yield* get(request.runId);
+        if (Option.isNone(found)) {
+          return Option.none<CommerceWorkflowRunRecord<unknown, Output>>();
+        }
+        const current =
+          found.value.status === "pending" &&
+          found.value.dispatchStatus !== "coordinated"
+            ? yield* dispatch(found.value)
+            : found.value;
+        const currentIsTerminal =
+          current.status === "completed" ||
+          current.status === "failed" ||
+          current.status === "compensated";
+        if (currentIsTerminal) {
+          if (current.status === "completed") {
+            yield* publish(current, WORKFLOW_LIFECYCLE_EVENT_NAMES.completed);
+          } else {
+            let storedFailure: CommerceWorkflowRunError | undefined;
+            for (const attempt of current.attempts ?? []) {
+              if (attempt.status === "failed") {
+                storedFailure = attempt.error;
+              }
+            }
+            yield* publish(
+              current,
+              WORKFLOW_LIFECYCLE_EVENT_NAMES.failed,
+              storedFailure ??
+                createWorkflowRunError(
+                  new Error("Cloudflare workflow terminated.")
+                )
+            );
+          }
+          yield* observe("workflow.reconcile.succeeded", current);
+          return Option.some(
+            current as CommerceWorkflowRunRecord<unknown, Output>
+          );
+        }
+        const remote = yield* status(request.runId, "reconciliation").pipe(
+          Effect.tapError(() => observe("workflow.reconcile.failed", current))
+        );
+        // A delayed platform projection must not regress a terminal durable run.
+        const nextStatus = CLOUDFLARE_TO_CORE_STATUS[remote.status];
+        const definition =
+          definitions.get(current.runId) ??
+          definitionsByKey.get(current.workflowKey);
+        const decodedOutput =
+          nextStatus === "completed"
+            ? yield* definition
+                ? Schema.decodeUnknownEffect(definition.outputSchema)(
+                    remote.output
+                  ).pipe(
+                    Effect.mapError(
+                      () =>
+                        new WorkflowRuntimeError({
+                          operation: "validation",
+                          runId: current.runId,
+                          workflowKey: current.workflowKey,
+                          message: "Invalid Cloudflare workflow output.",
+                        })
+                    )
+                  )
+                : Effect.fail(
+                    new WorkflowRuntimeError({
+                      operation: "validation",
+                      runId: current.runId,
+                      workflowKey: current.workflowKey,
+                      message: "Workflow definition unavailable for recovery.",
+                    })
+                  )
+            : remote.output;
+        const remoteError =
+          nextStatus === "failed"
+            ? createWorkflowRunError(remote.error)
+            : undefined;
+        const reconciled = {
+          ...current,
+          output: decodedOutput,
+          status: nextStatus,
+          updatedAt: clock.now(),
+          attempts: remoteError
+            ? [
+                ...(current.attempts ?? []),
+                {
+                  attempt: 1,
+                  completedAt: clock.now(),
+                  error: remoteError,
+                  phase: "run" as const,
+                  startedAt: current.updatedAt,
+                  status: "failed" as const,
+                  stepId: `${current.runId}:cloudflare`,
+                  stepName: "cloudflare-workflow",
+                },
+              ]
+            : current.attempts,
+        };
+        yield* persist(reconciled);
+        if (reconciled.status !== current.status) {
+          if (reconciled.status === "completed") {
+            yield* publish(
+              reconciled,
+              WORKFLOW_LIFECYCLE_EVENT_NAMES.completed
+            );
+          }
+          if (reconciled.status === "failed") {
+            yield* publish(
+              reconciled,
+              WORKFLOW_LIFECYCLE_EVENT_NAMES.failed,
+              remoteError
+            );
+          }
+        }
+        yield* observe("workflow.reconcile.succeeded", reconciled);
+        return Option.some(
+          reconciled as CommerceWorkflowRunRecord<unknown, Output>
+        );
+      }).pipe(Effect.withSpan("workflow.reconciliation")),
+    start: <Input, Output, Requirements = never, Error = unknown>(
+      request: CommerceWorkflowStartRequest<
+        Input,
+        Output,
+        Record<string, unknown>,
+        Requirements,
+        Error
+      >
+    ) =>
+      starts.withPermit(
+        // Start coordinates validation, atomic registration, recovery, and dispatch.
+        // oxlint-disable-next-line eslint/complexity
+        Effect.gen(function* start() {
+          const decodedInput = yield* Schema.decodeUnknownEffect(
+            request.workflow.inputSchema
+          )(request.input).pipe(
+            Effect.mapError(
+              () =>
+                new WorkflowRuntimeError({
+                  operation: "validation",
+                  workflowKey: request.workflow.key,
+                  message: "Invalid workflow input.",
+                })
+            )
+          );
+          if (request.idempotencyKey) {
+            const duplicate = yield* dedupe({
+              workflowKey: request.workflow.key,
+              idempotencyKey: request.idempotencyKey,
+            });
+            if (Option.isSome(duplicate)) {
+              definitions.set(duplicate.value.runId, request.workflow);
+              if (
+                duplicate.value.workflowVersion !== request.workflow.version ||
+                duplicate.value.schemaVersion !==
+                  (request.workflow.schemaVersion ?? request.workflow.version)
+              ) {
+                return yield* Effect.fail(
+                  new WorkflowRuntimeError({
+                    operation: "validation",
+                    runId: duplicate.value.runId,
+                    workflowKey: request.workflow.key,
+                    message: "Unsupported workflow recovery version.",
+                  })
+                );
+              }
+              yield* Schema.decodeUnknownEffect(request.workflow.inputSchema)(
+                duplicate.value.input
+              ).pipe(
+                Effect.mapError(
+                  () =>
+                    new WorkflowRuntimeError({
+                      operation: "validation",
+                      runId: duplicate.value.runId,
+                      workflowKey: request.workflow.key,
+                      message: "Invalid persisted workflow input.",
+                    })
+                )
+              );
+              if (duplicate.value.status === "completed") {
+                yield* Schema.decodeUnknownEffect(
+                  request.workflow.outputSchema
+                )(duplicate.value.output).pipe(
+                  Effect.mapError(
+                    () =>
+                      new WorkflowRuntimeError({
+                        operation: "validation",
+                        runId: duplicate.value.runId,
+                        workflowKey: request.workflow.key,
+                        message: "Invalid persisted workflow output.",
+                      })
+                  )
+                );
+              }
+              const resumed =
+                duplicate.value.status === "pending" &&
+                duplicate.value.dispatchStatus !== "coordinated"
+                  ? yield* dispatch(duplicate.value)
+                  : duplicate.value;
+              if (resumed.status === "pending") {
+                yield* publish(resumed, WORKFLOW_LIFECYCLE_EVENT_NAMES.started);
+              }
+              return resumed as CommerceWorkflowRunRecord<Input, Output>;
+            }
+          }
+          const now = clock.now();
+          const runId = request.runId ?? ids.nextId();
+          const run: CommerceWorkflowRunRecord<Input, Output> = {
             runId,
-            traceId: request.traceId,
             workflowKey: request.workflow.key,
             workflowVersion: request.workflow.version,
-          });
-          await recordWorkflowTelemetry(telemetry, {
-            correlationId: run.correlationId,
-            idempotencyKey: run.idempotencyKey,
-            kind: "workflow.queue.succeeded",
-            runId: run.runId,
-            status: run.status,
-            traceId: run.traceId,
-            workflowKey: run.workflowKey,
-            workflowVersion: run.workflowVersion,
-          });
-        } catch (error) {
-          await recordWorkflowTelemetry(telemetry, {
-            correlationId: run.correlationId,
-            idempotencyKey: run.idempotencyKey,
-            kind: "workflow.queue.failed",
-            runId: run.runId,
-            status: run.status,
-            traceId: run.traceId,
-            workflowKey: run.workflowKey,
-            workflowVersion: run.workflowVersion,
-          });
-          throw toWorkflowRuntimeFailure({
-            cause: error,
-            message: `Failed to enqueue Cloudflare workflow dispatch ${runId}.`,
-            operation: "queue",
-            runId,
-            workflowKey: request.workflow.key,
-          });
-        }
-      }
-
-      if (bindings.coordinator) {
-        try {
-          const stub = bindings.coordinator.getByName(runId);
-          await stub.fetch(createCoordinatorRequest(runId, "pending"));
-          await recordWorkflowTelemetry(telemetry, {
-            correlationId: run.correlationId,
-            idempotencyKey: run.idempotencyKey,
-            kind: "workflow.coordinator.succeeded",
-            runId: run.runId,
-            status: run.status,
-            traceId: run.traceId,
-            workflowKey: run.workflowKey,
-            workflowVersion: run.workflowVersion,
-          });
-        } catch (error) {
-          await recordWorkflowTelemetry(telemetry, {
-            correlationId: run.correlationId,
-            idempotencyKey: run.idempotencyKey,
-            kind: "workflow.coordinator.failed",
-            runId: run.runId,
-            status: run.status,
-            traceId: run.traceId,
-            workflowKey: run.workflowKey,
-            workflowVersion: run.workflowVersion,
-          });
-          throw toWorkflowRuntimeFailure({
-            cause: error,
-            message: `Failed to coordinate Cloudflare workflow run ${runId}.`,
-            operation: "coordinator",
-            runId,
-            workflowKey: request.workflow.key,
-          });
-        }
-      }
-
-      const startedRun: CommerceWorkflowRunRecord<Input, Output> = {
-        ...run,
-        historyReference: `cloudflare:${instance.id}`,
-      };
-
-      runs.set(runId, startedRun);
-      if (request.idempotencyKey) {
-        idempotencyIndex.set(
-          makeDuplicateKey({
+            schemaVersion:
+              request.workflow.schemaVersion ?? request.workflow.version,
+            input: decodedInput as Input,
+            status: "pending",
+            dispatchStatus: "registered",
+            correlationId: request.correlationId,
+            causationId: request.causationId,
             idempotencyKey: request.idempotencyKey,
-            workflowKey: request.workflow.key,
-          }),
-          runId
-        );
-      }
-
-      await persistMetadata(metadataStore, startedRun);
-      await persistState(stateStore, startedRun, telemetry);
-      await publishLifecycleEvent({
-        ids,
-        metadataStore,
-        telemetry,
-        name: WORKFLOW_LIFECYCLE_EVENT_NAMES.started,
-        publisher,
-        run: startedRun,
-        status: "pending",
-      });
-      await recordWorkflowTelemetry(telemetry, {
-        correlationId: startedRun.correlationId,
-        idempotencyKey: startedRun.idempotencyKey,
-        kind: "workflow.start.succeeded",
-        runId: startedRun.runId,
-        status: startedRun.status,
-        traceId: startedRun.traceId,
-        workflowKey: startedRun.workflowKey,
-        workflowVersion: startedRun.workflowVersion,
-      });
-
-      return startedRun;
-    },
+            subject: request.subject,
+            traceId: request.traceId,
+            metadata: request.metadata,
+            createdAt: now,
+            updatedAt: now,
+            historyReference: `cloudflare:${runId}`,
+          };
+          definitions.set(runId, request.workflow);
+          const durable = yield* Effect.try({
+            try: () => toRunState(run),
+            catch: () =>
+              new WorkflowRuntimeError({
+                operation: "validation",
+                runId,
+                message: "Invalid workflow start request.",
+              }),
+          });
+          if (stateStore) {
+            const registration = yield* stateStore.registerRunState(durable);
+            if (registration.status === "duplicate") {
+              const existing = yield* decodeState(registration.state);
+              if (
+                existing.workflowKey !== request.workflow.key ||
+                existing.workflowVersion !== request.workflow.version ||
+                existing.schemaVersion !==
+                  (request.workflow.schemaVersion ?? request.workflow.version)
+              ) {
+                return yield* Effect.fail(
+                  new WorkflowRuntimeError({
+                    operation: "validation",
+                    runId: existing.runId,
+                    workflowKey: request.workflow.key,
+                    message: "Unsupported workflow recovery version.",
+                  })
+                );
+              }
+              const resumed =
+                existing.status === "pending" &&
+                existing.dispatchStatus !== "coordinated"
+                  ? yield* dispatch(existing)
+                  : existing;
+              if (resumed.status === "pending") {
+                yield* publish(resumed, WORKFLOW_LIFECYCLE_EVENT_NAMES.started);
+              }
+              return resumed as CommerceWorkflowRunRecord<Input, Output>;
+            }
+          }
+          if (metadataStore) {
+            const registration = yield* metadataStore.registerRun(
+              toMetadataRecord(run)
+            );
+            if (registration.status === "duplicate" && !stateStore) {
+              return (yield* recoverMetadata(
+                registration.record
+              )) as CommerceWorkflowRunRecord<Input, Output>;
+            }
+          }
+          // Registration and every dispatch checkpoint are durable, so a repeated
+          // idempotent start resumes only the incomplete platform operation.
+          remember(run);
+          const startedRun = (yield* dispatch(
+            run
+          )) as CommerceWorkflowRunRecord<Input, Output>;
+          yield* publish(startedRun, WORKFLOW_LIFECYCLE_EVENT_NAMES.started);
+          yield* observe("workflow.start.succeeded", startedRun);
+          return startedRun;
+        }).pipe(Effect.withSpan("workflow.start"))
+      ),
+  };
+  return {
+    runtime,
+    release: Effect.sync(() => {
+      runs.clear();
+      idempotencyIndex.clear();
+    }),
   };
 };
 
-/**
- * Exposes the Cloudflare workflow adapter through the runtime-neutral Effect
- * workflow service tag. The service itself keeps the existing Promise-shaped
- * workflow contract while normalizing platform rejections to schema-backed
- * `CloudflareWorkflowRuntimeFailure` instances at the adapter boundary.
- */
+/** Construct an isolated workflow adapter for an explicitly owned host lifetime. */
+export const createCloudflareWorkflowRuntime = (
+  options: CloudflareWorkflowRuntimeOptions
+): CommerceWorkflowRuntime => acquireWorkflowRuntime(options).runtime;
+
+/** Each Layer build acquires an isolated runtime; Effect owns its scope. */
 export const createCloudflareWorkflowRuntimeLayer = (
   options: CloudflareWorkflowRuntimeOptions
-) => workflowRuntimeLayer(createCloudflareWorkflowRuntime(options));
+) =>
+  Layer.effect(
+    WorkflowRuntimeService,
+    Effect.acquireRelease(
+      Effect.sync(() => acquireWorkflowRuntime(options)),
+      (resource) => resource.release
+    ).pipe(Effect.map((resource) => resource.runtime))
+  );

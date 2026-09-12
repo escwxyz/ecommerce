@@ -87,3 +87,51 @@ Workflow contracts SHALL remain platform-neutral while Cloudflare Queues, Workfl
 #### Scenario: Workflow is tested locally
 - **WHEN** a workflow test provides deterministic runtime services
 - **THEN** it MUST execute retry, compensation, and recovery behavior without Cloudflare bindings
+
+### Requirement: Workflow runtime operations use one Effect execution model
+`WorkflowRuntimeService` SHALL expose `start`, `get`, `dedupe`, and `reconcile` as typed Effects. Workflow state storage, metadata projections, and lifecycle publication SHALL also expose Effects. Lookup absence SHALL succeed with `Option.none`. Runtime-neutral workflow execution SHALL NOT invoke a nested Effect runtime or branch on Promise-or-value contracts.
+
+#### Scenario: Caller starts a workflow requiring a service
+- **WHEN** a workflow step declares an Effect requirement
+- **THEN** the runtime start Effect MUST preserve that requirement until an enclosing Layer provides it
+
+#### Scenario: Persistence fails during lookup
+- **WHEN** the state or metadata adapter cannot read a workflow
+- **THEN** lookup MUST return a schema-backed operation-specific failure rather than an empty optional result
+
+#### Scenario: Running workflow is interrupted
+- **WHEN** an executing fiber is interrupted during a step or retry delay
+- **THEN** the runtime MUST preserve completed outcomes and the interruption Cause without recording a false failed step or triggering terminal compensation
+
+#### Scenario: Workflow fails with a defect
+- **WHEN** a step dies with a programming defect
+- **THEN** the runtime MUST preserve the defect Cause rather than translate it to an expected business rejection
+
+#### Scenario: Duplicate starts race
+- **WHEN** concurrent starts use the same workflow and idempotency key
+- **THEN** atomic registration MUST converge on one logical run
+
+#### Scenario: Adapter reports stale metadata
+- **WHEN** durable run state contains more complete execution progress than metadata
+- **THEN** recovery MUST use durable state as the replay authority
+
+#### Scenario: Dispatch or lifecycle publication is interrupted
+- **WHEN** a registered Cloudflare run or persisted lifecycle checkpoint is retried
+- **THEN** the adapter MUST resume from the last durable dispatch stage and lifecycle publishers MUST deduplicate the stable event envelope ID
+
+#### Scenario: Workflow implementation and payload schema evolve independently
+- **WHEN** a workflow definition changes its implementation version without changing its persisted payload schema, or changes its payload schema independently
+- **THEN** the runtime MUST persist and validate the workflow version and schema version as distinct values
+
+#### Scenario: Telemetry exporter fails
+- **WHEN** a workflow telemetry exporter fails or does not complete within its bound
+- **THEN** observation MUST NOT change the workflow result or compensation decision
+
+#### Scenario: Platform request supports cancellation
+- **WHEN** the enclosing workflow Effect is interrupted
+- **THEN** the Cloudflare adapter MUST propagate cancellation to supported requests and release scoped resources
+- **AND THEN** non-cancellable Workflow and Queue operations MUST remain subject to durable reconciliation
+
+#### Scenario: Both runtime adapters are verified
+- **WHEN** runtime changes are accepted
+- **THEN** deterministic and Cloudflare adapters MUST run shared service conformance cases, with adapter-specific recovery, typed failure, and lifecycle tests preserving their execution semantics

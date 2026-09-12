@@ -60,6 +60,54 @@ The platform SHALL define workflow execution as a core runtime contract with an 
 - **WHEN** the platform runs a workflow in the primary Cloudflare deployment target
 - **THEN** it MUST execute through the shared workflow runtime contract rather than exposing raw Cloudflare workflow primitives directly to commerce modules
 
+### Requirement: Workflow runtime operations use one Effect execution model
+
+The workflow runtime, durable state store, metadata projection store, and
+lifecycle publication contracts SHALL expose typed Effects. Lookup absence SHALL
+succeed with `Option.none`, and workflow step requirements SHALL remain visible
+until supplied by host Layer composition. Runtime-neutral workflow code SHALL
+NOT execute a nested Effect runtime or accept Promise-or-value store operations.
+
+#### Scenario: Running workflow is interrupted
+
+- **WHEN** an executing workflow fiber is interrupted during a step or retry delay
+- **THEN** completed outcomes MUST remain resumable without recording a false failed step or triggering compensation solely because of interruption
+
+#### Scenario: Duplicate starts race
+
+- **WHEN** concurrent starts use the same workflow and idempotency key
+- **THEN** atomic registration MUST converge on one logical run
+
+#### Scenario: Adapter reports stale metadata
+
+- **WHEN** durable state contains more complete execution progress than metadata
+- **THEN** recovery MUST use durable state as the replay authority
+
+#### Scenario: Dispatch or lifecycle publication is interrupted
+
+- **WHEN** a registered Cloudflare run or persisted lifecycle checkpoint is retried
+- **THEN** the adapter MUST resume from the last durable dispatch stage and lifecycle publishers MUST deduplicate the stable event envelope ID
+
+#### Scenario: Workflow implementation and payload schema evolve independently
+
+- **WHEN** a workflow implementation version or its persisted payload schema version changes independently
+- **THEN** the runtime MUST persist and validate both versions as distinct values
+
+#### Scenario: Cloudflare platform operation rejects
+
+- **WHEN** a Workflow, Queue, coordinator, state, metadata, or lifecycle operation rejects
+- **THEN** the Cloudflare adapter MUST translate it to a sanitized, operation-specific workflow failure at the platform seam
+
+#### Scenario: Workflow telemetry fails
+
+- **WHEN** observational telemetry fails
+- **THEN** the workflow result, persisted state, and compensation decision MUST remain unchanged
+
+#### Scenario: Runtime adapters are verified
+
+- **WHEN** deterministic or Cloudflare runtime behavior changes
+- **THEN** both adapters MUST satisfy shared service-level conformance cases in addition to their adapter-specific recovery and platform tests
+
 ### Requirement: Workflow metadata storage is optional and database-agnostic
 
 The platform SHALL allow workflow adapters to persist supplemental metadata, indexes, or projections in a database when needed, but database storage MUST NOT be the defining execution source of truth for the workflow contract.

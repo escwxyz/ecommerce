@@ -36,7 +36,7 @@ import {
   createFakeNotificationProvider,
   createInMemoryNotificationEventRepository,
 } from "@ecommerce/notification-event/testing";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import {
   activateSandboxPlugin,
@@ -816,7 +816,7 @@ describe("cloudflare workflow runtime adapter", () => {
   it("starts workflows through bindings and projects metadata", async () => {
     const workflowBinding = createFakeWorkflowBinding();
     const sentMessages: unknown[] = [];
-    const { publisher } = createEventCollector();
+    const { workflowPublisher: publisher } = createEventCollector();
     const metadata = createInMemoryWorkflowMetadataStore();
 
     const runtime = createCloudflareWorkflowRuntime({
@@ -860,12 +860,14 @@ describe("cloudflare workflow runtime adapter", () => {
       steps: [],
     });
 
-    const run = await runtime.start({
-      workflow,
-      input: { pluginId: "plg_1" },
-      correlationId: "corr_cf_1",
-      idempotencyKey: "plugin:plg_1",
-    });
+    const run = await Effect.runPromise(
+      runtime.start({
+        workflow,
+        input: { pluginId: "plg_1" },
+        correlationId: "corr_cf_1",
+        idempotencyKey: "plugin:plg_1",
+      })
+    );
 
     expect(run.historyReference).toBe("cloudflare:run_cf_1");
     expect(sentMessages).toHaveLength(1);
@@ -1364,7 +1366,7 @@ describe("cloudflare workflow runtime adapter", () => {
     const workflowBinding = createFakeWorkflowBinding();
     const fakeQueue = createFakeQueue();
     const fakeNamespace = createFakeDurableObjectNamespace();
-    const { publisher } = createEventCollector();
+    const { workflowPublisher: publisher } = createEventCollector();
 
     const runtime = createCloudflareWorkflowRuntime({
       bindings: {
@@ -1393,8 +1395,8 @@ describe("cloudflare workflow runtime adapter", () => {
       },
     };
 
-    const first = await runtime.start(request);
-    const second = await runtime.start(request);
+    const first = await Effect.runPromise(runtime.start(request));
+    const second = await Effect.runPromise(runtime.start(request));
 
     expect(second.runId).toBe(first.runId);
     expect(fakeQueue.messages).toHaveLength(1);
@@ -1405,7 +1407,7 @@ describe("cloudflare workflow runtime adapter", () => {
     const workflowBinding = createFakeWorkflowBinding();
     const fakeQueue = createFakeQueue();
     const fakeNamespace = createFakeDurableObjectNamespace();
-    const { publisher } = createEventCollector();
+    const { workflowPublisher: publisher } = createEventCollector();
     const metadata = createInMemoryWorkflowMetadataStore();
     const clock = createStaticClock(new Date("2026-06-06T13:30:00.000Z"));
     const workflow = defineWorkflow({
@@ -1436,7 +1438,7 @@ describe("cloudflare workflow runtime adapter", () => {
       publisher,
     });
 
-    const first = await firstRuntime.start(request);
+    const first = await Effect.runPromise(firstRuntime.start(request));
 
     const secondRuntime = createCloudflareWorkflowRuntime({
       bindings: {
@@ -1450,7 +1452,7 @@ describe("cloudflare workflow runtime adapter", () => {
       publisher,
     });
 
-    const second = await secondRuntime.start(request);
+    const second = await Effect.runPromise(secondRuntime.start(request));
 
     expect(second.runId).toBe(first.runId);
     expect(fakeQueue.messages).toHaveLength(1);
@@ -1463,7 +1465,7 @@ describe("cloudflare workflow runtime adapter", () => {
   it("deduplicates workflow starts across runtime instances with shared state", async () => {
     const workflowBinding = createFakeWorkflowBinding();
     const fakeQueue = createFakeQueue();
-    const { publisher } = createEventCollector();
+    const { workflowPublisher: publisher } = createEventCollector();
     const state = createInMemoryWorkflowStateStore();
     const telemetryEvents: unknown[] = [];
     const clock = createStaticClock(new Date("2026-06-06T14:00:00.000Z"));
@@ -1488,13 +1490,14 @@ describe("cloudflare workflow runtime adapter", () => {
       publisher,
       stateStore: state.store,
       telemetry: {
-        record: (event) => {
-          telemetryEvents.push(event);
-        },
+        record: (event) =>
+          Effect.sync(() => {
+            telemetryEvents.push(event);
+          }),
       },
     });
 
-    const first = await firstRuntime.start(request);
+    const first = await Effect.runPromise(firstRuntime.start(request));
     const secondRuntime = createCloudflareWorkflowRuntime({
       bindings: {
         dispatchQueue: fakeQueue.queue as Queue<never>,
@@ -1505,7 +1508,7 @@ describe("cloudflare workflow runtime adapter", () => {
       publisher,
       stateStore: state.store,
     });
-    const second = await secondRuntime.start(request);
+    const second = await Effect.runPromise(secondRuntime.start(request));
 
     expect(second.runId).toBe(first.runId);
     expect(fakeQueue.messages).toHaveLength(1);
@@ -1526,7 +1529,7 @@ describe("cloudflare workflow runtime adapter", () => {
   });
 
   it("provides Cloudflare workflow runtimes through Effect Layers and typed failures", async () => {
-    const { publisher } = createEventCollector();
+    const { workflowPublisher: publisher } = createEventCollector();
     const workflow = defineWorkflow({
       key: "checkout.workflow-layer",
       version: 1,
@@ -1553,14 +1556,10 @@ describe("cloudflare workflow runtime adapter", () => {
       Effect.runPromise(
         Effect.gen(function* startWithLayer() {
           const runtime = yield* WorkflowRuntimeService;
-          return yield* Effect.tryPromise({
-            catch: (cause) => cause,
-            try: () =>
-              runtime.start({
-                workflow,
-                correlationId: "corr_workflow_layer",
-                input: {},
-              }),
+          return yield* runtime.start({
+            workflow,
+            correlationId: "corr_workflow_layer",
+            input: {},
           });
         }).pipe(Effect.provide(layer))
       )
@@ -1569,7 +1568,7 @@ describe("cloudflare workflow runtime adapter", () => {
 
   it("reconciles Cloudflare instance status back to the shared contract", async () => {
     const workflowBinding = createFakeWorkflowBinding();
-    const { publisher } = createEventCollector();
+    const { workflowPublisher: publisher } = createEventCollector();
     const runtime = createCloudflareWorkflowRuntime({
       bindings: {
         workflow: workflowBinding.binding,
@@ -1585,22 +1584,26 @@ describe("cloudflare workflow runtime adapter", () => {
       steps: [],
     });
 
-    await runtime.start({
-      workflow,
-      input: { pluginId: "plg_2" },
-      correlationId: "corr_cf_2",
-      runId: "run_cf_2",
-    });
+    await Effect.runPromise(
+      runtime.start({
+        workflow,
+        input: { pluginId: "plg_2" },
+        correlationId: "corr_cf_2",
+        runId: "run_cf_2",
+      })
+    );
 
     workflowBinding.setStatus("run_cf_2", {
       output: { synced: true },
       status: "complete",
     });
 
-    const reconciled = await runtime.reconcile({ runId: "run_cf_2" });
+    const reconciled = await Effect.runPromise(
+      runtime.reconcile({ runId: "run_cf_2" })
+    );
 
-    expect(reconciled?.status).toBe("completed");
-    expect(reconciled?.output).toEqual({ synced: true });
+    expect(Option.getOrThrow(reconciled).status).toBe("completed");
+    expect(Option.getOrThrow(reconciled).output).toEqual({ synced: true });
   });
 });
 
