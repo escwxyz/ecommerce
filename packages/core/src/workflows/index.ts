@@ -1,5 +1,5 @@
-import { Schema } from "effect";
-import type { Effect } from "effect";
+import { Context, Schema } from "effect";
+import type { Effect, Option } from "effect";
 
 import type { CommerceEventEnvelope } from "../events/index";
 
@@ -171,6 +171,14 @@ export const CommerceWorkflowRunStateSchema = Schema.Struct({
   completedAt: Schema.optional(CommerceWorkflowIsoDateTimeStringSchema),
   correlationId: CommerceWorkflowTrimmedStringSchema,
   createdAt: CommerceWorkflowIsoDateTimeStringSchema,
+  dispatchStatus: Schema.optional(
+    Schema.Literals([
+      "registered",
+      "workflow-created",
+      "queue-dispatched",
+      "coordinated",
+    ])
+  ),
   historyReference: Schema.optional(CommerceWorkflowTrimmedStringSchema),
   idempotencyKey: Schema.optional(CommerceWorkflowTrimmedStringSchema),
   input: Schema.Unknown,
@@ -310,6 +318,10 @@ export interface CommerceWorkflowDefinition<
   readonly key: CommerceWorkflowKey;
   readonly version: CommerceWorkflowVersion;
   readonly schemaVersion?: CommerceWorkflowSchemaVersion;
+  /** Decodes untrusted input before the first step or a replay resumes. */
+  readonly inputSchema: Schema.Codec<unknown, unknown, never, never>;
+  /** Decodes a resolved or recovered terminal output before it is returned. */
+  readonly outputSchema: Schema.Codec<unknown, unknown, never, never>;
   // Workflow definitions intentionally contain steps with heterogeneous output
   // types; the durable runtime narrows each output through its step definition.
   // oxlint-disable typescript/no-explicit-any
@@ -333,6 +345,7 @@ export interface CommerceWorkflowRunRecord<
   readonly runId: CommerceWorkflowRunId;
   readonly workflowKey: CommerceWorkflowKey;
   readonly workflowVersion: CommerceWorkflowVersion;
+  readonly schemaVersion: CommerceWorkflowSchemaVersion;
   readonly status: CommerceWorkflowRunStatus;
   readonly input: Input;
   readonly output?: Output;
@@ -344,6 +357,12 @@ export interface CommerceWorkflowRunRecord<
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly completedAt?: Date;
+  /** Last durable adapter dispatch checkpoint used to resume interrupted starts. */
+  readonly dispatchStatus?:
+    | "registered"
+    | "workflow-created"
+    | "queue-dispatched"
+    | "coordinated";
   readonly attempts?: readonly CommerceWorkflowStepAttempt[];
   readonly historyReference?: CommerceWorkflowHistoryReference;
   readonly metadata?: Metadata;
@@ -353,8 +372,15 @@ export interface CommerceWorkflowStartRequest<
   Input = unknown,
   Output = unknown,
   Metadata extends Record<string, unknown> = Record<string, unknown>,
+  Requirements = never,
+  Error = unknown,
 > {
-  readonly workflow: CommerceWorkflowDefinition<Input, Output, unknown>;
+  readonly workflow: CommerceWorkflowDefinition<
+    Input,
+    Output,
+    Error,
+    Requirements
+  >;
   readonly input: Input;
   readonly correlationId: string;
   readonly causationId?: string;
@@ -378,7 +404,9 @@ export interface CommerceWorkflowMetadataRecord {
   readonly runId: CommerceWorkflowRunId;
   readonly workflowKey: CommerceWorkflowKey;
   readonly workflowVersion: CommerceWorkflowVersion;
+  readonly schemaVersion: CommerceWorkflowSchemaVersion;
   readonly status: CommerceWorkflowRunStatus;
+  readonly dispatchStatus?: CommerceWorkflowRunRecord["dispatchStatus"];
   readonly correlationId: string;
   readonly causationId?: string;
   readonly idempotencyKey?: CommerceWorkflowIdempotencyKey;
@@ -393,69 +421,141 @@ export interface CommerceWorkflowMetadataRegistrationResult {
   readonly record: CommerceWorkflowMetadataRecord;
 }
 
+/** Closed, sanitized failure vocabulary shared by workflow adapters. */
+export class WorkflowRuntimeError extends Schema.TaggedErrorClass<WorkflowRuntimeError>()(
+  "WorkflowRuntimeError",
+  {
+    operation: Schema.Literals([
+      "validation",
+      "start",
+      "lookup",
+      "deduplication",
+      "reconciliation",
+      "state",
+      "metadata",
+      "queue",
+      "coordinator",
+      "event",
+      "retry",
+      "compensation",
+      "availability",
+    ]),
+    message: Schema.String,
+    runId: Schema.optional(Schema.String),
+    workflowKey: Schema.optional(Schema.String),
+  }
+) {}
+export type WorkflowRuntimeFailure = WorkflowRuntimeError;
+
+/**
+ * Lifecycle publication is business work; exporter telemetry is separate.
+ * Publishers must deduplicate by envelope id because recovery republishes the
+ * latest durable checkpoint after an interrupted publication.
+ */
+export interface WorkflowLifecyclePublisher {
+  publish(
+    event: CommerceEventEnvelope<string, unknown>
+  ): Effect.Effect<void, WorkflowRuntimeError>;
+}
+
+/** Query projections never serve as the replay authority. */
 export interface CommerceWorkflowMetadataStore {
   getRun(
     runId: CommerceWorkflowRunId
-  ):
-    | Promise<CommerceWorkflowMetadataRecord | null>
-    | CommerceWorkflowMetadataRecord
-    | null;
+  ): Effect.Effect<
+    Option.Option<CommerceWorkflowMetadataRecord>,
+    WorkflowRuntimeError
+  >;
   findRunByIdempotencyKey(
     query: CommerceWorkflowDuplicateQuery
-  ):
-    | Promise<CommerceWorkflowMetadataRecord | null>
-    | CommerceWorkflowMetadataRecord
-    | null;
+  ): Effect.Effect<
+    Option.Option<CommerceWorkflowMetadataRecord>,
+    WorkflowRuntimeError
+  >;
   registerRun(
     record: CommerceWorkflowMetadataRecord
-  ):
-    | Promise<CommerceWorkflowMetadataRegistrationResult>
-    | CommerceWorkflowMetadataRegistrationResult;
-  upsertRun(record: CommerceWorkflowMetadataRecord): Promise<void> | void;
+  ): Effect.Effect<
+    CommerceWorkflowMetadataRegistrationResult,
+    WorkflowRuntimeError
+  >;
+  upsertRun(
+    record: CommerceWorkflowMetadataRecord
+  ): Effect.Effect<void, WorkflowRuntimeError>;
   appendEvent(
     event: CommerceEventEnvelope<string, unknown>
-  ): Promise<void> | void;
+  ): Effect.Effect<void, WorkflowRuntimeError>;
 }
-
 export interface CommerceWorkflowStateRegistrationResult {
   readonly status: "created" | "duplicate";
   readonly state: CommerceWorkflowRunState;
 }
-
-/**
- * Adapter-neutral durable state store used by workflow runtimes to recover
- * replay-relevant step outcomes without repeating completed side effects.
- */
+/** Durable replay state, decoded at every adapter read/write seam. */
 export interface CommerceWorkflowStateStore {
   getRunState(
     runId: CommerceWorkflowRunId
-  ): Promise<CommerceWorkflowRunState | null> | CommerceWorkflowRunState | null;
+  ): Effect.Effect<
+    Option.Option<CommerceWorkflowRunState>,
+    WorkflowRuntimeError
+  >;
   findRunStateByIdempotencyKey(
     query: CommerceWorkflowDuplicateQuery
-  ): Promise<CommerceWorkflowRunState | null> | CommerceWorkflowRunState | null;
+  ): Effect.Effect<
+    Option.Option<CommerceWorkflowRunState>,
+    WorkflowRuntimeError
+  >;
   registerRunState(
     state: CommerceWorkflowRunState
-  ):
-    | Promise<CommerceWorkflowStateRegistrationResult>
-    | CommerceWorkflowStateRegistrationResult;
-  upsertRunState(state: CommerceWorkflowRunState): Promise<void> | void;
+  ): Effect.Effect<
+    CommerceWorkflowStateRegistrationResult,
+    WorkflowRuntimeError
+  >;
+  upsertRunState(
+    state: CommerceWorkflowRunState
+  ): Effect.Effect<void, WorkflowRuntimeError>;
 }
-
+/** The single execution owner preserves workflow requirements and Causes. */
 export interface CommerceWorkflowRuntime {
   readonly capabilities: CommerceWorkflowRuntimeCapabilities;
-  start<Input, Output>(
-    request: CommerceWorkflowStartRequest<Input, Output>
-  ): Promise<CommerceWorkflowRunRecord<Input, Output>>;
+  start<Input, Output, Requirements = never, Error = unknown>(
+    request: CommerceWorkflowStartRequest<
+      Input,
+      Output,
+      Record<string, unknown>,
+      Requirements,
+      Error
+    >
+  ): Effect.Effect<
+    CommerceWorkflowRunRecord<Input, Output>,
+    WorkflowRuntimeError,
+    Requirements
+  >;
   get<Output = unknown>(
     runId: CommerceWorkflowRunId
-  ): Promise<CommerceWorkflowRunRecord<unknown, Output> | null>;
+  ): Effect.Effect<
+    Option.Option<CommerceWorkflowRunRecord<unknown, Output>>,
+    WorkflowRuntimeError
+  >;
   dedupe<Output = unknown>(
     query: CommerceWorkflowDuplicateQuery
-  ): Promise<CommerceWorkflowRunRecord<unknown, Output> | null>;
+  ): Effect.Effect<
+    Option.Option<CommerceWorkflowRunRecord<unknown, Output>>,
+    WorkflowRuntimeError
+  >;
   reconcile<Output = unknown>(
     request: CommerceWorkflowReconcileRequest
-  ): Promise<CommerceWorkflowRunRecord<unknown, Output> | null>;
+  ): Effect.Effect<
+    Option.Option<CommerceWorkflowRunRecord<unknown, Output>>,
+    WorkflowRuntimeError
+  >;
 }
+export const WorkflowStateStoreService =
+  Context.Service<CommerceWorkflowStateStore>(
+    "@ecommerce/core/WorkflowStateStoreService"
+  );
+export const WorkflowLifecyclePublisherService =
+  Context.Service<WorkflowLifecyclePublisher>(
+    "@ecommerce/core/WorkflowLifecyclePublisherService"
+  );
 
 export const WORKFLOW_LIFECYCLE_EVENT_NAMES = {
   started: "workflow.started",
@@ -553,14 +653,34 @@ export const defineWorkflowStep = <
   step: CommerceWorkflowStep<Input, Output, Error, Requirements>
 ): CommerceWorkflowStep<Input, Output, Error, Requirements> => step;
 
+type CommerceWorkflowDefinitionInput<Input, Output, Error, Requirements> = Omit<
+  CommerceWorkflowDefinition<Input, Output, Error, Requirements>,
+  "inputSchema" | "outputSchema"
+> &
+  Partial<
+    Pick<
+      CommerceWorkflowDefinition<Input, Output, Error, Requirements>,
+      "inputSchema" | "outputSchema"
+    >
+  >;
+
 export const defineWorkflow = <
   Input = unknown,
   Output = unknown,
   Error = never,
   Requirements = never,
 >(
-  definition: CommerceWorkflowDefinition<Input, Output, Error, Requirements>
-): CommerceWorkflowDefinition<Input, Output, Error, Requirements> => definition;
+  definition: CommerceWorkflowDefinitionInput<
+    Input,
+    Output,
+    Error,
+    Requirements
+  >
+): CommerceWorkflowDefinition<Input, Output, Error, Requirements> => ({
+  ...definition,
+  inputSchema: definition.inputSchema ?? Schema.Unknown,
+  outputSchema: definition.outputSchema ?? Schema.Unknown,
+});
 
 /**
  * Creates the durable, schema-versioned descriptor for a workflow definition.

@@ -3,6 +3,7 @@ import {
   Clock,
   ConfigProvider,
   Effect,
+  Option,
   Layer,
   Logger,
   References,
@@ -32,7 +33,13 @@ import type {
   IdGeneratorService,
   LoggerService,
 } from "../services/index";
-import { clockLayer, idGeneratorLayer } from "../services/index";
+import {
+  ClockService as ClockServiceTag,
+  IdGeneratorService as IdGeneratorServiceTag,
+  WorkflowRuntimeService,
+  clockLayer,
+  idGeneratorLayer,
+} from "../services/index";
 import { DurableAudit, recordCommerceRuntimeMetric } from "../telemetry/index";
 import type { DurableAuditEvent } from "../telemetry/index";
 import type {
@@ -49,11 +56,17 @@ import type {
   CommerceWorkflowStateStore,
   CommerceWorkflowStepAttempt,
   WorkflowLifecycleEventPayload,
+  WorkflowLifecyclePublisher,
 } from "../workflows/index";
 import {
   CommerceWorkflowRunStateSchema,
+  CommerceWorkflowDefinitionDescriptorSchema,
   WORKFLOW_LIFECYCLE_EVENT_NAMES,
+  WorkflowLifecyclePublisherService,
+  WorkflowRuntimeError,
+  WorkflowStateStoreService,
   createWorkflowRunError,
+  describeWorkflowDefinition,
 } from "../workflows/index";
 
 export {
@@ -472,163 +485,150 @@ export const createEventCollector = () => {
   return {
     events,
     publisher,
+    workflowPublisher: {
+      publish: (event: CommerceEventEnvelope) =>
+        Effect.sync(() => {
+          if (!events.some((existing) => existing.id === event.id)) {
+            events.push(event);
+          }
+        }),
+    } satisfies WorkflowLifecyclePublisher,
   };
 };
 
-export const createInMemoryWorkflowMetadataStore = (): {
-  readonly records: Map<string, CommerceWorkflowMetadataRecord>;
-  readonly idempotencyIndex: Map<string, CommerceWorkflowMetadataRecord>;
-  readonly events: CommerceEventEnvelope[];
-  readonly store: CommerceWorkflowMetadataStore;
-} => {
+/** Effect-native isolated metadata projection fixture. */
+export const createInMemoryWorkflowMetadataStore = () => {
   const records = new Map<string, CommerceWorkflowMetadataRecord>();
   const idempotencyIndex = new Map<string, CommerceWorkflowMetadataRecord>();
   const events: CommerceEventEnvelope[] = [];
-
-  return {
-    records,
-    idempotencyIndex,
-    events,
-    store: {
-      appendEvent: (event) => {
-        events.push(event);
-      },
-      findRunByIdempotencyKey: ({ workflowKey, idempotencyKey }) =>
-        Promise.resolve(
-          idempotencyIndex.get(`${workflowKey}:${idempotencyKey}`) ?? null
-        ),
-      getRun: (runId) => Promise.resolve(records.get(runId) ?? null),
-      registerRun: (record) => {
-        const duplicateKey = record.idempotencyKey
-          ? `${record.workflowKey}:${record.idempotencyKey}`
-          : null;
-        const duplicate = duplicateKey
-          ? (idempotencyIndex.get(duplicateKey) ?? null)
-          : null;
-
-        if (duplicate) {
-          return Promise.resolve({
-            record: duplicate,
-            status: "duplicate" as const,
-          });
-        }
-
-        records.set(record.runId, record);
-
-        if (duplicateKey) {
-          idempotencyIndex.set(duplicateKey, record);
-        }
-
-        return Promise.resolve({
-          record,
-          status: "created" as const,
-        });
-      },
-      upsertRun: (record) => {
-        records.set(record.runId, record);
-        if (record.idempotencyKey) {
-          idempotencyIndex.set(
-            `${record.workflowKey}:${record.idempotencyKey}`,
-            record
-          );
-        }
-      },
-    },
-  };
-};
-
-/** In-memory durable workflow state fixture used by recovery contract tests. */
-export const createInMemoryWorkflowStateStore = (): {
-  readonly states: Map<string, CommerceWorkflowRunState>;
-  readonly idempotencyIndex: Map<string, CommerceWorkflowRunState>;
-  readonly store: CommerceWorkflowStateStore;
-} => {
-  const states = new Map<string, CommerceWorkflowRunState>();
-  const idempotencyIndex = new Map<string, CommerceWorkflowRunState>();
-
-  const upsert = (state: CommerceWorkflowRunState): void => {
-    const decoded = Schema.decodeUnknownSync(CommerceWorkflowRunStateSchema)(
-      state
-    );
-    states.set(decoded.runId, decoded);
-    if (decoded.idempotencyKey) {
+  const put = (record: CommerceWorkflowMetadataRecord) => {
+    records.set(record.runId, record);
+    if (record.idempotencyKey) {
       idempotencyIndex.set(
-        `${decoded.workflowKey}:${decoded.idempotencyKey}`,
-        decoded
+        `${record.workflowKey}:${record.idempotencyKey}`,
+        record
       );
     }
   };
-
-  return {
-    states,
-    idempotencyIndex,
-    store: {
-      findRunStateByIdempotencyKey: ({ workflowKey, idempotencyKey }) =>
-        Promise.resolve(
-          idempotencyIndex.get(`${workflowKey}:${idempotencyKey}`) ?? null
-        ),
-      getRunState: (runId) => Promise.resolve(states.get(runId) ?? null),
-      registerRunState: (state) => {
-        const duplicateKey = state.idempotencyKey
-          ? `${state.workflowKey}:${state.idempotencyKey}`
-          : null;
-        const duplicate = duplicateKey
-          ? (idempotencyIndex.get(duplicateKey) ?? null)
-          : null;
-
-        if (duplicate) {
-          return Promise.resolve({
-            state: duplicate,
-            status: "duplicate" as const,
-          });
+  const store: CommerceWorkflowMetadataStore = {
+    getRun: (id) => Effect.sync(() => Option.fromUndefinedOr(records.get(id))),
+    findRunByIdempotencyKey: (q) =>
+      Effect.sync(() =>
+        Option.fromUndefinedOr(idempotencyIndex.get(makeDuplicateKey(q)))
+      ),
+    registerRun: (record) =>
+      Effect.sync(() => {
+        const old = record.idempotencyKey
+          ? idempotencyIndex.get(
+              makeDuplicateKey({
+                workflowKey: record.workflowKey,
+                idempotencyKey: record.idempotencyKey,
+              })
+            )
+          : records.get(record.runId);
+        if (old) {
+          return { status: "duplicate" as const, record: old };
         }
-
-        upsert(state);
-        return Promise.resolve({
-          state,
-          status: "created" as const,
-        });
-      },
-      upsertRunState: upsert,
-    },
+        put(record);
+        return { status: "created" as const, record };
+      }),
+    upsertRun: (record) => Effect.sync(() => put(record)),
+    appendEvent: (event) =>
+      Effect.sync(() => {
+        if (!events.some((existing) => existing.id === event.id)) {
+          events.push(event);
+        }
+      }),
   };
+  return { records, idempotencyIndex, events, store };
 };
 
-/** Options for the deterministic, platform-free workflow runtime fixture. */
+const decodeWorkflowRunState = (state: unknown) =>
+  Schema.decodeUnknownEffect(CommerceWorkflowRunStateSchema)(state).pipe(
+    Effect.mapError(
+      () =>
+        new WorkflowRuntimeError({
+          operation: "state",
+          message: "Invalid workflow state",
+        })
+    )
+  );
+
+/** Durable state fixture validates every stored value before returning it. */
+export const createInMemoryWorkflowStateStore = () => {
+  const states = new Map<string, CommerceWorkflowRunState>();
+  const idempotencyIndex = new Map<string, CommerceWorkflowRunState>();
+  const read = (state: CommerceWorkflowRunState | undefined) =>
+    state === undefined
+      ? Effect.succeed(Option.none<CommerceWorkflowRunState>())
+      : decodeWorkflowRunState(state).pipe(Effect.map(Option.some));
+  const put = (state: CommerceWorkflowRunState) => {
+    states.set(state.runId, state);
+    if (state.idempotencyKey) {
+      idempotencyIndex.set(
+        makeDuplicateKey({
+          workflowKey: state.workflowKey,
+          idempotencyKey: state.idempotencyKey,
+        }),
+        state
+      );
+    }
+  };
+  const store: CommerceWorkflowStateStore = {
+    getRunState: (id) => Effect.suspend(() => read(states.get(id))),
+    findRunStateByIdempotencyKey: (q) =>
+      Effect.suspend(() => read(idempotencyIndex.get(makeDuplicateKey(q)))),
+    registerRunState: (state) =>
+      decodeWorkflowRunState(state).pipe(
+        Effect.map((decoded) => {
+          const old = decoded.idempotencyKey
+            ? idempotencyIndex.get(
+                makeDuplicateKey({
+                  workflowKey: decoded.workflowKey,
+                  idempotencyKey: decoded.idempotencyKey,
+                })
+              )
+            : states.get(decoded.runId);
+          if (old) {
+            return { status: "duplicate" as const, state: old };
+          }
+          put(decoded);
+          return { status: "created" as const, state: decoded };
+        })
+      ),
+    upsertRunState: (state) =>
+      decodeWorkflowRunState(state).pipe(Effect.map(put)),
+  };
+  return { states, idempotencyIndex, store };
+};
+/** Host-supplied dependencies for an isolated deterministic runtime. */
 export interface InMemoryWorkflowRuntimeOptions {
   readonly clock: ClockService;
   readonly ids: IdGeneratorService;
-  readonly publisher: EventPublisherService;
+  readonly publisher: WorkflowLifecyclePublisher;
   readonly metadataStore?: CommerceWorkflowMetadataStore;
   readonly stateStore?: CommerceWorkflowStateStore;
-  /**
-   * Test-only interruption hook. When set, the runtime persists state after the
-   * Nth newly executed step and then throws, letting recovery tests prove replay
-   * resumes without re-running completed side effects.
-   */
+  /** Interrupts with an actual Effect interruption after a persisted checkpoint. */
   readonly interruptAfterCompletedSteps?: number;
 }
-
 const makeDuplicateKey = ({
   workflowKey,
   idempotencyKey,
 }: CommerceWorkflowDuplicateQuery) => `${workflowKey}:${idempotencyKey}`;
-
-const observeWorkflowMetric = async (
-  options: Parameters<typeof recordCommerceRuntimeMetric>[0]
-): Promise<void> => {
-  await Effect.runPromise(
-    recordCommerceRuntimeMetric(options).pipe(Effect.exit)
-  );
-};
-
 const createLifecycleEvent = (
-  ids: IdGeneratorService,
   payload: WorkflowLifecycleEventPayload,
   occurredAt: Date
 ) =>
   createEventEnvelope({
-    id: ids.nextId(),
+    // A stable identity lets an idempotent outbox accept replay after the
+    // state checkpoint succeeded but the first publication was interrupted.
+    id: [
+      "workflow",
+      payload.runId,
+      payload.type,
+      "stepId" in payload ? payload.stepId : "run",
+      "attempt" in payload ? payload.attempt : "terminal",
+    ].join(":"),
     name: payload.type,
     payload,
     emittedAt: occurredAt,
@@ -642,47 +642,13 @@ const workflowDateToIso = (date: Date): string => date.toISOString();
 
 const workflowDateFromIso = (value: string): Date => new Date(value);
 
-class InMemoryWorkflowRuntimeInterruptedError extends Error {
-  constructor() {
-    super("In-memory workflow runtime interrupted after persisted step.");
-    this.name = "InMemoryWorkflowRuntimeInterruptedError";
-  }
+function reverseWorkflowAttempts<Attempt>(
+  attempts: readonly Attempt[]
+): Attempt[] {
+  // ES2022-compatible non-mutating reverse for browser-facing test builds.
+  // oxlint-disable-next-line unicorn/no-array-reverse
+  return [...attempts].reverse();
 }
-
-type WorkflowRuntimeBaseRecord<Input, Output> = Omit<
-  CommerceWorkflowRunRecord<Input, Output>,
-  "attempts" | "completedAt" | "output" | "status" | "updatedAt"
->;
-
-interface WorkflowStartPreparation<Input, Output> {
-  readonly attempts: CommerceWorkflowStepAttempt[];
-  readonly baseRecord: WorkflowRuntimeBaseRecord<Input, Output>;
-  readonly createdAt: Date;
-  readonly output: Output | undefined;
-  readonly recoveredRecord: CommerceWorkflowRunRecord | null;
-  readonly recoveredState: CommerceWorkflowRunState | null;
-  readonly runId: string;
-}
-
-const completedRunStepCount = (
-  attempts: readonly CommerceWorkflowStepAttempt[] | undefined
-): number =>
-  new Set(
-    attempts
-      ?.filter(
-        (attempt) =>
-          attempt.phase !== "compensation" && attempt.status === "completed"
-      )
-      .map((attempt) => attempt.stepId)
-  ).size;
-
-const nextWorkflowStepAttempt = (
-  attempts: readonly CommerceWorkflowStepAttempt[],
-  stepId: string
-): number =>
-  attempts.filter(
-    (attempt) => attempt.phase !== "compensation" && attempt.stepId === stepId
-  ).length + 1;
 
 const shouldRetryWorkflowError = ({
   attempt,
@@ -731,29 +697,16 @@ const workflowRetryDelayMillis = ({
     : Math.min(backoff, maxDelayMillis);
 };
 
+/** Executes workflow steps in the caller fiber, preserving requirements and Causes. */
 export const createInMemoryWorkflowRuntime = ({
   clock,
   ids,
   publisher,
   metadataStore,
-  stateStore,
+  stateStore: providedStore,
   interruptAfterCompletedSteps,
 }: InMemoryWorkflowRuntimeOptions): CommerceWorkflowRuntime => {
-  const runs = new Map<string, CommerceWorkflowRunRecord>();
-  const idempotencyIndex = new Map<string, string>();
-  let completedStepsInThisRuntime = 0;
-
-  const terminalStatuses: ReadonlySet<CommerceWorkflowRunRecord["status"]> =
-    new Set([
-      "completed",
-      "failed",
-      "compensated",
-    ] satisfies readonly CommerceWorkflowRunRecord["status"][]);
-
-  const isTerminalStatus = (
-    status: CommerceWorkflowRunRecord["status"]
-  ): boolean => terminalStatuses.has(status);
-
+  const stateStore = providedStore ?? createInMemoryWorkflowStateStore().store;
   const attemptToStateOutcome = (
     attempt: CommerceWorkflowStepAttempt
   ): CommerceWorkflowRunState["attempts"][number] => ({
@@ -808,6 +761,7 @@ export const createInMemoryWorkflowRuntime = ({
         : undefined,
       correlationId: record.correlationId,
       createdAt: workflowDateToIso(record.createdAt),
+      dispatchStatus: record.dispatchStatus,
       historyReference: record.historyReference,
       idempotencyKey: record.idempotencyKey,
       input: record.input,
@@ -815,9 +769,10 @@ export const createInMemoryWorkflowRuntime = ({
       nextStepIndex,
       output: record.output,
       runId: record.runId,
-      schemaVersion: 1,
+      schemaVersion: record.schemaVersion,
       status: record.status,
       subject: record.subject,
+      traceId: record.traceId,
       updatedAt: workflowDateToIso(record.updatedAt),
       workflowKey: record.workflowKey,
       workflowVersion: record.workflowVersion,
@@ -829,8 +784,10 @@ export const createInMemoryWorkflowRuntime = ({
     attempts: state.attempts.map(stateOutcomeToAttempt),
     correlationId: state.correlationId,
     createdAt: workflowDateFromIso(state.createdAt),
+    dispatchStatus: state.dispatchStatus,
     input: state.input,
     runId: state.runId,
+    schemaVersion: state.schemaVersion,
     status: state.status,
     updatedAt: workflowDateFromIso(state.updatedAt),
     workflowKey: state.workflowKey,
@@ -844,693 +801,541 @@ export const createInMemoryWorkflowRuntime = ({
     metadata: state.metadata,
     output: state.output,
     subject: state.subject,
+    traceId: state.traceId,
   });
 
-  const persistRecord = async (
-    record: CommerceWorkflowRunRecord,
-    nextStepIndex = completedRunStepCount(record.attempts)
-  ): Promise<void> => {
-    runs.set(record.runId, record);
-    if (record.idempotencyKey) {
-      idempotencyIndex.set(
-        `${record.workflowKey}:${record.idempotencyKey}`,
-        record.runId
-      );
-    }
-
-    await metadataStore?.upsertRun({
-      runId: record.runId,
-      workflowKey: record.workflowKey,
-      workflowVersion: record.workflowVersion,
-      status: record.status,
-      correlationId: record.correlationId,
-      causationId: record.causationId,
-      idempotencyKey: record.idempotencyKey,
-      subject: record.subject,
-      metadata: record.metadata,
-      updatedAt: record.updatedAt,
-    });
-    await stateStore?.upsertRunState(toRunState(record, nextStepIndex));
-  };
-
-  const publishLifecycle = async (
-    payload: WorkflowLifecycleEventPayload
-  ): Promise<void> => {
-    const { occurredAt } = payload;
-    const event = createLifecycleEvent(ids, payload, occurredAt);
-    await publisher.publish(event);
-    await metadataStore?.appendEvent(event);
-  };
-
-  const reconcile = async (
-    request: CommerceWorkflowReconcileRequest
-  ): Promise<CommerceWorkflowRunRecord | null> => {
-    const local = runs.get(request.runId);
-    if (local) {
-      return local;
-    }
-
-    const state = (await stateStore?.getRunState(request.runId)) ?? null;
-    if (!state) {
-      return null;
-    }
-
-    const record = stateToRecord(state);
-    await persistRecord(record, state.nextStepIndex);
-    return record;
-  };
-
-  const toWorkflowRecord = <Input, Output>(
-    value: CommerceWorkflowRunRecord | CommerceWorkflowRunState
-  ): CommerceWorkflowRunRecord<Input, Output> =>
-    ("schemaVersion" in value
-      ? stateToRecord(value)
-      : value) as CommerceWorkflowRunRecord<Input, Output>;
-
-  const findTerminalDuplicateRecord = async <Input, Output>(
-    request: CommerceWorkflowStartRequest<Input, Output>
-  ): Promise<CommerceWorkflowRunRecord<Input, Output> | null> => {
-    if (!request.idempotencyKey) {
-      return null;
-    }
-
-    const duplicateQuery = {
-      workflowKey: request.workflow.key,
-      idempotencyKey: request.idempotencyKey,
-    };
-    const duplicateRunId = idempotencyIndex.get(
-      makeDuplicateKey(duplicateQuery)
-    );
-    const localDuplicate = duplicateRunId
-      ? await reconcile({ runId: duplicateRunId })
-      : null;
-    const storedDuplicate =
-      localDuplicate ??
-      (await stateStore?.findRunStateByIdempotencyKey(duplicateQuery)) ??
-      null;
-
-    if (!storedDuplicate) {
-      return null;
-    }
-
-    const duplicateRecord = toWorkflowRecord<Input, Output>(storedDuplicate);
-    return isTerminalStatus(duplicateRecord.status) ? duplicateRecord : null;
-  };
-
-  const findRecoveredState = async <Input, Output>(
-    request: CommerceWorkflowStartRequest<Input, Output>
-  ): Promise<CommerceWorkflowRunState | null> => {
-    if (request.runId) {
-      return (await stateStore?.getRunState(request.runId)) ?? null;
-    }
-
-    if (!request.idempotencyKey) {
-      return null;
-    }
-
-    return (
-      (await stateStore?.findRunStateByIdempotencyKey({
-        workflowKey: request.workflow.key,
-        idempotencyKey: request.idempotencyKey,
-      })) ?? null
-    );
-  };
-
-  const prepareWorkflowStart = async <Input, Output>(
-    request: CommerceWorkflowStartRequest<Input, Output>
-  ): Promise<WorkflowStartPreparation<Input, Output>> => {
-    const recoveredState = await findRecoveredState(request);
-    const recoveredRecord = recoveredState
-      ? stateToRecord(recoveredState)
-      : null;
-    const createdAt = recoveredRecord?.createdAt ?? clock.now();
-    const runId = recoveredRecord?.runId ?? request.runId ?? ids.nextId();
-
-    return {
-      attempts: [...(recoveredRecord?.attempts ?? [])],
-      baseRecord: {
-        correlationId: request.correlationId,
-        createdAt,
-        input: request.input,
-        metadata: request.metadata,
-        runId,
-        workflowKey: request.workflow.key,
-        workflowVersion: request.workflow.version,
-        causationId: request.causationId,
-        idempotencyKey: request.idempotencyKey,
-        subject: request.subject,
-      },
-      createdAt,
-      output: recoveredRecord?.output as Output | undefined,
-      recoveredRecord,
-      recoveredState,
-      runId,
-    };
-  };
-
-  const persistStartedWorkflow = async <Input, Output>({
-    attempts,
-    baseRecord,
-    createdAt,
-    request,
-    runId,
-    status,
-  }: {
-    attempts: CommerceWorkflowStepAttempt[];
-    baseRecord: WorkflowRuntimeBaseRecord<Input, Output>;
-    createdAt: Date;
-    request: CommerceWorkflowStartRequest<Input, Output>;
-    runId: string;
-    status: "pending" | "running";
-  }): Promise<void> => {
-    await publishLifecycle({
-      type: WORKFLOW_LIFECYCLE_EVENT_NAMES.started,
-      occurredAt: createdAt,
-      status,
-      runId,
-      workflowKey: request.workflow.key,
-      workflowVersion: request.workflow.version,
-      correlationId: request.correlationId,
-      causationId: request.causationId,
-      idempotencyKey: request.idempotencyKey,
-      subject: request.subject,
-    });
-    await persistRecord(
-      {
-        ...baseRecord,
-        attempts,
-        status,
-        updatedAt: createdAt,
-      },
-      0
-    );
-  };
-
-  const publishFinalWorkflowLifecycle = async <Input, Output>({
-    output,
-    record,
-    request,
-    runId,
-    status,
-    workflowError,
-  }: {
-    output: Output | undefined;
-    record: CommerceWorkflowRunRecord<Input, Output>;
-    request: CommerceWorkflowStartRequest<Input, Output>;
-    runId: string;
-    status: CommerceWorkflowRunRecord<Input, Output>["status"];
-    workflowError: CommerceWorkflowRunError | undefined;
-  }): Promise<void> => {
-    if (status === "completed") {
-      await publishLifecycle({
-        type: WORKFLOW_LIFECYCLE_EVENT_NAMES.completed,
-        occurredAt: record.updatedAt,
-        status,
-        runId,
-        workflowKey: request.workflow.key,
-        workflowVersion: request.workflow.version,
-        correlationId: request.correlationId,
-        causationId: request.causationId,
-        idempotencyKey: request.idempotencyKey,
-        subject: request.subject,
-        output,
-      });
-    }
-
-    if (workflowError) {
-      await publishLifecycle({
-        type: WORKFLOW_LIFECYCLE_EVENT_NAMES.failed,
-        occurredAt: record.updatedAt,
-        status: status === "compensated" ? "compensated" : "failed",
-        runId,
-        workflowKey: request.workflow.key,
-        workflowVersion: request.workflow.version,
-        correlationId: request.correlationId,
-        causationId: request.causationId,
-        idempotencyKey: request.idempotencyKey,
-        subject: request.subject,
-        error: workflowError,
-      });
-    }
-  };
-
-  const executeWorkflowSteps = async <Input, Output>({
-    attempts,
-    baseRecord,
-    request,
-    runId,
-    startIndex,
-  }: {
-    attempts: CommerceWorkflowStepAttempt[];
-    baseRecord: WorkflowRuntimeBaseRecord<Input, Output>;
-    request: CommerceWorkflowStartRequest<Input, Output>;
-    runId: string;
-    startIndex: number;
-  }): Promise<Output | undefined> => {
-    for (
-      let stepIndex = startIndex;
-      stepIndex < request.workflow.steps.length;
-      stepIndex += 1
-    ) {
-      const step = request.workflow.steps[stepIndex];
-      if (!step) {
-        continue;
+  const publish = (payload: WorkflowLifecycleEventPayload) =>
+    Effect.gen(function* publishWorkflowEffect() {
+      const event = createLifecycleEvent(payload, payload.occurredAt);
+      yield* publisher.publish(event);
+      if (metadataStore) {
+        yield* metadataStore.appendEvent(event);
       }
-      const { retryPolicy } = step;
-      const maxAttempts = retryPolicy?.maxAttempts ?? 1;
-      const stepId = `${runId}:${step.name}:${stepIndex + 1}`;
-      const firstAttempt = nextWorkflowStepAttempt(attempts, stepId);
-      let stepCompleted = false;
-
-      for (
-        let attemptNumber = firstAttempt;
-        attemptNumber <= maxAttempts;
-        attemptNumber += 1
-      ) {
-        const stepStartedAt = clock.now();
-        const context = {
-          workflowId: runId,
+    });
+  const persist = (state: CommerceWorkflowRunState) =>
+    Effect.gen(function* persistWorkflowEffect() {
+      yield* stateStore.upsertRunState(state);
+      if (metadataStore) {
+        yield* metadataStore.upsertRun({ ...stateToRecord(state) });
+      }
+    });
+  const get = <Output = unknown>(runId: string) =>
+    stateStore
+      .getRunState(runId)
+      .pipe(
+        Effect.map(
+          Option.map(
+            (state) =>
+              stateToRecord(state) as CommerceWorkflowRunRecord<unknown, Output>
+          )
+        )
+      );
+  // The interpreter keeps persistence, retry, compensation, and publication
+  // in one Effect so interruption cannot cross an untracked async boundary.
+  // oxlint-disable-next-line eslint/complexity
+  const start = <Input, Output, Requirements = never, Error = unknown>(
+    request: CommerceWorkflowStartRequest<
+      Input,
+      Output,
+      Record<string, unknown>,
+      Requirements,
+      Error
+    >
+  ) =>
+    // oxlint-disable-next-line eslint/complexity
+    Effect.gen(function* startWorkflowEffect() {
+      yield* Schema.decodeUnknownEffect(
+        CommerceWorkflowDefinitionDescriptorSchema
+      )(describeWorkflowDefinition(request.workflow)).pipe(
+        Effect.mapError(
+          () =>
+            new WorkflowRuntimeError({
+              operation: "validation",
+              message: "Invalid workflow definition",
+              workflowKey: request.workflow.key,
+            })
+        )
+      );
+      const decodedInput = yield* Schema.decodeUnknownEffect(
+        request.workflow.inputSchema
+      )(request.input).pipe(
+        Effect.mapError(
+          () =>
+            new WorkflowRuntimeError({
+              operation: "validation",
+              message: "Invalid workflow input",
+              workflowKey: request.workflow.key,
+            })
+        )
+      );
+      let recovered = Option.none<CommerceWorkflowRunState>();
+      if (request.runId) {
+        recovered = yield* stateStore.getRunState(request.runId);
+      } else if (request.idempotencyKey) {
+        recovered = yield* stateStore.findRunStateByIdempotencyKey({
+          workflowKey: request.workflow.key,
+          idempotencyKey: request.idempotencyKey,
+        });
+      }
+      const date = clock.now();
+      let state: CommerceWorkflowRunState;
+      if (Option.isSome(recovered)) {
+        state = recovered.value;
+      } else {
+        const record: CommerceWorkflowRunRecord<Input, Output> = {
+          ...request,
+          input: decodedInput as Input,
           workflowKey: request.workflow.key,
           workflowVersion: request.workflow.version,
-          stepId,
-          stepName: step.name,
-          attempt: attemptNumber,
-          correlationId: request.correlationId,
-          causationId: request.causationId,
-          idempotencyKey: request.idempotencyKey,
-          subject: request.subject,
+          schemaVersion:
+            request.workflow.schemaVersion ?? request.workflow.version,
+          runId: request.runId ?? ids.nextId(),
+          createdAt: date,
+          updatedAt: date,
+          status: "running",
+          attempts: [],
         };
-        const exit = await Effect.runPromiseExit(
-          step.run(request.input, context)
+        const registration = yield* stateStore.registerRunState({
+          ...toRunState(record, 0),
+          schemaVersion:
+            request.workflow.schemaVersion ?? request.workflow.version,
+        });
+        ({ state } = registration);
+        if (registration.status === "duplicate") {
+          recovered = Option.some(state);
+        }
+      }
+      if (
+        state.workflowKey !== request.workflow.key ||
+        state.workflowVersion !== request.workflow.version ||
+        state.schemaVersion !==
+          (request.workflow.schemaVersion ?? request.workflow.version)
+      ) {
+        return yield* Effect.fail(
+          new WorkflowRuntimeError({
+            operation: "validation",
+            message: "Unsupported workflow recovery version",
+            runId: state.runId,
+          })
         );
-
-        if (exit._tag === "Failure") {
-          if (Cause.hasInterruptsOnly(exit.cause)) {
-            await observeWorkflowMetric({
-              attributes: {
-                phase: "run",
-                status: "interrupted",
-              },
-              boundary: "workflow",
-              event: "interruption",
-            });
-            throw new InMemoryWorkflowRuntimeInterruptedError();
-          }
-
-          const error = Cause.squash(exit.cause);
-          const failedAt = clock.now();
-          const workflowError = createWorkflowRunError(error);
-          const shouldRetry = shouldRetryWorkflowError({
-            attempt: attemptNumber,
-            error: workflowError,
-            policy: retryPolicy,
+      }
+      yield* Schema.decodeUnknownEffect(request.workflow.inputSchema)(
+        state.input
+      ).pipe(
+        Effect.mapError(
+          () =>
+            new WorkflowRuntimeError({
+              operation: "validation",
+              message: "Invalid persisted workflow input",
+              runId: state.runId,
+              workflowKey: state.workflowKey,
+            })
+        )
+      );
+      const base = {
+        runId: state.runId,
+        workflowKey: state.workflowKey,
+        workflowVersion: state.workflowVersion,
+        correlationId: state.correlationId,
+        causationId: state.causationId,
+        idempotencyKey: state.idempotencyKey,
+        subject: state.subject,
+        traceId: state.traceId,
+      };
+      if (state.status === "completed") {
+        yield* Schema.decodeUnknownEffect(request.workflow.outputSchema)(
+          state.output
+        ).pipe(
+          Effect.mapError(
+            () =>
+              new WorkflowRuntimeError({
+                operation: "validation",
+                message: "Invalid persisted workflow output",
+                runId: state.runId,
+                workflowKey: state.workflowKey,
+              })
+          )
+        );
+      }
+      if (["completed", "failed", "compensated"].includes(state.status)) {
+        if (state.status === "completed") {
+          yield* publish({
+            ...base,
+            type: WORKFLOW_LIFECYCLE_EVENT_NAMES.completed,
+            status: "completed",
+            output: state.output,
+            occurredAt: clock.now(),
           });
-          const boundedBackoff = workflowRetryDelayMillis({
-            attempt: attemptNumber,
-            policy: retryPolicy,
-          });
-          const scheduledRetryAt = shouldRetry
-            ? new Date(failedAt.getTime() + boundedBackoff)
-            : undefined;
-          attempts.push({
-            attempt: attemptNumber,
-            completedAt: failedAt,
-            error: workflowError,
-            phase: "run",
-            retryDisposition: shouldRetry ? "retry" : "compensate",
-            scheduledRetryAt,
-            startedAt: stepStartedAt,
-            status: "failed",
-            stepId: context.stepId,
-            stepName: step.name,
-          });
-          await persistRecord(
-            {
-              ...baseRecord,
-              attempts,
-              completedAt: shouldRetry ? undefined : failedAt,
-              status: shouldRetry ? "running" : "failed",
-              updatedAt: failedAt,
-            },
-            stepIndex
+        } else {
+          const failedAttempt = reverseWorkflowAttempts(state.attempts).find(
+            (attempt) => attempt.phase === "run" && attempt.status === "failed"
           );
-          await publishLifecycle({
+          if (failedAttempt?.error) {
+            yield* publish({
+              ...base,
+              type: WORKFLOW_LIFECYCLE_EVENT_NAMES.failed,
+              status: state.status === "compensated" ? "compensated" : "failed",
+              error: failedAttempt.error,
+              occurredAt: clock.now(),
+            });
+          }
+        }
+        return stateToRecord(state) as CommerceWorkflowRunRecord<Input, Output>;
+      }
+      const attempts = [...state.attempts];
+      const save = (
+        status: CommerceWorkflowRunState["status"],
+        nextStepIndex = state.nextStepIndex,
+        output: unknown = state.output
+      ) => {
+        state = {
+          ...state,
+          attempts: [...attempts],
+          status,
+          nextStepIndex,
+          output,
+          updatedAt: clock.now().toISOString(),
+        };
+        return persist(state);
+      };
+      if (Option.isNone(recovered)) {
+        yield* persist(state);
+        yield* publish({
+          ...base,
+          type: WORKFLOW_LIFECYCLE_EVENT_NAMES.started,
+          status: "running",
+          occurredAt: date,
+        });
+      } else {
+        const latestAttempt = attempts.at(-1);
+        if (!latestAttempt) {
+          yield* publish({
+            ...base,
+            type: WORKFLOW_LIFECYCLE_EVENT_NAMES.started,
+            status: "running",
+            occurredAt: clock.now(),
+          });
+        } else if (
+          latestAttempt.phase === "run" &&
+          latestAttempt.status === "completed"
+        ) {
+          yield* publish({
+            ...base,
+            type: WORKFLOW_LIFECYCLE_EVENT_NAMES.stepSucceeded,
+            status: "running",
+            occurredAt: clock.now(),
+            stepId: latestAttempt.stepId,
+            stepName: latestAttempt.stepName,
+            attempt: latestAttempt.attempt,
+          });
+        } else if (latestAttempt.phase === "run" && latestAttempt.error) {
+          yield* publish({
+            ...base,
             type: WORKFLOW_LIFECYCLE_EVENT_NAMES.stepFailed,
-            occurredAt: failedAt,
             status: "failed",
-            runId,
-            workflowKey: request.workflow.key,
-            workflowVersion: request.workflow.version,
-            correlationId: request.correlationId,
-            causationId: request.causationId,
-            idempotencyKey: request.idempotencyKey,
-            subject: request.subject,
-            stepId: context.stepId,
+            occurredAt: clock.now(),
+            stepId: latestAttempt.stepId,
+            stepName: latestAttempt.stepName,
+            attempt: latestAttempt.attempt,
+            error: latestAttempt.error,
+          });
+        } else if (latestAttempt.phase === "compensation") {
+          yield* publish({
+            ...base,
+            type: WORKFLOW_LIFECYCLE_EVENT_NAMES.compensationCompleted,
+            status: "compensated",
+            occurredAt: clock.now(),
+            stepId: latestAttempt.stepId,
+            stepName: latestAttempt.stepName,
+          });
+        }
+      }
+      let terminalError: CommerceWorkflowRunError | undefined =
+        state.status === "compensating"
+          ? reverseWorkflowAttempts(attempts).find(
+              (a) => a.phase === "run" && a.status === "failed"
+            )?.error
+          : undefined;
+      let completed = 0;
+      for (
+        let index = state.nextStepIndex;
+        index < request.workflow.steps.length && !terminalError;
+        index += 1
+      ) {
+        const step = request.workflow.steps[index];
+        if (!step) {
+          continue;
+        }
+        const stepId = `${state.runId}:${step.name}:${index + 1}`;
+        let attempt =
+          attempts.filter((a) => a.phase === "run" && a.stepId === stepId)
+            .length + 1;
+        const previous = attempts.at(-1);
+        if (
+          previous?.retryDisposition === "retry" &&
+          previous.scheduledRetryAt
+        ) {
+          yield* Effect.sleep(
+            Math.max(
+              0,
+              new Date(previous.scheduledRetryAt).getTime() -
+                clock.now().getTime()
+            )
+          );
+        }
+        for (; ; attempt += 1) {
+          const startedAt = clock.now().toISOString();
+          const context = {
+            ...base,
+            workflowId: state.runId,
+            stepId,
             stepName: step.name,
-            attempt: attemptNumber,
-            error: workflowError,
-          });
-          await observeWorkflowMetric({
-            attributes: {
+            attempt,
+          };
+          const result = yield* step.run(state.input as Input, context).pipe(
+            Effect.result,
+            Effect.withSpan("workflow.step", {
+              attributes: {
+                workflowKey: state.workflowKey,
+                runId: state.runId,
+                stepId,
+                attempt,
+              },
+            })
+          );
+          if (result._tag === "Success") {
+            attempts.push({
+              attempt,
+              startedAt,
+              completedAt: clock.now().toISOString(),
               phase: "run",
-              retryDisposition: shouldRetry ? "retry" : "compensate",
-              status: "failed",
-            },
-            boundary: "workflow",
-            event: shouldRetry ? "retry" : "typed_rejection",
+              status: "completed",
+              stepId,
+              stepName: step.name,
+              output: result.success.output,
+            });
+            yield* save("running", index + 1);
+            yield* publish({
+              ...base,
+              type: WORKFLOW_LIFECYCLE_EVENT_NAMES.stepSucceeded,
+              status: "running",
+              occurredAt: clock.now(),
+              stepId,
+              stepName: step.name,
+              attempt,
+            });
+            completed += 1;
+            if (
+              interruptAfterCompletedSteps !== undefined &&
+              completed >= interruptAfterCompletedSteps
+            ) {
+              yield* Effect.interrupt;
+            }
+            break;
+          }
+          const error = createWorkflowRunError(result.failure);
+          const retry = shouldRetryWorkflowError({
+            attempt,
+            error,
+            policy: step.retryPolicy,
           });
-
-          if (shouldRetry) {
+          const delay = workflowRetryDelayMillis({
+            attempt,
+            policy: step.retryPolicy,
+          });
+          attempts.push({
+            attempt,
+            startedAt,
+            completedAt: clock.now().toISOString(),
+            phase: "run",
+            status: "failed",
+            stepId,
+            stepName: step.name,
+            error,
+            retryDisposition: retry ? "retry" : "compensate",
+            scheduledRetryAt: retry
+              ? new Date(clock.now().getTime() + delay).toISOString()
+              : undefined,
+          });
+          yield* save(retry ? "running" : "compensating", index);
+          yield* publish({
+            ...base,
+            type: WORKFLOW_LIFECYCLE_EVENT_NAMES.stepFailed,
+            status: "failed",
+            occurredAt: clock.now(),
+            stepId,
+            stepName: step.name,
+            attempt,
+            error,
+          });
+          yield* recordCommerceRuntimeMetric({
+            boundary: "workflow",
+            event: retry ? "retry" : "typed_rejection",
+            attributes: { status: "failed" },
+          }).pipe(Effect.exit);
+          if (retry) {
+            yield* Effect.sleep(delay);
             continue;
           }
-
-          throw error;
+          terminalError = error;
+          break;
         }
-
-        const completedAt = clock.now();
-        attempts.push({
-          attempt: attemptNumber,
-          completedAt,
-          output: exit.value.output,
-          phase: "run",
-          startedAt: stepStartedAt,
-          status: "completed",
-          stepId: context.stepId,
-          stepName: step.name,
-        });
-
-        await publishLifecycle({
-          type: WORKFLOW_LIFECYCLE_EVENT_NAMES.stepSucceeded,
-          occurredAt: completedAt,
-          status: "running",
-          runId,
-          workflowKey: request.workflow.key,
-          workflowVersion: request.workflow.version,
-          correlationId: request.correlationId,
-          causationId: request.causationId,
-          idempotencyKey: request.idempotencyKey,
-          subject: request.subject,
-          stepId: context.stepId,
-          stepName: step.name,
-          attempt: attemptNumber,
-        });
-        await persistRecord(
-          {
-            ...baseRecord,
-            attempts,
-            status: "running",
-            updatedAt: completedAt,
-          },
-          stepIndex + 1
-        );
-        stepCompleted = true;
-        break;
       }
-
-      if (!stepCompleted) {
-        throw new Error(`Workflow step ${step.name} exhausted retry attempts.`);
+      let status: CommerceWorkflowRunState["status"] = "completed";
+      if (terminalError) {
+        status = "failed";
+        for (const outcome of reverseWorkflowAttempts(attempts)) {
+          if (outcome.phase !== "run" || outcome.status !== "completed") {
+            continue;
+          }
+          const compensation = request.workflow.steps.find(
+            (step) => step.name === outcome.stepName
+          )?.compensation;
+          if (!compensation) {
+            continue;
+          }
+          if (
+            attempts.some(
+              (a) =>
+                a.phase === "compensation" &&
+                a.stepId === outcome.stepId &&
+                a.status === "compensated"
+            )
+          ) {
+            status = "compensated";
+            continue;
+          }
+          yield* publish({
+            ...base,
+            type: WORKFLOW_LIFECYCLE_EVENT_NAMES.compensationStarted,
+            status: "compensating",
+            occurredAt: clock.now(),
+            stepId: outcome.stepId,
+            stepName: outcome.stepName,
+          });
+          const compensationRunId = state.runId;
+          yield* compensation
+            .compensate(state.input as Input, outcome.output, {
+              ...base,
+              workflowId: state.runId,
+              stepId: outcome.stepId,
+              stepName: outcome.stepName,
+              attempt: outcome.attempt,
+            })
+            .pipe(
+              Effect.mapError(
+                () =>
+                  new WorkflowRuntimeError({
+                    operation: "compensation",
+                    message: "Workflow compensation failed",
+                    runId: compensationRunId,
+                  })
+              )
+            );
+          attempts.push({
+            ...outcome,
+            phase: "compensation",
+            status: "compensated",
+            output: undefined,
+            completedAt: clock.now().toISOString(),
+          });
+          yield* save("compensating");
+          status = "compensated";
+          yield* publish({
+            ...base,
+            type: WORKFLOW_LIFECYCLE_EVENT_NAMES.compensationCompleted,
+            status: "compensated",
+            occurredAt: clock.now(),
+            stepId: outcome.stepId,
+            stepName: outcome.stepName,
+          });
+        }
       }
-
-      completedStepsInThisRuntime += 1;
-      if (
-        interruptAfterCompletedSteps !== undefined &&
-        completedStepsInThisRuntime >= interruptAfterCompletedSteps
-      ) {
-        throw new InMemoryWorkflowRuntimeInterruptedError();
-      }
-    }
-
-    return request.workflow.resolveOutput?.(attempts);
-  };
-
-  const compensateWorkflow = async <Input, Output>({
-    attempts,
-    baseRecord,
-    request,
-    runId,
-  }: {
-    attempts: CommerceWorkflowStepAttempt[];
-    baseRecord: WorkflowRuntimeBaseRecord<Input, Output>;
-    request: CommerceWorkflowStartRequest<Input, Output>;
-    runId: string;
-  }): Promise<"failed" | "compensated"> => {
-    let status: "failed" | "compensated" = "failed";
-    const completedAttempts: CommerceWorkflowStepAttempt[] = [];
-
-    for (let index = attempts.length - 1; index >= 0; index -= 1) {
-      const attempt = attempts[index];
-
-      if (attempt) {
-        completedAttempts.push(attempt);
-      }
-    }
-
-    for (const completedAttempt of completedAttempts) {
-      const stepDefinition = request.workflow.steps.find(
-        (candidate) => candidate.name === completedAttempt.stepName
+      const unresolvedOutput = request.workflow.resolveOutput?.(
+        attempts.map(stateOutcomeToAttempt)
       );
-      const compensation = stepDefinition?.compensation;
-
-      if (compensation === undefined || completedAttempt.output === undefined) {
-        continue;
-      }
-
-      await publishLifecycle({
-        type: WORKFLOW_LIFECYCLE_EVENT_NAMES.compensationStarted,
-        occurredAt: clock.now(),
-        status: "compensating",
-        runId,
-        workflowKey: request.workflow.key,
-        workflowVersion: request.workflow.version,
-        correlationId: request.correlationId,
-        causationId: request.causationId,
-        idempotencyKey: request.idempotencyKey,
-        subject: request.subject,
-        stepId: completedAttempt.stepId,
-        stepName: completedAttempt.stepName,
-      });
-
-      await Effect.runPromise(
-        compensation.compensate(request.input, completedAttempt.output, {
-          workflowId: runId,
-          workflowKey: request.workflow.key,
-          workflowVersion: request.workflow.version,
-          stepId: completedAttempt.stepId,
-          stepName: completedAttempt.stepName,
-          attempt: completedAttempt.attempt,
-          correlationId: request.correlationId,
-          causationId: request.causationId,
-          idempotencyKey: request.idempotencyKey,
-          subject: request.subject,
-        })
-      );
-
-      attempts.push({
-        attempt: completedAttempt.attempt,
-        completedAt: clock.now(),
-        phase: "compensation",
-        startedAt: completedAttempt.startedAt,
-        status: "compensated",
-        stepId: completedAttempt.stepId,
-        stepName: completedAttempt.stepName,
-      });
-      await observeWorkflowMetric({
-        attributes: {
-          phase: "compensation",
-          status: "compensated",
-        },
-        boundary: "workflow",
-        event: "compensation",
-      });
-
-      status = "compensated";
-      await persistRecord({
-        ...baseRecord,
-        attempts,
-        status,
-        updatedAt: clock.now(),
-      });
-      await publishLifecycle({
-        type: WORKFLOW_LIFECYCLE_EVENT_NAMES.compensationCompleted,
-        occurredAt: clock.now(),
-        status,
-        runId,
-        workflowKey: request.workflow.key,
-        workflowVersion: request.workflow.version,
-        correlationId: request.correlationId,
-        causationId: request.causationId,
-        idempotencyKey: request.idempotencyKey,
-        subject: request.subject,
-        stepId: completedAttempt.stepId,
-        stepName: completedAttempt.stepName,
-      });
-    }
-
-    return status;
-  };
-
-  const executeWorkflowWithCompensation = async <Input, Output>({
-    attempts,
-    baseRecord,
-    initialOutput,
-    recoveredState,
-    request,
-    runId,
-  }: {
-    attempts: CommerceWorkflowStepAttempt[];
-    baseRecord: WorkflowRuntimeBaseRecord<Input, Output>;
-    initialOutput: Output | undefined;
-    recoveredState: CommerceWorkflowRunState | null;
-    request: CommerceWorkflowStartRequest<Input, Output>;
-    runId: string;
-  }): Promise<{
-    readonly output: Output | undefined;
-    readonly status: CommerceWorkflowRunRecord<Input, Output>["status"];
-    readonly workflowError: CommerceWorkflowRunError | undefined;
-  }> => {
-    try {
-      const output = await executeWorkflowSteps({
-        attempts,
-        baseRecord,
-        request,
-        runId,
-        startIndex: recoveredState?.nextStepIndex ?? 0,
-      });
-
-      return {
-        output,
-        status: "completed",
-        workflowError: undefined,
-      };
-    } catch (error) {
-      if (error instanceof InMemoryWorkflowRuntimeInterruptedError) {
-        throw error;
-      }
-
-      const workflowError = createWorkflowRunError(error);
-      const status = await compensateWorkflow({
-        attempts,
-        baseRecord,
-        request,
-        runId,
-      });
-
-      return {
-        output: initialOutput,
-        status,
-        workflowError,
-      };
-    }
-  };
-
+      const output = terminalError
+        ? state.output
+        : yield* Schema.decodeUnknownEffect(request.workflow.outputSchema)(
+            unresolvedOutput
+          ).pipe(
+            Effect.mapError(
+              () =>
+                new WorkflowRuntimeError({
+                  operation: "validation",
+                  message: "Invalid workflow output",
+                  runId: state.runId,
+                  workflowKey: state.workflowKey,
+                })
+            )
+          );
+      state = { ...state, completedAt: clock.now().toISOString() };
+      yield* save(status, state.nextStepIndex, output);
+      const terminalEvent: WorkflowLifecycleEventPayload = terminalError
+        ? {
+            ...base,
+            type: WORKFLOW_LIFECYCLE_EVENT_NAMES.failed,
+            status: status === "compensated" ? "compensated" : "failed",
+            error: terminalError,
+            occurredAt: clock.now(),
+          }
+        : {
+            ...base,
+            type: WORKFLOW_LIFECYCLE_EVENT_NAMES.completed,
+            status: "completed",
+            output,
+            occurredAt: clock.now(),
+          };
+      yield* publish(terminalEvent);
+      return stateToRecord(state) as CommerceWorkflowRunRecord<Input, Output>;
+    }).pipe(Effect.withSpan("workflow.start"));
   return {
-    capabilities: {
+    capabilities: Object.freeze({
       adapter: "memory",
-      supportsCompensation: true,
-      supportsDurableHistory: stateStore !== undefined,
-      supportsEvents: true,
-      supportsMetadataProjection: metadataStore !== undefined,
       supportsPause: false,
-    },
-    dedupe: async <Output = unknown>(query: CommerceWorkflowDuplicateQuery) => {
-      const runId = idempotencyIndex.get(makeDuplicateKey(query));
-      const local = runId ? (runs.get(runId) ?? null) : null;
-      if (local) {
-        return local as CommerceWorkflowRunRecord<unknown, Output>;
-      }
-
-      const state =
-        (await stateStore?.findRunStateByIdempotencyKey(query)) ?? null;
-      return state
-        ? (stateToRecord(state) as CommerceWorkflowRunRecord<unknown, Output>)
-        : null;
-    },
-    get: async <Output = unknown>(runId: string) =>
-      (await reconcile({ runId })) as CommerceWorkflowRunRecord<
-        unknown,
-        Output
-      > | null,
-    reconcile: async <Output = unknown>(
-      request: CommerceWorkflowReconcileRequest
-    ) => {
-      const record = await reconcile(request);
-      return record as CommerceWorkflowRunRecord<unknown, Output> | null;
-    },
-    start: async <Input, Output>(
-      request: CommerceWorkflowStartRequest<Input, Output>
-    ): Promise<CommerceWorkflowRunRecord<Input, Output>> => {
-      const duplicateRecord = await findTerminalDuplicateRecord(request);
-      if (duplicateRecord) {
-        return duplicateRecord;
-      }
-
-      const prepared = await prepareWorkflowStart(request);
-      const {
-        attempts,
-        baseRecord,
-        createdAt,
-        output: initialOutput,
-        recoveredRecord,
-        recoveredState,
-        runId,
-      } = prepared;
-      const runningStatus = "running";
-
-      if (recoveredRecord && isTerminalStatus(recoveredRecord.status)) {
-        await persistRecord(recoveredRecord, recoveredState?.nextStepIndex);
-        return recoveredRecord as CommerceWorkflowRunRecord<Input, Output>;
-      }
-
-      if (!recoveredRecord) {
-        await persistStartedWorkflow({
-          attempts,
-          baseRecord,
-          createdAt,
-          request,
-          runId,
-          status: runningStatus,
-        });
-      }
-
-      const { output, status, workflowError } =
-        await executeWorkflowWithCompensation({
-          attempts,
-          baseRecord,
-          initialOutput,
-          recoveredState,
-          request,
-          runId,
-        });
-
-      const completedAt =
-        status === "completed" ||
-        status === "failed" ||
-        status === "compensated"
-          ? clock.now()
-          : undefined;
-      const record: CommerceWorkflowRunRecord<Input, Output> = {
-        ...baseRecord,
-        attempts,
-        completedAt,
-        output,
-        status,
-        updatedAt: completedAt ?? clock.now(),
-      };
-
-      await persistRecord(record);
-      await publishFinalWorkflowLifecycle({
-        output,
-        record,
-        request,
-        runId,
-        status,
-        workflowError,
-      });
-
-      return record;
-    },
+      supportsEvents: true,
+      supportsDurableHistory: true,
+      supportsCompensation: true,
+      supportsMetadataProjection: metadataStore !== undefined,
+    }),
+    start,
+    get,
+    reconcile: <Output = unknown>({
+      runId,
+    }: CommerceWorkflowReconcileRequest) => get<Output>(runId),
+    dedupe: <Output = unknown>(query: CommerceWorkflowDuplicateQuery) =>
+      stateStore
+        .findRunStateByIdempotencyKey(query)
+        .pipe(
+          Effect.map(
+            Option.map(
+              (state) =>
+                stateToRecord(state) as CommerceWorkflowRunRecord<
+                  unknown,
+                  Output
+                >
+            )
+          )
+        ),
   };
 };
+
+/**
+ * Builds a deterministic runtime from explicit Effect services. Each Layer
+ * acquisition owns its runtime, while callers may deliberately share durable
+ * state by providing the same state-store Layer.
+ */
+export const InMemoryWorkflowRuntimeLayer = Layer.effect(
+  WorkflowRuntimeService,
+  Effect.gen(function* createInMemoryRuntimeServiceEffect() {
+    return createInMemoryWorkflowRuntime({
+      clock: yield* ClockServiceTag,
+      ids: yield* IdGeneratorServiceTag,
+      publisher: yield* WorkflowLifecyclePublisherService,
+      stateStore: yield* WorkflowStateStoreService,
+    });
+  })
+);
 
 export interface InMemoryWorkflowRecoveryHarnessOptions {
   readonly clock: ClockService;
@@ -1561,7 +1366,15 @@ export const createInMemoryWorkflowRecoveryHarness = ({
   clock,
   ids,
 }: InMemoryWorkflowRecoveryHarnessOptions): InMemoryWorkflowRecoveryHarness => {
-  const { events, publisher } = createEventCollector();
+  const events: CommerceEventEnvelope[] = [];
+  const publisher: WorkflowLifecyclePublisher = {
+    publish: (event) =>
+      Effect.sync(() => {
+        if (!events.some((existing) => existing.id === event.id)) {
+          events.push(event);
+        }
+      }),
+  };
   const metadata = createInMemoryWorkflowMetadataStore();
   const state = createInMemoryWorkflowStateStore();
 
@@ -1580,3 +1393,8 @@ export const createInMemoryWorkflowRecoveryHarness = ({
     state,
   };
 };
+
+export {
+  workflowRuntimeContractCases,
+  type WorkflowRuntimeContractCase,
+} from "./workflow-contracts";

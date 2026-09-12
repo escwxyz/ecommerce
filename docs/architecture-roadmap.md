@@ -315,6 +315,23 @@ architecture:
   idempotency, interruption, restart, and timer-recovery gates before latency,
   placement, deployment, operations, or cost trade-offs can support a separate
   production-adoption proposal.
+- Section 9.11 removes the workflow runtime's Promise exception. Runtime,
+  durable-state, metadata-projection, and lifecycle-publication operations now
+  compose as typed Effects; lookup absence is represented by `Option`, and
+  workflow requirements remain visible to Layer composition. The deterministic
+  and Cloudflare adapters share service-level conformance cases for lookup,
+  causal identity, concurrent deduplication, and reconciliation. Recovery tests
+  additionally cover fiber interruption, retry, persisted replay, reverse
+  compensation, state authority, platform cancellation, telemetry isolation,
+  scoped adapter cleanup, replay-safe lifecycle publication, and resumable
+  Cloudflare dispatch checkpoints. Workflow implementation and payload schema
+  versions remain distinct. Cloudflare Promises terminate at the platform adapter
+  boundary.
+- Checkout's executable workflow contribution now invokes the public
+  `CheckoutService` through `WorkflowRuntimeService` and preserves its Layer
+  requirement. The contribution is one durable workflow step; section 9.12
+  tracks the later Checkout-owned split into independently persisted commerce
+  steps and resumption of an in-progress claim.
 - Section 10.1 replaces trusted native-plugin manifest interfaces with a
   versioned Effect Schema. Registration now decodes validated plugin IDs,
   semantic versions, and structured required/optional capability declarations

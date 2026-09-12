@@ -405,6 +405,7 @@ export {
   createInMemoryRepositoryTestLayer,
   createSequenceIdGeneratorLayer,
   createInMemoryWorkflowRuntime,
+  InMemoryWorkflowRuntimeLayer,
   createStaticAuthContext,
   createSequenceIdGenerator,
   createStaticClock,
@@ -494,4 +495,9 @@ export {
   type WorkflowStepHandler,
   describeWorkflowDefinition,
   defineWorkflowStep,
+  WorkflowRuntimeError,
+  WorkflowStateStoreService,
+  WorkflowLifecyclePublisherService,
+  type WorkflowRuntimeFailure,
+  type WorkflowLifecyclePublisher,
 } from "./workflows/index";

@@ -102,6 +102,30 @@ A module application service owns atomic transaction boundaries. Repositories us
 
 Cross-module commerce operations use durable workflows with schema-versioned inputs/state, idempotent steps, persisted progress, retry policies, terminal failures, and compensation. No distributed transaction is implied.
 
+`WorkflowRuntimeService` owns workflow execution through typed Effect `start`,
+`get`, `dedupe`, and `reconcile` operations. Lookups return `Option`; absence is
+distinct from persistence or platform failure. State and metadata stores and
+lifecycle publication also return Effects. Runtime error operations form a
+closed schema-backed vocabulary, while defects and interruption retain their
+Causes. Cloudflare Promise APIs terminate inside the platform adapter.
+
+Durable state is the replay authority; metadata is a query projection. Completed
+step outcomes must be persisted before advancing, and interruption must leave
+resumable state without recording a business failure or starting compensation.
+Retry delays use Effect Clock scheduling, and compensation outcomes are persisted
+for idempotent replay. Lifecycle publishers deduplicate stable event envelope IDs,
+so recovery can republish the latest durable checkpoint after publication fails.
+Cloudflare dispatch persists registration, Workflow creation, Queue delivery, and
+coordinator checkpoints separately and resumes only the incomplete stage. Workflow
+definition versions and input/output schema versions remain independent. Tests use
+the same runtime service contract for local
+execution and Cloudflare dispatch, supplemented by recovery and platform tests.
+
+Checkout's executable contribution delegates to its existing Effect service as
+one workflow step. This foundation preserves its business sequencing; splitting
+that orchestration into independently persisted commerce steps and recovering
+an in-progress Checkout claim remain Checkout-owned follow-up work.
+
 Alternative considered: one transaction spanning module repositories. Rejected because it couples modules to one database/runtime and cannot extend safely to providers or actors.
 
 ### 9. Authentication is a temporary external integration
