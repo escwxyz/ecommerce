@@ -388,6 +388,22 @@ describe("Cloudflare Effect workflow conformance", () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const runtime = yield* WorkflowRuntimeService;
+        const incompatible = yield* Effect.exit(
+          runtime.start({
+            ...competingRequest,
+            workflow: defineWorkflow({
+              key: "cf.competing",
+              version: 2,
+              inputSchema: Schema.Struct({ cartId: Schema.String }),
+              outputSchema: Schema.String,
+              steps: [],
+            }),
+          })
+        );
+        expect(Exit.isFailure(incompatible)).toBe(true);
+        expect(Option.getOrThrow(yield* runtime.get("winning-run")).runId).toBe(
+          "winning-run"
+        );
         const duplicate = yield* runtime.start(competingRequest);
         expect(duplicate.runId).toBe("winning-run");
         statuses.set("winning-run", {

@@ -884,25 +884,26 @@ const acquireWorkflowRuntime = ({
           if (stateStore) {
             const registration = yield* stateStore.registerRunState(durable);
             if (registration.status === "duplicate") {
-              // Another host may have registered the same key with a different
-              // generated ID. Decode and later reconcile against the winner.
-              definitions.set(registration.state.runId, request.workflow);
-              const existing = yield* decodeState(registration.state);
               if (
-                existing.workflowKey !== request.workflow.key ||
-                existing.workflowVersion !== request.workflow.version ||
-                existing.schemaVersion !==
+                registration.state.workflowKey !== request.workflow.key ||
+                registration.state.workflowVersion !==
+                  request.workflow.version ||
+                registration.state.schemaVersion !==
                   (request.workflow.schemaVersion ?? request.workflow.version)
               ) {
                 return yield* Effect.fail(
                   new WorkflowRuntimeError({
                     operation: "validation",
-                    runId: existing.runId,
+                    runId: registration.state.runId,
                     workflowKey: request.workflow.key,
                     message: "Unsupported workflow recovery version.",
                   })
                 );
               }
+              // Another host may have registered the same key with a different
+              // generated ID. Decode and later reconcile against the winner.
+              definitions.set(registration.state.runId, request.workflow);
+              const existing = yield* decodeState(registration.state);
               const resumed =
                 existing.status === "pending" &&
                 existing.dispatchStatus !== "coordinated"
