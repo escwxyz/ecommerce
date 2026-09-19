@@ -362,6 +362,20 @@ describe("Cloudflare Effect workflow conformance", () => {
       correlationId: "cf-correlation",
       idempotencyKey: "competing-start",
     };
+    const incompatiblePayloadRequest = {
+      ...competingRequest,
+      input: { cartId: "cart-1", coupon: "SAVE" },
+      workflow: defineWorkflow({
+        key: "cf.competing",
+        version: 1,
+        inputSchema: Schema.Struct({
+          cartId: Schema.String,
+          coupon: Schema.String,
+        }),
+        outputSchema: Schema.String,
+        steps: [],
+      }),
+    };
     await Effect.runPromise(
       Effect.gen(function* () {
         const runtime = yield* WorkflowRuntimeService;
@@ -388,6 +402,19 @@ describe("Cloudflare Effect workflow conformance", () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const runtime = yield* WorkflowRuntimeService;
+        expect(
+          Exit.isFailure(
+            yield* Effect.exit(runtime.start(incompatiblePayloadRequest))
+          )
+        ).toBe(true);
+        expect(Option.getOrThrow(yield* runtime.get("winning-run")).runId).toBe(
+          "winning-run"
+        );
+      }).pipe(Effect.provide(losingLayer))
+    );
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* WorkflowRuntimeService;
         const incompatible = yield* Effect.exit(
           runtime.start({
             ...competingRequest,
@@ -401,6 +428,13 @@ describe("Cloudflare Effect workflow conformance", () => {
           })
         );
         expect(Exit.isFailure(incompatible)).toBe(true);
+        expect(Option.getOrThrow(yield* runtime.get("winning-run")).runId).toBe(
+          "winning-run"
+        );
+        const incompatiblePayload = yield* Effect.exit(
+          runtime.start(incompatiblePayloadRequest)
+        );
+        expect(Exit.isFailure(incompatiblePayload)).toBe(true);
         expect(Option.getOrThrow(yield* runtime.get("winning-run")).runId).toBe(
           "winning-run"
         );

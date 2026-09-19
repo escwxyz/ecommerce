@@ -22,7 +22,7 @@ import type {
   CommerceWorkflowStateStore,
   WorkflowLifecyclePublisher,
 } from "@ecommerce/core";
-import { Effect, Layer, Option, Schema, Semaphore } from "effect";
+import { Effect, Exit, Layer, Option, Schema, Semaphore } from "effect";
 
 export interface CloudflareWorkflowRuntimeBindings {
   readonly workflow: Workflow<CloudflareWorkflowPayload>;
@@ -796,8 +796,8 @@ const acquireWorkflowRuntime = ({
               idempotencyKey: request.idempotencyKey,
             });
             if (Option.isSome(duplicate)) {
-              definitions.set(duplicate.value.runId, request.workflow);
               if (
+                duplicate.value.workflowKey !== request.workflow.key ||
                 duplicate.value.workflowVersion !== request.workflow.version ||
                 duplicate.value.schemaVersion !==
                   (request.workflow.schemaVersion ?? request.workflow.version)
@@ -839,6 +839,7 @@ const acquireWorkflowRuntime = ({
                   )
                 );
               }
+              definitions.set(duplicate.value.runId, request.workflow);
               const resumed =
                 duplicate.value.status === "pending" &&
                 duplicate.value.dispatchStatus !== "coordinated"
@@ -902,8 +903,22 @@ const acquireWorkflowRuntime = ({
               }
               // Another host may have registered the same key with a different
               // generated ID. Decode and later reconcile against the winner.
+              const previousDefinition = definitions.get(
+                registration.state.runId
+              );
               definitions.set(registration.state.runId, request.workflow);
-              const existing = yield* decodeState(registration.state);
+              const decoded = yield* Effect.exit(
+                decodeState(registration.state)
+              );
+              if (Exit.isFailure(decoded)) {
+                if (previousDefinition) {
+                  definitions.set(registration.state.runId, previousDefinition);
+                } else {
+                  definitions.delete(registration.state.runId);
+                }
+                return yield* Effect.failCause(decoded.cause);
+              }
+              const existing = decoded.value;
               const resumed =
                 existing.status === "pending" &&
                 existing.dispatchStatus !== "coordinated"
