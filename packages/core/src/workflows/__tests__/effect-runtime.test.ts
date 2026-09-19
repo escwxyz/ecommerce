@@ -220,7 +220,7 @@ it("returns decoded terminal output from durable replay", async () => {
   expect((result.output as Date).toISOString()).toBe(timestamp);
 });
 
-it("stores transformed request input in its encoded durable form", async () => {
+it("accepts typed transformed requests without changing in-memory lookups", async () => {
   const state = createInMemoryWorkflowStateStore();
   const timestamp = "2026-01-02T03:04:05.000Z";
   let stepInput: unknown;
@@ -255,10 +255,14 @@ it("stores transformed request input in its encoded durable form", async () => {
   const started = await Effect.runPromise(runtime.start(request));
   expect(stepInput).toBeInstanceOf(Date);
   expect(state.states.get(started.runId)?.input).toEqual({
-    scheduledAt: timestamp,
+    scheduledAt: new Date(timestamp),
   });
-  expect(state.states.get(started.runId)?.output).toBe(timestamp);
+  expect(state.states.get(started.runId)?.output).toBeInstanceOf(Date);
   expect(started.output).toBeInstanceOf(Date);
+  const found = Option.getOrThrow(
+    await Effect.runPromise(runtime.get(started.runId))
+  );
+  expect(found.output).toBeInstanceOf(Date);
   const replayed = await Effect.runPromise(runtime.start(request));
   expect(replayed.input.scheduledAt).toBeInstanceOf(Date);
   expect(replayed.output).toBeInstanceOf(Date);

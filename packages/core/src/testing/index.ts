@@ -43,6 +43,7 @@ import {
 import { DurableAudit, recordCommerceRuntimeMetric } from "../telemetry/index";
 import type { DurableAuditEvent } from "../telemetry/index";
 import type {
+  CommerceWorkflowDefinition,
   CommerceWorkflowDuplicateQuery,
   CommerceWorkflowMetadataRecord,
   CommerceWorkflowMetadataStore,
@@ -642,6 +643,21 @@ const workflowDateToIso = (date: Date): string => date.toISOString();
 
 const workflowDateFromIso = (value: string): Date => new Date(value);
 
+const decodeWorkflowValue = (
+  schema: CommerceWorkflowDefinition["inputSchema"],
+  value: unknown
+) =>
+  Effect.gen(function* decodeWorkflowValueEffect() {
+    const decoded = yield* Effect.result(
+      Schema.decodeUnknownEffect(schema)(value)
+    );
+    if (decoded._tag === "Success") {
+      return decoded.success;
+    }
+    const encoded = yield* Schema.encodeUnknownEffect(schema)(value);
+    return yield* Schema.decodeUnknownEffect(schema)(encoded);
+  });
+
 function reverseWorkflowAttempts<Attempt>(
   attempts: readonly Attempt[]
 ): Attempt[] {
@@ -857,29 +873,11 @@ export const createInMemoryWorkflowRuntime = ({
         )
       );
       const { inputSchema } = request.workflow;
-      // Requests may carry an encoded payload or the codec's decoded Type;
-      // durable checkpoints always store the encoded representation.
-      const decodedRequest = yield* Effect.result(
-        Schema.decodeUnknownEffect(inputSchema)(request.input)
-      );
-      const decodedInput =
-        decodedRequest._tag === "Success"
-          ? decodedRequest.success
-          : yield* Schema.encodeUnknownEffect(inputSchema)(request.input).pipe(
-              Effect.flatMap((encoded) =>
-                Schema.decodeUnknownEffect(inputSchema)(encoded)
-              ),
-              Effect.mapError(
-                () =>
-                  new WorkflowRuntimeError({
-                    operation: "validation",
-                    message: "Invalid workflow input",
-                    workflowKey: request.workflow.key,
-                  })
-              )
-            );
-      const encodedInput = yield* Schema.encodeUnknownEffect(inputSchema)(
-        decodedInput
+      // Accept both the codec's encoded payload and its decoded Type. Durable
+      // stores may serialize the latter before returning it for replay.
+      const decodedInput = yield* decodeWorkflowValue(
+        inputSchema,
+        request.input
       ).pipe(
         Effect.mapError(
           () =>
@@ -919,7 +917,6 @@ export const createInMemoryWorkflowRuntime = ({
         };
         const registration = yield* stateStore.registerRunState({
           ...toRunState(record, 0),
-          input: encodedInput,
           schemaVersion:
             request.workflow.schemaVersion ?? request.workflow.version,
         });
@@ -942,7 +939,8 @@ export const createInMemoryWorkflowRuntime = ({
           })
         );
       }
-      const replayInput = yield* Schema.decodeUnknownEffect(inputSchema)(
+      const replayInput = yield* decodeWorkflowValue(
+        inputSchema,
         state.input
       ).pipe(
         Effect.mapError(
@@ -967,7 +965,8 @@ export const createInMemoryWorkflowRuntime = ({
       };
       const completedOutput =
         state.status === "completed"
-          ? yield* Schema.decodeUnknownEffect(request.workflow.outputSchema)(
+          ? yield* decodeWorkflowValue(
+              request.workflow.outputSchema,
               state.output
             ).pipe(
               Effect.mapError(
@@ -1281,7 +1280,8 @@ export const createInMemoryWorkflowRuntime = ({
       }
       const output = terminalError
         ? state.output
-        : yield* Schema.decodeUnknownEffect(request.workflow.outputSchema)(
+        : yield* decodeWorkflowValue(
+            request.workflow.outputSchema,
             request.workflow.resolveOutput?.(
               attempts.map(stateOutcomeToAttempt)
             )
@@ -1296,23 +1296,8 @@ export const createInMemoryWorkflowRuntime = ({
                 })
             )
           );
-      const persistedOutput = terminalError
-        ? state.output
-        : yield* Schema.encodeUnknownEffect(request.workflow.outputSchema)(
-            output
-          ).pipe(
-            Effect.mapError(
-              () =>
-                new WorkflowRuntimeError({
-                  operation: "validation",
-                  message: "Invalid workflow output",
-                  runId: state.runId,
-                  workflowKey: state.workflowKey,
-                })
-            )
-          );
       state = { ...state, completedAt: clock.now().toISOString() };
-      yield* save(status, state.nextStepIndex, persistedOutput);
+      yield* save(status, state.nextStepIndex, output);
       const terminalEvent: WorkflowLifecycleEventPayload = terminalError
         ? {
             ...base,
