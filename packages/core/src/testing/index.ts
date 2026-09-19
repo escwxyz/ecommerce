@@ -919,19 +919,21 @@ export const createInMemoryWorkflowRuntime = ({
           })
         );
       }
-      yield* Schema.decodeUnknownEffect(request.workflow.inputSchema)(
-        state.input
-      ).pipe(
-        Effect.mapError(
-          () =>
-            new WorkflowRuntimeError({
-              operation: "validation",
-              message: "Invalid persisted workflow input",
-              runId: state.runId,
-              workflowKey: state.workflowKey,
-            })
-        )
-      );
+      const replayInput = Option.isSome(recovered)
+        ? yield* Schema.decodeUnknownEffect(request.workflow.inputSchema)(
+            state.input
+          ).pipe(
+            Effect.mapError(
+              () =>
+                new WorkflowRuntimeError({
+                  operation: "validation",
+                  message: "Invalid persisted workflow input",
+                  runId: state.runId,
+                  workflowKey: state.workflowKey,
+                })
+            )
+          )
+        : decodedInput;
       const base = {
         runId: state.runId,
         workflowKey: state.workflowKey,
@@ -942,28 +944,29 @@ export const createInMemoryWorkflowRuntime = ({
         subject: state.subject,
         traceId: state.traceId,
       };
-      if (state.status === "completed") {
-        yield* Schema.decodeUnknownEffect(request.workflow.outputSchema)(
-          state.output
-        ).pipe(
-          Effect.mapError(
-            () =>
-              new WorkflowRuntimeError({
-                operation: "validation",
-                message: "Invalid persisted workflow output",
-                runId: state.runId,
-                workflowKey: state.workflowKey,
-              })
-          )
-        );
-      }
+      const completedOutput =
+        state.status === "completed"
+          ? yield* Schema.decodeUnknownEffect(request.workflow.outputSchema)(
+              state.output
+            ).pipe(
+              Effect.mapError(
+                () =>
+                  new WorkflowRuntimeError({
+                    operation: "validation",
+                    message: "Invalid persisted workflow output",
+                    runId: state.runId,
+                    workflowKey: state.workflowKey,
+                  })
+              )
+            )
+          : undefined;
       if (["completed", "failed", "compensated"].includes(state.status)) {
         if (state.status === "completed") {
           yield* publish({
             ...base,
             type: WORKFLOW_LIFECYCLE_EVENT_NAMES.completed,
             status: "completed",
-            output: state.output,
+            output: completedOutput,
             occurredAt: clock.now(),
           });
         } else {
@@ -980,7 +983,11 @@ export const createInMemoryWorkflowRuntime = ({
             });
           }
         }
-        return stateToRecord(state) as CommerceWorkflowRunRecord<Input, Output>;
+        return {
+          ...stateToRecord(state),
+          input: replayInput,
+          output: state.status === "completed" ? completedOutput : state.output,
+        } as CommerceWorkflowRunRecord<Input, Output>;
       }
       const attempts = [...state.attempts];
       const save = (
@@ -1092,7 +1099,7 @@ export const createInMemoryWorkflowRuntime = ({
             stepName: step.name,
             attempt,
           };
-          const result = yield* step.run(state.input as Input, context).pipe(
+          const result = yield* step.run(replayInput as Input, context).pipe(
             Effect.result,
             Effect.withSpan("workflow.step", {
               attributes: {
@@ -1215,7 +1222,7 @@ export const createInMemoryWorkflowRuntime = ({
           });
           const compensationRunId = state.runId;
           yield* compensation
-            .compensate(state.input as Input, outcome.output, {
+            .compensate(replayInput as Input, outcome.output, {
               ...base,
               workflowId: state.runId,
               stepId: outcome.stepId,
@@ -1286,7 +1293,11 @@ export const createInMemoryWorkflowRuntime = ({
             occurredAt: clock.now(),
           };
       yield* publish(terminalEvent);
-      return stateToRecord(state) as CommerceWorkflowRunRecord<Input, Output>;
+      return {
+        ...stateToRecord(state),
+        input: replayInput,
+        output,
+      } as CommerceWorkflowRunRecord<Input, Output>;
     }).pipe(Effect.withSpan("workflow.start"));
   return {
     capabilities: Object.freeze({

@@ -10,6 +10,7 @@ import {
   createStaticClock,
 } from "../../testing/index";
 import {
+  CommerceWorkflowKeySchema,
   defineWorkflow,
   WORKFLOW_LIFECYCLE_EVENT_NAMES,
   WorkflowRuntimeError,
@@ -104,6 +105,119 @@ it("decodes workflow input and completed output at the runtime boundary", async 
   );
   expect(invalidOutput).toBeInstanceOf(WorkflowRuntimeError);
   expect(invalidOutput.operation).toBe("validation");
+});
+
+it("replays decoded durable input into steps and compensators", async () => {
+  const state = createInMemoryWorkflowStateStore();
+  const timestamp = "2026-01-02T03:04:05.000Z";
+  await Effect.runPromise(
+    state.store.upsertRunState({
+      attempts: [],
+      correlationId: "decoded-replay",
+      createdAt: timestamp,
+      idempotencyKey: "decoded-replay",
+      input: { scheduledAt: timestamp },
+      nextStepIndex: 0,
+      runId: "decoded-replay-run",
+      schemaVersion: 1,
+      status: "running",
+      updatedAt: timestamp,
+      workflowKey: Schema.decodeUnknownSync(CommerceWorkflowKeySchema)(
+        "test.decoded-replay"
+      ),
+      workflowVersion: 1,
+    })
+  );
+  const observed: Date[] = [];
+  const workflow = defineWorkflow({
+    key: "test.decoded-replay",
+    version: 1,
+    inputSchema: Schema.Struct({ scheduledAt: Schema.DateFromString }),
+    steps: [
+      {
+        name: "first",
+        run: (input: { scheduledAt: Date }) => {
+          observed.push(input.scheduledAt);
+          return Effect.succeed({ output: "reserved" });
+        },
+        compensation: {
+          name: "undo-first",
+          compensate: (input: { scheduledAt: Date }) =>
+            Effect.sync(() => {
+              observed.push(input.scheduledAt);
+            }),
+        },
+      },
+      { name: "second", run: () => Effect.fail(new Error("rejected")) },
+    ],
+  });
+  const result = await Effect.runPromise(
+    createInMemoryWorkflowRuntime({
+      clock: createStaticClock(new Date(timestamp)),
+      ids: createSequenceIdGenerator([]),
+      publisher: { publish: () => Effect.void },
+      stateStore: state.store,
+    }).start({
+      workflow,
+      input: { scheduledAt: timestamp } as unknown as { scheduledAt: Date },
+      correlationId: "decoded-replay",
+      idempotencyKey: "decoded-replay",
+    })
+  );
+  expect(result.status).toBe("compensated");
+  expect(observed).toHaveLength(2);
+  for (const date of observed) {
+    expect(date).toBeInstanceOf(Date);
+    expect(date.toISOString()).toBe(timestamp);
+  }
+  expect(result.input.scheduledAt).toBeInstanceOf(Date);
+});
+
+it("returns decoded terminal output from durable replay", async () => {
+  const state = createInMemoryWorkflowStateStore();
+  const timestamp = "2026-01-02T03:04:05.000Z";
+  await Effect.runPromise(
+    state.store.upsertRunState({
+      attempts: [],
+      completedAt: timestamp,
+      correlationId: "decoded-terminal",
+      createdAt: timestamp,
+      idempotencyKey: "decoded-terminal",
+      input: { scheduledAt: timestamp },
+      nextStepIndex: 0,
+      output: timestamp,
+      runId: "decoded-terminal-run",
+      schemaVersion: 1,
+      status: "completed",
+      updatedAt: timestamp,
+      workflowKey: Schema.decodeUnknownSync(CommerceWorkflowKeySchema)(
+        "test.decoded-terminal"
+      ),
+      workflowVersion: 1,
+    })
+  );
+  const workflow = defineWorkflow({
+    key: "test.decoded-terminal",
+    version: 1,
+    inputSchema: Schema.Struct({ scheduledAt: Schema.DateFromString }),
+    outputSchema: Schema.DateFromString,
+    steps: [],
+  });
+  const result = await Effect.runPromise(
+    createInMemoryWorkflowRuntime({
+      clock: createStaticClock(new Date(timestamp)),
+      ids: createSequenceIdGenerator([]),
+      publisher: { publish: () => Effect.void },
+      stateStore: state.store,
+    }).start({
+      workflow,
+      input: { scheduledAt: timestamp },
+      correlationId: "decoded-terminal",
+      idempotencyKey: "decoded-terminal",
+    })
+  );
+  expect(result.output).toBeInstanceOf(Date);
+  expect((result.output as Date).toISOString()).toBe(timestamp);
 });
 
 it("skips output resolution after a terminal step failure", async () => {
