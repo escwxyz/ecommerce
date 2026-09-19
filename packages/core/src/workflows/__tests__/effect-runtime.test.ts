@@ -159,7 +159,7 @@ it("replays decoded durable input into steps and compensators", async () => {
       stateStore: state.store,
     }).start({
       workflow,
-      input: { scheduledAt: timestamp } as unknown as { scheduledAt: Date },
+      input: { scheduledAt: new Date(timestamp) },
       correlationId: "decoded-replay",
       idempotencyKey: "decoded-replay",
     })
@@ -211,13 +211,57 @@ it("returns decoded terminal output from durable replay", async () => {
       stateStore: state.store,
     }).start({
       workflow,
-      input: { scheduledAt: timestamp },
+      input: { scheduledAt: new Date(timestamp) },
       correlationId: "decoded-terminal",
       idempotencyKey: "decoded-terminal",
     })
   );
   expect(result.output).toBeInstanceOf(Date);
   expect((result.output as Date).toISOString()).toBe(timestamp);
+});
+
+it("stores transformed request input in its encoded durable form", async () => {
+  const state = createInMemoryWorkflowStateStore();
+  const timestamp = "2026-01-02T03:04:05.000Z";
+  let stepInput: unknown;
+  const workflow = defineWorkflow({
+    key: "test.encoded-input",
+    version: 1,
+    inputSchema: Schema.Struct({ scheduledAt: Schema.DateFromString }),
+    outputSchema: Schema.DateFromString,
+    steps: [
+      {
+        name: "schedule",
+        run: (input: { scheduledAt: Date }) => {
+          stepInput = input.scheduledAt;
+          return Effect.succeed({ output: "scheduled" });
+        },
+      },
+    ],
+    resolveOutput: () => timestamp,
+  });
+  const runtime = createInMemoryWorkflowRuntime({
+    clock: createStaticClock(new Date(timestamp)),
+    ids: createSequenceIdGenerator([]),
+    publisher: { publish: () => Effect.void },
+    stateStore: state.store,
+  });
+  const request = {
+    workflow,
+    input: { scheduledAt: new Date(timestamp) },
+    correlationId: "encoded-input",
+    runId: "encoded-input-run",
+  };
+  const started = await Effect.runPromise(runtime.start(request));
+  expect(stepInput).toBeInstanceOf(Date);
+  expect(state.states.get(started.runId)?.input).toEqual({
+    scheduledAt: timestamp,
+  });
+  expect(state.states.get(started.runId)?.output).toBe(timestamp);
+  expect(started.output).toBeInstanceOf(Date);
+  const replayed = await Effect.runPromise(runtime.start(request));
+  expect(replayed.input.scheduledAt).toBeInstanceOf(Date);
+  expect(replayed.output).toBeInstanceOf(Date);
 });
 
 it("skips output resolution after a terminal step failure", async () => {
