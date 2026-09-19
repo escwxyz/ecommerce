@@ -1403,7 +1403,7 @@ describe("cloudflare workflow runtime adapter", () => {
     expect(fakeNamespace.fetches).toHaveLength(1);
   });
 
-  it("deduplicates workflow starts across runtime instances with shared metadata", async () => {
+  it("rejects metadata-only duplicate recovery across runtime instances", async () => {
     const workflowBinding = createFakeWorkflowBinding();
     const fakeQueue = createFakeQueue();
     const fakeNamespace = createFakeDurableObjectNamespace();
@@ -1452,9 +1452,12 @@ describe("cloudflare workflow runtime adapter", () => {
       publisher,
     });
 
-    const second = await Effect.runPromise(secondRuntime.start(request));
+    const failure = await Effect.runPromise(
+      Effect.flip(secondRuntime.start(request))
+    );
 
-    expect(second.runId).toBe(first.runId);
+    expect(failure).toBeInstanceOf(CloudflareWorkflowRuntimeFailure);
+    expect(failure.operation).toBe("state");
     expect(fakeQueue.messages).toHaveLength(1);
     expect(fakeNamespace.fetches).toHaveLength(1);
     expect(metadata.records.get(first.runId)?.idempotencyKey).toBe(

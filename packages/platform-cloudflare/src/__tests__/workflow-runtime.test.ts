@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  createInMemoryWorkflowMetadataStore,
   createInMemoryWorkflowStateStore,
   defineWorkflow,
   WORKFLOW_LIFECYCLE_EVENT_NAMES,
@@ -342,5 +343,64 @@ describe("Cloudflare Effect workflow conformance", () => {
       throw new Error("Expected completed publication to fail once");
     }
     expect(publishedIds).toContain(rejectedId);
+  });
+
+  it("refuses to reconstruct replay state from a metadata projection", async () => {
+    const metadata = createInMemoryWorkflowMetadataStore();
+    const { options, state, statuses } = fixture({
+      metadataStore: metadata.store,
+    });
+    const runId = "projection-run";
+    const workflow = defineWorkflow({
+      key: "projection.workflow",
+      version: 1,
+      inputSchema: Schema.Struct({ cartId: Schema.String }),
+      outputSchema: Schema.String,
+      steps: [],
+    });
+    await Effect.runPromise(
+      metadata.store.upsertRun({
+        runId,
+        workflowKey: workflow.key,
+        workflowVersion: workflow.version,
+        schemaVersion: 1,
+        status: "completed",
+        correlationId: "projection-correlation",
+        idempotencyKey: "projection-key",
+        updatedAt: new Date("2026-06-06T14:30:00.000Z"),
+      })
+    );
+    statuses.set(runId, { status: "complete", output: 42 });
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* WorkflowRuntimeService;
+        const failures = yield* Effect.all([
+          Effect.flip(runtime.get(runId)),
+          Effect.flip(
+            runtime.dedupe({
+              workflowKey: workflow.key,
+              idempotencyKey: "projection-key",
+            })
+          ),
+          Effect.flip(runtime.reconcile({ runId })),
+          Effect.flip(
+            runtime.start({
+              workflow,
+              input: { cartId: "cart-1" },
+              correlationId: "projection-correlation",
+              idempotencyKey: "projection-key",
+            })
+          ),
+        ]);
+        expect(failures.map((failure) => failure.operation)).toEqual([
+          "state",
+          "state",
+          "state",
+          "state",
+        ]);
+        expect(Option.isNone(yield* state.store.getRunState(runId))).toBe(true);
+      }).pipe(Effect.provide(createCloudflareWorkflowRuntimeLayer(options)))
+    );
   });
 });

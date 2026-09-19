@@ -136,6 +136,14 @@ const makeDuplicateKey = ({
   idempotencyKey,
 }: CommerceWorkflowDuplicateQuery) => `${workflowKey}:${idempotencyKey}`;
 
+// Metadata omits input and output codecs, so it cannot become replay state.
+const missingReplayState = (runId: string) =>
+  new WorkflowRuntimeError({
+    operation: "state",
+    runId,
+    message: "Authoritative workflow state unavailable.",
+  });
+
 const toMetadataRecord = (
   run: CommerceWorkflowRunRecord
 ): CommerceWorkflowMetadataRecord => ({
@@ -152,28 +160,6 @@ const toMetadataRecord = (
   traceId: run.traceId,
   metadata: run.metadata,
   updatedAt: run.updatedAt,
-});
-
-const fromMetadataRecord = (
-  record: CommerceWorkflowMetadataRecord
-): CommerceWorkflowRunRecord => ({
-  attempts: undefined,
-  correlationId: record.correlationId,
-  createdAt: record.updatedAt,
-  historyReference: `cloudflare:${record.runId}`,
-  input: undefined,
-  metadata: record.metadata,
-  runId: record.runId,
-  status: record.status,
-  dispatchStatus: record.dispatchStatus,
-  traceId: record.traceId,
-  updatedAt: record.updatedAt,
-  workflowKey: record.workflowKey,
-  workflowVersion: record.workflowVersion,
-  schemaVersion: record.schemaVersion,
-  causationId: record.causationId,
-  idempotencyKey: record.idempotencyKey,
-  subject: record.subject,
 });
 
 const toIso = (date: Date): string => date.toISOString();
@@ -582,24 +568,6 @@ const acquireWorkflowRuntime = ({
       }
       return run;
     });
-  const recoverMetadata = (record: CommerceWorkflowMetadataRecord) =>
-    Effect.gen(function* recoverMetadataWorkflowEffect() {
-      if (stateStore) {
-        const durable = yield* stateStore.getRunState(record.runId);
-        if (Option.isSome(durable)) {
-          return yield* decodeState(durable.value);
-        }
-      }
-      const current = yield* status(record.runId, "lookup");
-      const recovered = {
-        ...fromMetadataRecord(record),
-        status: CLOUDFLARE_TO_CORE_STATUS[current.status],
-        output: current.output,
-        updatedAt: clock.now(),
-      };
-      yield* persist(recovered);
-      return recovered;
-    });
   const get = (runId: string) =>
     Effect.gen(function* getCloudflareWorkflowEffect() {
       if (stateStore) {
@@ -607,15 +575,16 @@ const acquireWorkflowRuntime = ({
         if (Option.isSome(durable)) {
           return Option.some(yield* decodeState(durable.value));
         }
-      }
-      const local = runs.get(runId);
-      if (local) {
-        return Option.some(local);
+      } else {
+        const local = runs.get(runId);
+        if (local) {
+          return Option.some(local);
+        }
       }
       if (metadataStore) {
         const record = yield* metadataStore.getRun(runId);
         if (Option.isSome(record)) {
-          return Option.some(yield* recoverMetadata(record.value));
+          return yield* Effect.fail(missingReplayState(record.value.runId));
         }
       }
       // A missing registration is absence. Arbitrary platform exceptions are never
@@ -637,7 +606,7 @@ const acquireWorkflowRuntime = ({
       if (metadataStore) {
         const record = yield* metadataStore.findRunByIdempotencyKey(query);
         if (Option.isSome(record)) {
-          return Option.some(yield* recoverMetadata(record.value));
+          return yield* Effect.fail(missingReplayState(record.value.runId));
         }
       }
       return Option.none<CommerceWorkflowRunRecord>();
@@ -925,9 +894,9 @@ const acquireWorkflowRuntime = ({
               toMetadataRecord(run)
             );
             if (registration.status === "duplicate" && !stateStore) {
-              return (yield* recoverMetadata(
-                registration.record
-              )) as CommerceWorkflowRunRecord<Input, Output>;
+              return yield* Effect.fail(
+                missingReplayState(registration.record.runId)
+              );
             }
           }
           // Registration and every dispatch checkpoint are durable, so a repeated
