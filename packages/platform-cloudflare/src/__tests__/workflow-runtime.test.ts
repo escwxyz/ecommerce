@@ -230,6 +230,123 @@ describe("Cloudflare Effect workflow conformance", () => {
     expect(queueCalls).toBe(2);
   });
 
+  it("reconciles a create accepted before its checkpoint was interrupted", async () => {
+    const { options, state } = fixture();
+    const instances = new Set<string>();
+    let createCalls = 0;
+    let getCalls = 0;
+    let batchCalls = 0;
+    let interruptCheckpoint = true;
+    const recoveryOptions: CloudflareWorkflowRuntimeOptions = {
+      ...options,
+      bindings: {
+        workflow: {
+          create: async ({ id }: { id: string }) => {
+            createCalls += 1;
+            instances.add(id);
+            return { id };
+          },
+          get: async (id: string) => {
+            getCalls += 1;
+            if (!instances.has(id)) {
+              throw new Error("Instance not found.");
+            }
+            return { id, status: async () => ({ status: "queued" }) };
+          },
+          createBatch: async () => {
+            batchCalls += 1;
+            return [];
+          },
+        } as unknown as CloudflareWorkflowRuntimeBindings["workflow"],
+      },
+      stateStore: {
+        ...state.store,
+        upsertRunState: (runState) => {
+          if (
+            interruptCheckpoint &&
+            runState.dispatchStatus === "workflow-created"
+          ) {
+            interruptCheckpoint = false;
+            return Effect.interrupt;
+          }
+          return state.store.upsertRunState(runState);
+        },
+      },
+    };
+    const idempotentRequest = { ...request, idempotencyKey: "accepted-create" };
+    const first = await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* WorkflowRuntimeService;
+        return yield* Effect.exit(runtime.start(idempotentRequest));
+      }).pipe(
+        Effect.provide(createCloudflareWorkflowRuntimeLayer(recoveryOptions))
+      )
+    );
+    expect(Exit.isFailure(first)).toBe(true);
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(state.store.getRunState("cf-run"))
+      ).dispatchStatus
+    ).toBe("registered");
+
+    const resumed = await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* WorkflowRuntimeService;
+        return yield* runtime.start(idempotentRequest);
+      }).pipe(
+        Effect.provide(createCloudflareWorkflowRuntimeLayer(recoveryOptions))
+      )
+    );
+    expect(resumed.dispatchStatus).toBe("coordinated");
+    expect(createCalls).toBe(1);
+    expect(getCalls).toBe(1);
+    expect(batchCalls).toBe(0);
+  });
+
+  it("retries an absent registered instance with idempotent batch creation", async () => {
+    const { options, state } = fixture();
+    let createCalls = 0;
+    let batchCalls = 0;
+    const layer = createCloudflareWorkflowRuntimeLayer({
+      ...options,
+      bindings: {
+        workflow: {
+          create: async () => {
+            createCalls += 1;
+            throw new Error("Create rejected before acceptance.");
+          },
+          get: async () => {
+            throw new Error("Instance not found.");
+          },
+          createBatch: async ([{ id }]: [{ id: string }]) => {
+            batchCalls += 1;
+            return [{ id }];
+          },
+        } as unknown as CloudflareWorkflowRuntimeBindings["workflow"],
+      },
+    });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* WorkflowRuntimeService;
+        const idempotentRequest = {
+          ...request,
+          idempotencyKey: "retry-create",
+        };
+        expect(
+          Exit.isFailure(yield* Effect.exit(runtime.start(idempotentRequest)))
+        ).toBe(true);
+        expect(
+          Option.getOrThrow(yield* state.store.getRunState("cf-run"))
+            .dispatchStatus
+        ).toBe("registered");
+        const resumed = yield* runtime.start(idempotentRequest);
+        expect(resumed.dispatchStatus).toBe("coordinated");
+      }).pipe(Effect.provide(layer))
+    );
+    expect(createCalls).toBe(1);
+    expect(batchCalls).toBe(1);
+  });
+
   it("keeps workflow and schema versions distinct in platform payloads", async () => {
     let payload: unknown;
     const { options } = fixture();

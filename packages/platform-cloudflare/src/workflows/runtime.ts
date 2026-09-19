@@ -463,7 +463,10 @@ const acquireWorkflowRuntime = ({
       const instance = await bindings.workflow.get(runId);
       return instance.status();
     });
-  const dispatch = (registeredRun: CommerceWorkflowRunRecord) =>
+  const dispatch = (
+    registeredRun: CommerceWorkflowRunRecord,
+    recoverRegistered = false
+  ) =>
     Effect.gen(function* dispatchCloudflareWorkflowEffect() {
       let run = registeredRun;
       if (
@@ -494,13 +497,32 @@ const acquireWorkflowRuntime = ({
               })
           )
         );
-        const instance = yield* platformCall("start", run.runId, () =>
-          bindings.workflow.create({ id: run.runId, params })
-        ).pipe(Effect.tapError(() => observe("workflow.start.failed", run)));
+        // A prior create may have succeeded before its checkpoint was saved.
+        // get recovers that instance; createBatch safely retries an absent or
+        // unobservable instance because Cloudflare skips IDs already in use.
+        const recovered = recoverRegistered
+          ? yield* Effect.option(
+              Effect.tryPromise(() => bindings.workflow.get(run.runId))
+            )
+          : Option.none<WorkflowInstance>();
+        let instanceId: string;
+        if (Option.isSome(recovered)) {
+          instanceId = recovered.value.id;
+        } else if (recoverRegistered) {
+          const created = yield* platformCall("start", run.runId, () =>
+            bindings.workflow.createBatch([{ id: run.runId, params }])
+          ).pipe(Effect.tapError(() => observe("workflow.start.failed", run)));
+          instanceId = created[0]?.id ?? run.runId;
+        } else {
+          const created = yield* platformCall("start", run.runId, () =>
+            bindings.workflow.create({ id: run.runId, params })
+          ).pipe(Effect.tapError(() => observe("workflow.start.failed", run)));
+          instanceId = created.id;
+        }
         run = {
           ...run,
           dispatchStatus: "workflow-created",
-          historyReference: `cloudflare:${instance.id}`,
+          historyReference: `cloudflare:${instanceId}`,
           updatedAt: clock.now(),
         };
         yield* persist(run);
@@ -634,7 +656,7 @@ const acquireWorkflowRuntime = ({
         const current =
           found.value.status === "pending" &&
           found.value.dispatchStatus !== "coordinated"
-            ? yield* dispatch(found.value)
+            ? yield* dispatch(found.value, true)
             : found.value;
         const currentIsTerminal =
           current.status === "completed" ||
@@ -820,7 +842,7 @@ const acquireWorkflowRuntime = ({
               const resumed =
                 duplicate.value.status === "pending" &&
                 duplicate.value.dispatchStatus !== "coordinated"
-                  ? yield* dispatch(duplicate.value)
+                  ? yield* dispatch(duplicate.value, true)
                   : duplicate.value;
               if (resumed.status === "pending") {
                 yield* publish(resumed, WORKFLOW_LIFECYCLE_EVENT_NAMES.started);
@@ -881,7 +903,7 @@ const acquireWorkflowRuntime = ({
               const resumed =
                 existing.status === "pending" &&
                 existing.dispatchStatus !== "coordinated"
-                  ? yield* dispatch(existing)
+                  ? yield* dispatch(existing, true)
                   : existing;
               if (resumed.status === "pending") {
                 yield* publish(resumed, WORKFLOW_LIFECYCLE_EVENT_NAMES.started);
