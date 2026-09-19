@@ -884,6 +884,9 @@ const acquireWorkflowRuntime = ({
           if (stateStore) {
             const registration = yield* stateStore.registerRunState(durable);
             if (registration.status === "duplicate") {
+              // Another host may have registered the same key with a different
+              // generated ID. Decode and later reconcile against the winner.
+              definitions.set(registration.state.runId, request.workflow);
               const existing = yield* decodeState(registration.state);
               if (
                 existing.workflowKey !== request.workflow.key ||

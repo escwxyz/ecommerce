@@ -347,6 +347,62 @@ describe("Cloudflare Effect workflow conformance", () => {
     expect(batchCalls).toBe(1);
   });
 
+  it("binds the workflow definition to a competing registration winner", async () => {
+    const { options, state, statuses } = fixture();
+    const workflow = defineWorkflow({
+      key: "cf.competing",
+      version: 1,
+      inputSchema: Schema.Struct({ cartId: Schema.String }),
+      outputSchema: Schema.String,
+      steps: [],
+    });
+    const competingRequest = {
+      workflow,
+      input: { cartId: "cart-1" },
+      correlationId: "cf-correlation",
+      idempotencyKey: "competing-start",
+    };
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* WorkflowRuntimeService;
+        const started = yield* runtime.start(competingRequest);
+        expect(started.runId).toBe("winning-run");
+      }).pipe(
+        Effect.provide(
+          createCloudflareWorkflowRuntimeLayer({
+            ...options,
+            ids: { nextId: () => "winning-run" },
+          })
+        )
+      )
+    );
+
+    const losingLayer = createCloudflareWorkflowRuntimeLayer({
+      ...options,
+      ids: { nextId: () => "losing-run" },
+      stateStore: {
+        ...state.store,
+        findRunStateByIdempotencyKey: () => Effect.succeed(Option.none()),
+      },
+    });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* WorkflowRuntimeService;
+        const duplicate = yield* runtime.start(competingRequest);
+        expect(duplicate.runId).toBe("winning-run");
+        statuses.set("winning-run", {
+          status: "complete",
+          output: "completed-order",
+        });
+        const reconciled = Option.getOrThrow(
+          yield* runtime.reconcile({ runId: "winning-run" })
+        );
+        expect(reconciled.status).toBe("completed");
+        expect(reconciled.output).toBe("completed-order");
+      }).pipe(Effect.provide(losingLayer))
+    );
+  });
+
   it("keeps workflow and schema versions distinct in platform payloads", async () => {
     let payload: unknown;
     const { options } = fixture();
