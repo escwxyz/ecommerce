@@ -106,6 +106,56 @@ it("decodes workflow input and completed output at the runtime boundary", async 
   expect(invalidOutput.operation).toBe("validation");
 });
 
+it("skips output resolution after a terminal step failure", async () => {
+  const harness = createInMemoryWorkflowRecoveryHarness({
+    clock: createStaticClock(new Date("2026-01-01T00:00:00.000Z")),
+    ids: createSequenceIdGenerator(["failed-run"]),
+  });
+  let resolverCalls = 0;
+  let compensationCalls = 0;
+  const workflow = defineWorkflow({
+    key: "test.failed-output-resolution",
+    version: 1,
+    outputSchema: Schema.String,
+    steps: [
+      {
+        name: "reserve",
+        run: () => Effect.succeed({ output: "reserved" }),
+        compensation: {
+          name: "release",
+          compensate: () =>
+            Effect.sync(() => {
+              compensationCalls += 1;
+            }),
+        },
+      },
+      { name: "checkout", run: () => Effect.fail(new Error("rejected")) },
+    ],
+    resolveOutput: () => {
+      resolverCalls += 1;
+      throw new Error("No completed checkout attempt");
+    },
+  });
+
+  const result = await Effect.runPromise(
+    harness.createRuntime().start({
+      workflow,
+      input: {},
+      correlationId: "failed-output-resolution",
+    })
+  );
+
+  expect(result.status).toBe("compensated");
+  expect(resolverCalls).toBe(0);
+  expect(compensationCalls).toBe(1);
+  expect(harness.state.states.get(result.runId)?.status).toBe("compensated");
+  expect(
+    harness.events.some(
+      (event) => event.name === WORKFLOW_LIFECYCLE_EVENT_NAMES.failed
+    )
+  ).toBe(true);
+});
+
 it("replays a persisted lifecycle checkpoint with a stable event id", async () => {
   const state = createInMemoryWorkflowStateStore();
   const clock = createStaticClock(new Date("2026-01-01T00:00:00.000Z"));

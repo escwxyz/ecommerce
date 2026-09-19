@@ -1251,13 +1251,12 @@ export const createInMemoryWorkflowRuntime = ({
           });
         }
       }
-      const unresolvedOutput = request.workflow.resolveOutput?.(
-        attempts.map(stateOutcomeToAttempt)
-      );
       const output = terminalError
         ? state.output
         : yield* Schema.decodeUnknownEffect(request.workflow.outputSchema)(
-            unresolvedOutput
+            request.workflow.resolveOutput?.(
+              attempts.map(stateOutcomeToAttempt)
+            )
           ).pipe(
             Effect.mapError(
               () =>
