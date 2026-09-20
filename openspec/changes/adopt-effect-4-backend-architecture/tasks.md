@@ -103,6 +103,8 @@
 - [x] 9.8 Document PostgreSQL versus actor-local ownership for every stateful workload
 - [x] 9.9 Verify interruption, retry, replay, duplicate delivery, compensation, actor restart, and timer recovery
 - [x] 9.10 Create a deferred Rivet parity-evaluation change with consistency, recovery, operations, latency, and cost criteria
+- [x] 9.11 Make workflow runtime, state and metadata storage, lifecycle publication, and Cloudflare adapter operations Effect-native; verify shared service conformance and recovery (issue #24)
+- [ ] 9.12 Split Checkout orchestration into replay-safe persisted commerce steps and resume durable in-progress Checkout claims through the runtime (Checkout follow-up)
 
 ## 10. Effect-native plugin architecture
 

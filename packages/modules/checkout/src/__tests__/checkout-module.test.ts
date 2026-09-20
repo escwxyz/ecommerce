@@ -1,7 +1,15 @@
 import { describe, expect, it } from "bun:test";
 
 import { CartService } from "@ecommerce/cart";
-import { clockLayer, idGeneratorLayer } from "@ecommerce/core";
+import {
+  clockLayer,
+  createInMemoryWorkflowRecoveryHarness,
+  createSequenceIdGenerator,
+  createStaticClock,
+  idGeneratorLayer,
+  WorkflowRuntimeService,
+  workflowRuntimeLayer,
+} from "@ecommerce/core";
 import { CustomerService } from "@ecommerce/customer";
 import { FulfillmentService } from "@ecommerce/fulfillment";
 import { InventoryService } from "@ecommerce/inventory";
@@ -26,7 +34,7 @@ import { Context, Deferred, Effect, Fiber, Layer } from "effect";
 
 import { checkoutAdminMetadata } from "../admin";
 import { CheckoutCompletionFailure } from "../domain";
-import { checkoutModule } from "../module";
+import { checkoutModule, checkoutWorkflow } from "../module";
 import {
   CHECKOUT_COMPLETED_EVENT,
   CHECKOUT_FAILED_EVENT,
@@ -439,6 +447,51 @@ describe("checkout workflow orchestration", () => {
     expect(checkoutAdminMetadata.surfaces[0]?.operations?.complete?.key).toBe(
       "checkoutComplete"
     );
+  });
+
+  it("executes the checkout contribution through the Effect workflow runtime", async () => {
+    const calls: string[] = [];
+    const checkout = createCheckoutTestLayer(calls);
+    const harness = createInMemoryWorkflowRecoveryHarness({
+      clock: createStaticClock(timestamp),
+      ids: createSequenceIdGenerator(["checkout-runtime-1"]),
+    });
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* WorkflowRuntimeService;
+        const request = {
+          correlationId: checkoutInput.correlationId,
+          idempotencyKey: checkoutInput.idempotencyKey,
+          input: checkoutInput,
+          workflow: checkoutWorkflow,
+        };
+        const completed = yield* runtime.start(request);
+        const duplicate = yield* runtime.start(request);
+        return { completed, duplicate };
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            checkout.layer,
+            workflowRuntimeLayer(harness.createRuntime())
+          )
+        )
+      )
+    );
+
+    expect(result.completed).toMatchObject({
+      output: {
+        fulfillmentIds: ["fulf_1"],
+        orderId: "ord_1",
+        paymentId: "pay_1",
+        status: "completed",
+      },
+      status: "completed",
+    });
+    expect(result.duplicate.runId).toBe(result.completed.runId);
+    expect(
+      calls.filter((call) => call === "order.createOrderFromCheckout")
+    ).toHaveLength(1);
+    expect(checkout.publishedEvents).toEqual([CHECKOUT_COMPLETED_EVENT]);
   });
 
   it("coordinates one Effect through public module service Layers", async () => {

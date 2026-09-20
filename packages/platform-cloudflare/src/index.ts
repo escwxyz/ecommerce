@@ -106,6 +106,8 @@ export {
 export {
   createCloudflareWorkflowRuntime,
   createCloudflareWorkflowRuntimeLayer,
+  CloudflareWorkflowDispatchMessageSchema,
+  CloudflareWorkflowPayloadSchema,
   CloudflareWorkflowRuntimeFailure,
   type CloudflareWorkflowTelemetryEvent,
   type CloudflareWorkflowTelemetrySink,

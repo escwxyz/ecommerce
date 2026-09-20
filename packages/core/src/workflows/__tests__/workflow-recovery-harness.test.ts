@@ -1,9 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
-import { Effect } from "effect";
+import { Clock, Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 
 import {
   createInMemoryWorkflowRecoveryHarness,
+  createInMemoryWorkflowRuntime,
+  createInMemoryWorkflowStateStore,
   createSequenceIdGenerator,
   createStaticClock,
 } from "../../testing/index";
@@ -40,13 +43,15 @@ describe("in-memory workflow recovery harness", () => {
       ],
     });
     await expect(
-      harness.createRuntime().start({
-        workflow,
-        input: { cartId: "cart_1" },
-        correlationId: "corr_interrupt_1",
-        idempotencyKey: "checkout:interrupt:cart_1",
-      })
-    ).rejects.toThrow("interrupted");
+      Effect.runPromise(
+        harness.createRuntime().start({
+          workflow,
+          input: { cartId: "cart_1" },
+          correlationId: "corr_interrupt_1",
+          idempotencyKey: "checkout:interrupt:cart_1",
+        })
+      )
+    ).rejects.toThrow();
 
     expect(harness.state.states.get("run_interrupt_1")).toMatchObject({
       attempts: [],
@@ -95,12 +100,14 @@ describe("in-memory workflow recovery harness", () => {
         }),
       ],
     });
-    const result = await harness.createRuntime().start({
-      workflow,
-      input: { cartId: "cart_1" },
-      correlationId: "corr_retry_1",
-      idempotencyKey: "checkout:retry:cart_1",
-    });
+    const result = await Effect.runPromise(
+      harness.createRuntime().start({
+        workflow,
+        input: { cartId: "cart_1" },
+        correlationId: "corr_retry_1",
+        idempotencyKey: "checkout:retry:cart_1",
+      })
+    );
 
     expect(attempts).toBe(3);
     expect(result.status).toBe("completed");
@@ -185,9 +192,9 @@ describe("in-memory workflow recovery harness", () => {
       idempotencyKey: "checkout:retry-interrupt:cart_1",
     } as const;
 
-    await expect(harness.createRuntime().start(request)).rejects.toThrow(
-      "interrupted"
-    );
+    await expect(
+      Effect.runPromise(harness.createRuntime().start(request))
+    ).rejects.toThrow("interrupted");
     expect(
       harness.state.states.get("run_retry_interrupt_1")?.attempts
     ).toMatchObject([
@@ -198,7 +205,9 @@ describe("in-memory workflow recovery harness", () => {
       },
     ]);
 
-    const recovered = await harness.createRuntime().start(request);
+    const recovered = await Effect.runPromise(
+      harness.createRuntime().start(request)
+    );
 
     expect(observedAttempts).toEqual([1, 2, 2]);
     expect(recovered.status).toBe("completed");
@@ -250,23 +259,27 @@ describe("in-memory workflow recovery harness", () => {
     });
 
     await expect(
-      harness.createRuntime({ interruptAfterCompletedSteps: 1 }).start({
+      Effect.runPromise(
+        harness.createRuntime({ interruptAfterCompletedSteps: 1 }).start({
+          workflow,
+          input: { cartId: "cart_1" },
+          correlationId: "corr_recover_1",
+          idempotencyKey: "checkout:cart_1",
+        })
+      )
+    ).rejects.toThrow();
+
+    expect(harness.state.states.get("run_recover_1")?.nextStepIndex).toBe(1);
+    expect(executedSteps).toEqual(["reserve-inventory"]);
+
+    const recovered = await Effect.runPromise(
+      harness.createRuntime().start({
         workflow,
         input: { cartId: "cart_1" },
         correlationId: "corr_recover_1",
         idempotencyKey: "checkout:cart_1",
       })
-    ).rejects.toThrow("interrupted");
-
-    expect(harness.state.states.get("run_recover_1")?.nextStepIndex).toBe(1);
-    expect(executedSteps).toEqual(["reserve-inventory"]);
-
-    const recovered = await harness.createRuntime().start({
-      workflow,
-      input: { cartId: "cart_1" },
-      correlationId: "corr_recover_1",
-      idempotencyKey: "checkout:cart_1",
-    });
+    );
 
     expect(executedSteps).toEqual(["reserve-inventory", "authorize-payment"]);
     expect(recovered.status).toBe("completed");
@@ -315,12 +328,14 @@ describe("in-memory workflow recovery harness", () => {
         }),
       ],
     });
-    const result = await harness.createRuntime().start({
-      workflow,
-      input: { cartId: "cart_1" },
-      correlationId: "corr_compensate_1",
-      idempotencyKey: "checkout:cart_1",
-    });
+    const result = await Effect.runPromise(
+      harness.createRuntime().start({
+        workflow,
+        input: { cartId: "cart_1" },
+        correlationId: "corr_compensate_1",
+        idempotencyKey: "checkout:cart_1",
+      })
+    );
     const state = harness.state.states.get(result.runId);
 
     expect(result.status).toBe("compensated");
@@ -336,15 +351,84 @@ describe("in-memory workflow recovery harness", () => {
     ]);
     expect(state?.attempts[1]?.retryDisposition).toBe("compensate");
 
-    const replayed = await harness.createRuntime().start({
-      workflow,
-      input: { cartId: "cart_1" },
-      correlationId: "corr_compensate_1",
-      idempotencyKey: "checkout:cart_1",
-    });
+    const replayed = await Effect.runPromise(
+      harness.createRuntime().start({
+        workflow,
+        input: { cartId: "cart_1" },
+        correlationId: "corr_compensate_1",
+        idempotencyKey: "checkout:cart_1",
+      })
+    );
 
     expect(replayed.runId).toBe(result.runId);
     expect(replayed.status).toBe("compensated");
     expect(compensationCalls).toBe(1);
+  });
+
+  it("uses virtual Effect time and remains interruptible during retry backoff", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const testClock = (yield* Clock.Clock) as TestClock.TestClock;
+        const state = createInMemoryWorkflowStateStore();
+        let calls = 0;
+        const workflow = defineWorkflow({
+          key: "checkout.virtual-retry",
+          version: 1,
+          steps: [
+            defineWorkflowStep({
+              name: "reserve-inventory",
+              retryPolicy: { backoffMillis: [50], maxAttempts: 2 },
+              run: () =>
+                Effect.sync(() => {
+                  calls += 1;
+                  if (calls === 1) {
+                    throw new RetryableInventoryFailure("retry once");
+                  }
+                  return { output: "reserved" };
+                }).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.fail(new RetryableInventoryFailure(String(cause)))
+                  )
+                ),
+            }),
+          ],
+          resolveOutput: () => "complete",
+        });
+        const makeRuntime = () =>
+          createInMemoryWorkflowRuntime({
+            clock: {
+              now: () => new Date(testClock.currentTimeMillisUnsafe()),
+            },
+            ids: createSequenceIdGenerator(["virtual-retry-run"]),
+            publisher: { publish: () => Effect.void },
+            stateStore: state.store,
+          });
+        const request = {
+          workflow,
+          input: { cartId: "cart_1" },
+          correlationId: "virtual-retry",
+          idempotencyKey: "virtual-retry",
+        };
+        const firstFiber = yield* makeRuntime()
+          .start(request)
+          .pipe(Effect.forkChild);
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        expect(state.states.get("virtual-retry-run")?.attempts).toHaveLength(1);
+        yield* testClock.adjust(49);
+        expect(calls).toBe(1);
+        yield* Fiber.interrupt(firstFiber);
+        expect(state.states.get("virtual-retry-run")?.status).toBe("running");
+
+        const recoveredFiber = yield* makeRuntime()
+          .start(request)
+          .pipe(Effect.forkChild);
+        yield* Effect.yieldNow;
+        yield* testClock.adjust(1);
+        const recovered = yield* Fiber.join(recoveredFiber);
+        expect(recovered.status).toBe("completed");
+        expect(calls).toBe(2);
+      }).pipe(Effect.scoped, Effect.provide(TestClock.layer()))
+    );
   });
 });
