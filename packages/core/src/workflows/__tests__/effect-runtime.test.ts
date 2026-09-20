@@ -330,6 +330,27 @@ it("does not decode same-shape typed payloads a second time", async () => {
     )
   );
   expect(duplicate.output).toBe("a%20b");
+  const recoveryOptions = {
+    clock: createStaticClock(new Date("2026-01-02T03:04:05.000Z")),
+    ids: createSequenceIdGenerator([]),
+    publisher: { publish: () => Effect.void },
+    stateStore: state.store,
+  };
+  const unknownDefinition = Option.getOrThrow(
+    await Effect.runPromise(
+      createInMemoryWorkflowRuntime(recoveryOptions).get(started.runId)
+    )
+  );
+  expect(unknownDefinition.output).toBe("a%2520b");
+  const recoveredLookup = Option.getOrThrow(
+    await Effect.runPromise(
+      createInMemoryWorkflowRuntime({
+        ...recoveryOptions,
+        workflowDefinitions: [workflow],
+      }).get(started.runId)
+    )
+  );
+  expect(recoveredLookup.output).toBe("a%20b");
   const replayed = await Effect.runPromise(
     createInMemoryWorkflowRuntime({
       clock: createStaticClock(new Date("2026-01-02T03:04:05.000Z")),

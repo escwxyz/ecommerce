@@ -609,6 +609,11 @@ export interface InMemoryWorkflowRuntimeOptions {
   readonly publisher: WorkflowLifecyclePublisher;
   readonly metadataStore?: CommerceWorkflowMetadataStore;
   readonly stateStore?: CommerceWorkflowStateStore;
+  /** Definitions needed to decode durable lookups before start is called. */
+  readonly workflowDefinitions?: readonly Pick<
+    CommerceWorkflowDefinition,
+    "key" | "version" | "schemaVersion" | "inputSchema" | "outputSchema"
+  >[];
   /** Interrupts with an actual Effect interruption after a persisted checkpoint. */
   readonly interruptAfterCompletedSteps?: number;
 }
@@ -642,6 +647,12 @@ const createLifecycleEvent = (
 const workflowDateToIso = (date: Date): string => date.toISOString();
 
 const workflowDateFromIso = (value: string): Date => new Date(value);
+
+const workflowDefinitionKey = (
+  workflowKey: string,
+  workflowVersion: number,
+  schemaVersion: number
+) => JSON.stringify([workflowKey, workflowVersion, schemaVersion]);
 
 const encodeTypedWorkflowValue = (
   schema: CommerceWorkflowDefinition["inputSchema"],
@@ -716,12 +727,25 @@ export const createInMemoryWorkflowRuntime = ({
   metadataStore,
   stateStore: providedStore,
   interruptAfterCompletedSteps,
+  workflowDefinitions = [],
 }: InMemoryWorkflowRuntimeOptions): CommerceWorkflowRuntime => {
   const stateStore = providedStore ?? createInMemoryWorkflowStateStore().store;
   const definitions = new Map<
     string,
     Pick<CommerceWorkflowDefinition, "inputSchema" | "outputSchema">
-  >();
+  >(
+    workflowDefinitions.map(
+      (definition) =>
+        [
+          workflowDefinitionKey(
+            definition.key,
+            definition.version,
+            definition.schemaVersion ?? definition.version
+          ),
+          definition,
+        ] as const
+    )
+  );
   const attemptToStateOutcome = (
     attempt: CommerceWorkflowStepAttempt
   ): CommerceWorkflowRunState["attempts"][number] => ({
@@ -822,8 +846,16 @@ export const createInMemoryWorkflowRuntime = ({
   const decodeRunState = (state: CommerceWorkflowRunState) =>
     Effect.gen(function* decodeRunStateEffect() {
       const record = stateToRecord(state);
-      const definition = definitions.get(state.runId);
+      const definition = definitions.get(
+        workflowDefinitionKey(
+          state.workflowKey,
+          state.workflowVersion,
+          state.schemaVersion
+        )
+      );
       if (!definition) {
+        // A fresh harness can still inspect runs whose definition was not
+        // registered; only known schemas can decode their durable payloads.
         return record;
       }
       const input = yield* Schema.decodeUnknownEffect(definition.inputSchema)(
@@ -1016,7 +1048,14 @@ export const createInMemoryWorkflowRuntime = ({
               )
             )
           : undefined;
-      definitions.set(state.runId, request.workflow);
+      definitions.set(
+        workflowDefinitionKey(
+          state.workflowKey,
+          state.workflowVersion,
+          state.schemaVersion
+        ),
+        request.workflow
+      );
       if (["completed", "failed", "compensated"].includes(state.status)) {
         if (state.status === "completed") {
           yield* publish({
