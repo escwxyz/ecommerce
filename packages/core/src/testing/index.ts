@@ -643,19 +643,14 @@ const workflowDateToIso = (date: Date): string => date.toISOString();
 
 const workflowDateFromIso = (value: string): Date => new Date(value);
 
-const decodeWorkflowValue = (
+const encodeTypedWorkflowValue = (
   schema: CommerceWorkflowDefinition["inputSchema"],
   value: unknown
 ) =>
-  Effect.gen(function* decodeWorkflowValueEffect() {
-    const decoded = yield* Effect.result(
-      Schema.decodeUnknownEffect(schema)(value)
-    );
-    if (decoded._tag === "Success") {
-      return decoded.success;
-    }
+  Effect.gen(function* encodeTypedWorkflowValueEffect() {
     const encoded = yield* Schema.encodeUnknownEffect(schema)(value);
-    return yield* Schema.decodeUnknownEffect(schema)(encoded);
+    const decoded = yield* Schema.decodeUnknownEffect(schema)(encoded);
+    return { decoded, encoded };
   });
 
 function reverseWorkflowAttempts<Attempt>(
@@ -723,6 +718,10 @@ export const createInMemoryWorkflowRuntime = ({
   interruptAfterCompletedSteps,
 }: InMemoryWorkflowRuntimeOptions): CommerceWorkflowRuntime => {
   const stateStore = providedStore ?? createInMemoryWorkflowStateStore().store;
+  const definitions = new Map<
+    string,
+    Pick<CommerceWorkflowDefinition, "inputSchema" | "outputSchema">
+  >();
   const attemptToStateOutcome = (
     attempt: CommerceWorkflowStepAttempt
   ): CommerceWorkflowRunState["attempts"][number] => ({
@@ -820,6 +819,43 @@ export const createInMemoryWorkflowRuntime = ({
     traceId: state.traceId,
   });
 
+  const decodeRunState = (state: CommerceWorkflowRunState) =>
+    Effect.gen(function* decodeRunStateEffect() {
+      const record = stateToRecord(state);
+      const definition = definitions.get(state.runId);
+      if (!definition) {
+        return record;
+      }
+      const input = yield* Schema.decodeUnknownEffect(definition.inputSchema)(
+        state.input
+      ).pipe(
+        Effect.mapError(
+          () =>
+            new WorkflowRuntimeError({
+              operation: "state",
+              message: "Invalid persisted workflow input",
+              runId: state.runId,
+            })
+        )
+      );
+      const output =
+        state.status === "completed"
+          ? yield* Schema.decodeUnknownEffect(definition.outputSchema)(
+              state.output
+            ).pipe(
+              Effect.mapError(
+                () =>
+                  new WorkflowRuntimeError({
+                    operation: "state",
+                    message: "Invalid persisted workflow output",
+                    runId: state.runId,
+                  })
+              )
+            )
+          : state.output;
+      return { ...record, input, output };
+    });
+
   const publish = (payload: WorkflowLifecycleEventPayload) =>
     Effect.gen(function* publishWorkflowEffect() {
       const event = createLifecycleEvent(payload, payload.occurredAt);
@@ -836,16 +872,18 @@ export const createInMemoryWorkflowRuntime = ({
       }
     });
   const get = <Output = unknown>(runId: string) =>
-    stateStore
-      .getRunState(runId)
-      .pipe(
-        Effect.map(
-          Option.map(
-            (state) =>
-              stateToRecord(state) as CommerceWorkflowRunRecord<unknown, Output>
-          )
-        )
+    Effect.gen(function* getWorkflowEffect() {
+      const found = yield* stateStore.getRunState(runId);
+      if (Option.isNone(found)) {
+        return Option.none<CommerceWorkflowRunRecord<unknown, Output>>();
+      }
+      return Option.some(
+        (yield* decodeRunState(found.value)) as CommerceWorkflowRunRecord<
+          unknown,
+          Output
+        >
       );
+    });
   // The interpreter keeps persistence, retry, compensation, and publication
   // in one Effect so interruption cannot cross an untracked async boundary.
   // oxlint-disable-next-line eslint/complexity
@@ -873,9 +911,8 @@ export const createInMemoryWorkflowRuntime = ({
         )
       );
       const { inputSchema } = request.workflow;
-      // Accept both the codec's encoded payload and its decoded Type. Durable
-      // stores may serialize the latter before returning it for replay.
-      const decodedInput = yield* decodeWorkflowValue(
+      // API values are typed; durable values are encoded and decoded once.
+      const inputPayload = yield* encodeTypedWorkflowValue(
         inputSchema,
         request.input
       ).pipe(
@@ -904,7 +941,7 @@ export const createInMemoryWorkflowRuntime = ({
       } else {
         const record: CommerceWorkflowRunRecord<Input, Output> = {
           ...request,
-          input: decodedInput as Input,
+          input: inputPayload.decoded as Input,
           workflowKey: request.workflow.key,
           workflowVersion: request.workflow.version,
           schemaVersion:
@@ -917,6 +954,7 @@ export const createInMemoryWorkflowRuntime = ({
         };
         const registration = yield* stateStore.registerRunState({
           ...toRunState(record, 0),
+          input: inputPayload.encoded,
           schemaVersion:
             request.workflow.schemaVersion ?? request.workflow.version,
         });
@@ -939,8 +977,7 @@ export const createInMemoryWorkflowRuntime = ({
           })
         );
       }
-      const replayInput = yield* decodeWorkflowValue(
-        inputSchema,
+      const replayInput = yield* Schema.decodeUnknownEffect(inputSchema)(
         state.input
       ).pipe(
         Effect.mapError(
@@ -965,8 +1002,7 @@ export const createInMemoryWorkflowRuntime = ({
       };
       const completedOutput =
         state.status === "completed"
-          ? yield* decodeWorkflowValue(
-              request.workflow.outputSchema,
+          ? yield* Schema.decodeUnknownEffect(request.workflow.outputSchema)(
               state.output
             ).pipe(
               Effect.mapError(
@@ -980,6 +1016,7 @@ export const createInMemoryWorkflowRuntime = ({
               )
             )
           : undefined;
+      definitions.set(state.runId, request.workflow);
       if (["completed", "failed", "compensated"].includes(state.status)) {
         if (state.status === "completed") {
           yield* publish({
@@ -1278,9 +1315,9 @@ export const createInMemoryWorkflowRuntime = ({
           });
         }
       }
-      const output = terminalError
-        ? state.output
-        : yield* decodeWorkflowValue(
+      const outputPayload = terminalError
+        ? undefined
+        : yield* encodeTypedWorkflowValue(
             request.workflow.outputSchema,
             request.workflow.resolveOutput?.(
               attempts.map(stateOutcomeToAttempt)
@@ -1296,8 +1333,13 @@ export const createInMemoryWorkflowRuntime = ({
                 })
             )
           );
+      const output = outputPayload ? outputPayload.decoded : state.output;
       state = { ...state, completedAt: clock.now().toISOString() };
-      yield* save(status, state.nextStepIndex, output);
+      yield* save(
+        status,
+        state.nextStepIndex,
+        outputPayload ? outputPayload.encoded : state.output
+      );
       const terminalEvent: WorkflowLifecycleEventPayload = terminalError
         ? {
             ...base,
@@ -1335,19 +1377,18 @@ export const createInMemoryWorkflowRuntime = ({
       runId,
     }: CommerceWorkflowReconcileRequest) => get<Output>(runId),
     dedupe: <Output = unknown>(query: CommerceWorkflowDuplicateQuery) =>
-      stateStore
-        .findRunStateByIdempotencyKey(query)
-        .pipe(
-          Effect.map(
-            Option.map(
-              (state) =>
-                stateToRecord(state) as CommerceWorkflowRunRecord<
-                  unknown,
-                  Output
-                >
-            )
-          )
-        ),
+      Effect.gen(function* dedupeWorkflowEffect() {
+        const found = yield* stateStore.findRunStateByIdempotencyKey(query);
+        if (Option.isNone(found)) {
+          return Option.none<CommerceWorkflowRunRecord<unknown, Output>>();
+        }
+        return Option.some(
+          (yield* decodeRunState(found.value)) as CommerceWorkflowRunRecord<
+            unknown,
+            Output
+          >
+        );
+      }),
   };
 };
 

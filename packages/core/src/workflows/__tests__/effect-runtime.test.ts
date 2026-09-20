@@ -220,7 +220,7 @@ it("returns decoded terminal output from durable replay", async () => {
   expect((result.output as Date).toISOString()).toBe(timestamp);
 });
 
-it("accepts typed transformed requests without changing in-memory lookups", async () => {
+it("encodes typed transformed requests and decodes known lookups", async () => {
   const state = createInMemoryWorkflowStateStore();
   const timestamp = "2026-01-02T03:04:05.000Z";
   let stepInput: unknown;
@@ -238,7 +238,7 @@ it("accepts typed transformed requests without changing in-memory lookups", asyn
         },
       },
     ],
-    resolveOutput: () => timestamp,
+    resolveOutput: () => new Date(timestamp),
   });
   const runtime = createInMemoryWorkflowRuntime({
     clock: createStaticClock(new Date(timestamp)),
@@ -255,17 +255,91 @@ it("accepts typed transformed requests without changing in-memory lookups", asyn
   const started = await Effect.runPromise(runtime.start(request));
   expect(stepInput).toBeInstanceOf(Date);
   expect(state.states.get(started.runId)?.input).toEqual({
-    scheduledAt: new Date(timestamp),
+    scheduledAt: timestamp,
   });
-  expect(state.states.get(started.runId)?.output).toBeInstanceOf(Date);
+  expect(state.states.get(started.runId)?.output).toBe(timestamp);
   expect(started.output).toBeInstanceOf(Date);
   const found = Option.getOrThrow(
     await Effect.runPromise(runtime.get(started.runId))
   );
   expect(found.output).toBeInstanceOf(Date);
-  const replayed = await Effect.runPromise(runtime.start(request));
+  const replayed = await Effect.runPromise(
+    createInMemoryWorkflowRuntime({
+      clock: createStaticClock(new Date("2026-01-02T03:04:05.000Z")),
+      ids: createSequenceIdGenerator([]),
+      publisher: { publish: () => Effect.void },
+      stateStore: state.store,
+    }).start(request)
+  );
   expect(replayed.input.scheduledAt).toBeInstanceOf(Date);
   expect(replayed.output).toBeInstanceOf(Date);
+});
+
+it("does not decode same-shape typed payloads a second time", async () => {
+  const state = createInMemoryWorkflowStateStore();
+  let stepInput: unknown;
+  const workflow = defineWorkflow({
+    key: "test.uri-payload",
+    version: 1,
+    inputSchema: Schema.StringFromUriComponent,
+    outputSchema: Schema.StringFromUriComponent,
+    steps: [
+      {
+        name: "capture",
+        run: (input: string) => {
+          stepInput = input;
+          return Effect.succeed({ output: input });
+        },
+      },
+    ],
+    resolveOutput: () => "a%20b",
+  });
+  const runtime = createInMemoryWorkflowRuntime({
+    clock: createStaticClock(new Date("2026-01-02T03:04:05.000Z")),
+    ids: createSequenceIdGenerator([]),
+    publisher: { publish: () => Effect.void },
+    stateStore: state.store,
+  });
+  const request = {
+    workflow,
+    input: "a%20b",
+    correlationId: "uri-payload",
+    idempotencyKey: "uri-payload",
+    runId: "uri-payload-run",
+  };
+  const started = await Effect.runPromise(runtime.start(request));
+  expect(stepInput).toBe("a%20b");
+  expect(started.input).toBe("a%20b");
+  expect(started.output).toBe("a%20b");
+  expect(state.states.get(started.runId)?.input).toBe("a%2520b");
+  expect(state.states.get(started.runId)?.output).toBe("a%2520b");
+  const found = Option.getOrThrow(
+    await Effect.runPromise(runtime.get(started.runId))
+  );
+  expect(found.output).toBe("a%20b");
+  const reconciled = Option.getOrThrow(
+    await Effect.runPromise(runtime.reconcile({ runId: started.runId }))
+  );
+  expect(reconciled.output).toBe("a%20b");
+  const duplicate = Option.getOrThrow(
+    await Effect.runPromise(
+      runtime.dedupe({
+        workflowKey: workflow.key,
+        idempotencyKey: "uri-payload",
+      })
+    )
+  );
+  expect(duplicate.output).toBe("a%20b");
+  const replayed = await Effect.runPromise(
+    createInMemoryWorkflowRuntime({
+      clock: createStaticClock(new Date("2026-01-02T03:04:05.000Z")),
+      ids: createSequenceIdGenerator([]),
+      publisher: { publish: () => Effect.void },
+      stateStore: state.store,
+    }).start(request)
+  );
+  expect(replayed.input).toBe("a%20b");
+  expect(replayed.output).toBe("a%20b");
 });
 
 it("skips output resolution after a terminal step failure", async () => {
