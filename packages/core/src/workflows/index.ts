@@ -548,10 +548,12 @@ export interface CommerceWorkflowRuntime {
     WorkflowRuntimeError
   >;
 }
+/** Provides the durable workflow state store required by workflow runtimes. */
 export const WorkflowStateStoreService =
   Context.Service<CommerceWorkflowStateStore>(
     "@ecommerce/core/WorkflowStateStoreService"
   );
+/** Publishes replay-safe workflow lifecycle events. */
 export const WorkflowLifecyclePublisherService =
   Context.Service<WorkflowLifecyclePublisher>(
     "@ecommerce/core/WorkflowLifecyclePublisherService"
