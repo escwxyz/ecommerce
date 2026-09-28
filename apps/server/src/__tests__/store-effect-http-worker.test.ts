@@ -1,10 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  adminHttpApi,
-  storefrontHttpApi,
-  storeEffectHttpApiContribution,
-} from "@ecommerce/api";
+import { adminHttpApi, storefrontHttpApi } from "@ecommerce/api";
 import {
   createInMemoryOutbox,
   createInMemoryTransactionBoundary,
@@ -12,6 +8,7 @@ import {
   createStaticClock,
 } from "@ecommerce/core/testing";
 import { createStoreService, createStoreServiceLayer } from "@ecommerce/store";
+import { storeEffectHttpApiContribution } from "@ecommerce/store/http-api";
 import {
   createResettableInMemoryStoreRepository,
   storeRepositoryTransactionResource,

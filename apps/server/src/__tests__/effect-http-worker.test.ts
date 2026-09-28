@@ -5,7 +5,6 @@ import {
   EffectHttpAuthMiddleware,
   EffectHttpForbidden,
   adminHttpApi,
-  checkoutEffectHttpApiContribution,
   defineAdminHttpApiGroupContribution,
   defineStorefrontHttpApiGroupContribution,
   EffectHttpRequestContextMiddleware,
@@ -14,6 +13,7 @@ import {
 } from "@ecommerce/api";
 import { CheckoutService } from "@ecommerce/checkout";
 import type { CheckoutServiceShape } from "@ecommerce/checkout";
+import { checkoutEffectHttpApiContribution } from "@ecommerce/checkout/http-api";
 import {
   composeCommerceApplication,
   defineCommerceModule,

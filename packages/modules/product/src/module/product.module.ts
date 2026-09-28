@@ -4,6 +4,7 @@ import {
 } from "@ecommerce/core";
 
 import { productAdminSurfaces } from "../admin";
+import { productEffectHttpApiContribution } from "../http/api";
 import { productPermissionList } from "../permissions";
 import {
   ProductService,
@@ -13,6 +14,7 @@ import {
 export const productModule = defineCommerceModule({
   contributions: {
     adminSurfaces: productAdminSurfaces,
+    apiGroups: productEffectHttpApiContribution.groups,
     eventTypes: [
       "product.created",
       "product.catalog.updated",

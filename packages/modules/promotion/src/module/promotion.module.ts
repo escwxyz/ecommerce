@@ -4,6 +4,7 @@ import {
 } from "@ecommerce/core";
 
 import { promotionAdminSurfaces } from "../admin";
+import { promotionEffectHttpApiContribution } from "../http/api";
 import { promotionPermissionList } from "../permissions";
 import {
   PROMOTION_CREATED_EVENT,
@@ -21,6 +22,7 @@ export const promotionExtensionPoints = {
 export const promotionModule = defineCommerceModule({
   contributions: {
     adminSurfaces: promotionAdminSurfaces,
+    apiGroups: promotionEffectHttpApiContribution.groups,
     eventTypes: [PROMOTION_CREATED_EVENT, PROMOTION_REDEMPTION_RECORDED_EVENT],
     permissions: promotionPermissionList,
     services: [

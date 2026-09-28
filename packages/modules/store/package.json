@@ -19,6 +19,12 @@
     "./domain/store.schema": {
       "default": "./src/domain/store.schema.ts"
     },
+    "./http-api": {
+      "default": "./src/http/api.ts"
+    },
+    "./http-contract": {
+      "default": "./src/http/contract.ts"
+    },
     "./module": {
       "default": "./src/module/index.ts"
     },
@@ -37,6 +43,7 @@
     "test": "bun test ./src/__tests__"
   },
   "dependencies": {
+    "@ecommerce/api": "workspace:*",
     "@ecommerce/core": "workspace:*",
     "effect": "catalog:",
     "nanoid": "^5.1.6"

@@ -13,6 +13,12 @@
     "./domain": {
       "default": "./src/domain/index.ts"
     },
+    "./http-contract": {
+      "default": "./src/http/contract.ts"
+    },
+    "./http-api": {
+      "default": "./src/http/api.ts"
+    },
     "./module": {
       "default": "./src/module/index.ts"
     },
@@ -31,6 +37,7 @@
     "test": "bun test ./src/__tests__"
   },
   "dependencies": {
+    "@ecommerce/api": "workspace:*",
     "@ecommerce/core": "workspace:*",
     "effect": "catalog:",
     "nanoid": "^5.1.6"

@@ -1,31 +1,36 @@
 import { describe, expect, it } from "bun:test";
 
-import { cartAdminMetadata } from "@ecommerce/cart/admin";
-import { composeAdminMetadata } from "@ecommerce/core/admin";
-import { orderAdminMetadata } from "@ecommerce/order/admin";
-import { paymentAdminMetadata } from "@ecommerce/payment/admin";
-import { storeAdminMetadata } from "@ecommerce/store/admin";
+import { createAdminMetadataModel } from "../admin-metadata";
 
-describe("built-in admin metadata", () => {
-  it("qualifies module navigation and resource keys exactly once", () => {
-    const model = composeAdminMetadata({
-      contributions: [
-        cartAdminMetadata,
-        orderAdminMetadata,
-        paymentAdminMetadata,
-        storeAdminMetadata,
-      ],
-    });
+describe("selected admin metadata", () => {
+  it("includes only registered surfaces allowed by request permissions", () => {
+    const model = createAdminMetadataModel(
+      { session: { user: { permissions: ["catalog:read"] } } },
+      {
+        contributions: [
+          {
+            source: { key: "catalog", label: "Catalog", type: "module" },
+            surfaces: [
+              {
+                key: "browse",
+                kind: "navigation",
+                label: "Browse",
+                permission: "catalog:read",
+              },
+              {
+                key: "edit",
+                kind: "navigation",
+                label: "Edit",
+                permission: "catalog:write",
+              },
+            ],
+          },
+        ],
+      }
+    );
 
-    expect(model.surfaces.map((surface) => surface.id)).toEqual([
-      "module:store:navigation",
-      "module:store:resource",
-      "module:cart:navigation",
-      "module:order:navigation",
-      "module:cart:resource",
-      "module:order:resource",
-      "module:payment:navigation",
-      "module:payment:resource",
+    expect(model.surfaces.map(({ id }) => id)).toEqual([
+      "module:catalog:browse",
     ]);
   });
 });

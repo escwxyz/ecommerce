@@ -58,6 +58,20 @@ translation isolated inside the auth adapter/research track.
 
 ## Current Status
 
+As of 2026-09-23, built-in commerce modules own their Effect HTTP group
+contracts, declared errors, transport serializers, permission-aware handlers,
+handler Layers, and executable contribution descriptors. Each module exposes
+separate `./http-contract` and `./http-api` entry points and registers its API
+groups directly on its `CommerceModuleDefinition`. The shared API package now
+contains only canonical roots, schemas, middleware, generic contribution and
+assembly helpers, conflict detection, OpenAPI derivation, and permission/admin
+metadata helpers; it has no concrete commerce-module dependency. The server
+owns the deployment's built-in selection and derives routes and Layers from
+that single selected catalog, so disabling a module removes its HTTP surface
+without maintaining a second contribution list. Focused interface tests live
+with their modules, while the shared assembler retains synthetic ordering and
+conflict coverage.
+
 As of 2026-08-15, `CommerceModuleDefinition` is the executable built-in module
 registration seam. The core composer validates the selected dependency graph
 and contribution keys before Layer acquisition, produces stable topological
