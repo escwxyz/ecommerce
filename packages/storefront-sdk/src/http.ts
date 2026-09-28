@@ -1,5 +1,5 @@
 import { storefrontHttpApi } from "@ecommerce/api/effect-http-api";
-import { storeStorefrontHttpApiGroup } from "@ecommerce/api/store-effect-http-contract";
+import { storeStorefrontHttpApiGroup } from "@ecommerce/store/http-contract";
 import { Effect } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
 import { HttpApiClient } from "effect/unstable/httpapi";

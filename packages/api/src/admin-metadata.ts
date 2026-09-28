@@ -1,20 +1,8 @@
-import { cartAdminMetadata } from "@ecommerce/cart/admin";
-import { checkoutAdminMetadata } from "@ecommerce/checkout/admin";
+import type {
+  AdminMetadataContribution,
+  ComposeAdminMetadataOptions,
+} from "@ecommerce/core/admin";
 import { composeAdminMetadata } from "@ecommerce/core/admin";
-import { customerAdminMetadata } from "@ecommerce/customer/admin";
-import { fulfillmentAdminMetadata } from "@ecommerce/fulfillment/admin";
-import { inventoryAdminMetadata } from "@ecommerce/inventory/admin";
-import { notificationEventAdminMetadata } from "@ecommerce/notification-event/admin";
-import { orderAdminMetadata } from "@ecommerce/order/admin";
-import { paymentAdminMetadata } from "@ecommerce/payment/admin";
-import { pricingAdminMetadata } from "@ecommerce/pricing/admin";
-import { productAdminMetadata } from "@ecommerce/product/admin";
-import { promotionAdminMetadata } from "@ecommerce/promotion/admin";
-import { regionSalesChannelAdminMetadata } from "@ecommerce/region-sales-channel/admin";
-import { storeAdminMetadata } from "@ecommerce/store/admin";
-import { taxAdminMetadata } from "@ecommerce/tax/admin";
-
-import { validateBuiltinCommercePermission } from "./permissions";
 
 export interface AdminMetadataContext {
   readonly auth?: unknown;
@@ -40,24 +28,15 @@ const getContextPermissionKeys = (
     : [];
 };
 
-export const createAdminMetadataModel = (context: AdminMetadataContext) =>
+/** Builds admin metadata from the selected registration's surfaces and policy. */
+export const createAdminMetadataModel = (
+  context: AdminMetadataContext,
+  options: {
+    readonly contributions: readonly AdminMetadataContribution[];
+    readonly permissionValidator?: ComposeAdminMetadataOptions["permissionValidator"];
+  }
+) =>
   composeAdminMetadata({
-    contributions: [
-      storeAdminMetadata,
-      customerAdminMetadata,
-      productAdminMetadata,
-      regionSalesChannelAdminMetadata,
-      inventoryAdminMetadata,
-      notificationEventAdminMetadata,
-      pricingAdminMetadata,
-      promotionAdminMetadata,
-      taxAdminMetadata,
-      paymentAdminMetadata,
-      fulfillmentAdminMetadata,
-      cartAdminMetadata,
-      orderAdminMetadata,
-      checkoutAdminMetadata,
-    ],
-    permissionValidator: validateBuiltinCommercePermission,
+    ...options,
     permissions: getContextPermissionKeys(context),
   });

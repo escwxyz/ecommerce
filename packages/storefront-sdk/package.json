@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@ecommerce/api": "workspace:*",
+    "@ecommerce/store": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

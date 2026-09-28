@@ -16,6 +16,7 @@ import type {
   CheckoutCompletionResult,
   CompleteCheckoutInput,
 } from "../domain";
+import { checkoutEffectHttpApiContribution } from "../http/api";
 import { checkoutPermissionList } from "../permissions";
 import {
   CHECKOUT_COMPLETED_EVENT,
@@ -65,6 +66,7 @@ export const checkoutWorkflow: CommerceWorkflowDefinition<
 export const checkoutModule = defineCommerceModule({
   contributions: {
     adminSurfaces: checkoutAdminSurfaces,
+    apiGroups: checkoutEffectHttpApiContribution.groups,
     eventTypes: [CHECKOUT_COMPLETED_EVENT, CHECKOUT_FAILED_EVENT],
     permissions: checkoutPermissionList,
     services: [

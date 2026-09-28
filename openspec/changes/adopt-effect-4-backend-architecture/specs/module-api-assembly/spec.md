@@ -12,6 +12,23 @@ runtime bindings.
 - **THEN** all of its executable and metadata contributions MUST compose from
   the selected definition and MUST disappear together when it is disabled
 
+### Requirement: Module-owned HTTP vertical slices
+Each built-in commerce module SHALL own its Effect HTTP groups, endpoint
+schemas, declared errors, transport serializers, permission-aware handlers,
+handler Layers, and executable API contribution. The shared API package SHALL
+remain independent of concrete commerce modules.
+
+#### Scenario: Module HTTP behavior changes
+- **WHEN** a built-in module changes an endpoint contract or handler behavior
+- **THEN** its contract, executable contribution, and focused interface tests
+  MUST change within the owning module package without adding concrete module
+  knowledge to the shared API package
+
+#### Scenario: Contract-only consumer derives an API
+- **WHEN** OpenAPI or an SDK imports a module HTTP contract
+- **THEN** the module MUST provide a contract-only entry point that does not
+  initialize handler Layers or require module service implementations
+
 ### Requirement: Deterministic route assembly
 The API package SHALL assemble admin and storefront groups from the validated
 module and plugin contributions deterministically and SHALL reject duplicate

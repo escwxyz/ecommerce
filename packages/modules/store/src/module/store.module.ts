@@ -4,6 +4,7 @@ import {
 } from "@ecommerce/core";
 
 import { storeAdminSurfaces } from "../admin";
+import { storeEffectHttpApiContribution } from "../http/api";
 import { storePermissionList } from "../permissions";
 import {
   STORE_SETTINGS_UPDATED_EVENT,
@@ -19,6 +20,7 @@ export const storeExtensionPoints = {
 export const storeModule = defineCommerceModule({
   contributions: {
     adminSurfaces: storeAdminSurfaces,
+    apiGroups: storeEffectHttpApiContribution.groups,
     eventTypes: [STORE_SETTINGS_UPDATED_EVENT],
     permissions: storePermissionList,
     services: [

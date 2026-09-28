@@ -10,6 +10,7 @@ import { Effect, Layer } from "effect";
 
 import { taxAdminSurfaces } from "../admin";
 import { TaxRepositoryService } from "../domain";
+import { taxEffectHttpApiContribution } from "../http/api";
 import { taxPermissionList } from "../permissions";
 import { manualTaxProvider } from "../providers";
 import {
@@ -44,6 +45,7 @@ export const taxExtensionPoints = {
 export const taxModule = defineCommerceModule({
   contributions: {
     adminSurfaces: taxAdminSurfaces,
+    apiGroups: taxEffectHttpApiContribution.groups,
     eventTypes: [
       TAX_CATEGORY_CREATED_EVENT,
       TAX_PROVIDER_CONFIGURED_EVENT,

@@ -31,6 +31,7 @@
         "@ecommerce/checkout": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "@ecommerce/customer": "workspace:*",
+        "@ecommerce/db-postgres": "workspace:*",
         "@ecommerce/env": "workspace:*",
         "@ecommerce/fulfillment": "workspace:*",
         "@ecommerce/inventory": "workspace:*",
@@ -109,22 +110,8 @@
       "name": "@ecommerce/api",
       "dependencies": {
         "@ecommerce/auth": "workspace:*",
-        "@ecommerce/cart": "workspace:*",
-        "@ecommerce/checkout": "workspace:*",
         "@ecommerce/core": "workspace:*",
-        "@ecommerce/customer": "workspace:*",
         "@ecommerce/env": "workspace:*",
-        "@ecommerce/fulfillment": "workspace:*",
-        "@ecommerce/inventory": "workspace:*",
-        "@ecommerce/notification-event": "workspace:*",
-        "@ecommerce/order": "workspace:*",
-        "@ecommerce/payment": "workspace:*",
-        "@ecommerce/pricing": "workspace:*",
-        "@ecommerce/product": "workspace:*",
-        "@ecommerce/promotion": "workspace:*",
-        "@ecommerce/region-sales-channel": "workspace:*",
-        "@ecommerce/store": "workspace:*",
-        "@ecommerce/tax": "workspace:*",
         "dotenv": "catalog:",
         "effect": "catalog:",
       },
@@ -224,6 +211,7 @@
       "name": "@ecommerce/cart",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "effect": "catalog:",
         "nanoid": "^5.1.6",
@@ -238,6 +226,7 @@
       "name": "@ecommerce/checkout",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/cart": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "@ecommerce/customer": "workspace:*",
@@ -265,6 +254,7 @@
       "name": "@ecommerce/customer",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/auth": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "effect": "catalog:",
@@ -280,6 +270,7 @@
       "name": "@ecommerce/fulfillment",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "effect": "catalog:",
         "nanoid": "^5.1.6",
@@ -294,6 +285,7 @@
       "name": "@ecommerce/inventory",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "effect": "catalog:",
         "nanoid": "^5.1.6",
@@ -316,6 +308,7 @@
       "name": "@ecommerce/notification-event",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "effect": "catalog:",
         "nanoid": "^5.1.6",
@@ -330,6 +323,7 @@
       "name": "@ecommerce/order",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "effect": "catalog:",
         "nanoid": "^5.1.6",
@@ -344,6 +338,7 @@
       "name": "@ecommerce/payment",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "@ecommerce/payment-provider": "workspace:*",
         "effect": "catalog:",
@@ -359,6 +354,7 @@
       "name": "@ecommerce/pricing",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "effect": "catalog:",
         "nanoid": "^5.1.6",
@@ -373,6 +369,7 @@
       "name": "@ecommerce/product",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "@ecommerce/utils": "workspace:*",
         "effect": "catalog:",
@@ -388,6 +385,7 @@
       "name": "@ecommerce/promotion",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "effect": "catalog:",
         "nanoid": "^5.1.6",
@@ -402,6 +400,7 @@
       "name": "@ecommerce/region-sales-channel",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "effect": "catalog:",
         "nanoid": "^5.1.6",
@@ -416,6 +415,7 @@
       "name": "@ecommerce/store",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "effect": "catalog:",
         "nanoid": "^5.1.6",
@@ -430,6 +430,7 @@
       "name": "@ecommerce/tax",
       "version": "0.0.0",
       "dependencies": {
+        "@ecommerce/api": "workspace:*",
         "@ecommerce/core": "workspace:*",
         "effect": "catalog:",
         "nanoid": "^5.1.6",
@@ -470,6 +471,7 @@
       "name": "@ecommerce/storefront-sdk",
       "dependencies": {
         "@ecommerce/api": "workspace:*",
+        "@ecommerce/store": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {

@@ -1,10 +1,14 @@
-import { composeBuiltinCommerceApplication } from "@ecommerce/api";
 import {
   CartRepositoryService,
   CartRuntimeAdapters,
   createCartMutationCacheCoordinator,
   createCommittedCartCacheSynchronizer,
 } from "@ecommerce/cart";
+import {
+  CheckoutCompletionFailure,
+  CheckoutCompletionStore,
+} from "@ecommerce/checkout";
+import type { CheckoutCompletionStoreShape } from "@ecommerce/checkout";
 import {
   COMMERCE_EVENTS_OUTBOX_TOPIC,
   deliverOutboxBatch,
@@ -59,6 +63,8 @@ import {
 import type { NotificationEventQueueMessage } from "@ecommerce/platform-cloudflare";
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 
+import { composeBuiltinCommerceApplication } from "./builtin-commerce-modules";
+
 export type ProductionCommerceRuntimeMode = "development" | "production";
 
 export interface ProductionCommerceRuntimeBindings {
@@ -78,6 +84,63 @@ export class ProductionCommerceRuntimeConfigError extends Schema.TaggedErrorClas
     mode: Schema.String,
   }
 ) {}
+
+const failClosedCheckoutCompletionStore: CheckoutCompletionStoreShape = {
+  beginOrchestration: (_input, workflowRunId) =>
+    Effect.fail(
+      new CheckoutCompletionFailure({
+        message: "Checkout completion persistence is not configured.",
+        retryable: false,
+        sourceTag: "production-runtime",
+        workflowRunId,
+      })
+    ),
+  claim: (_input, workflowRunId) =>
+    Effect.fail(
+      new CheckoutCompletionFailure({
+        message: "Checkout completion persistence is not configured.",
+        retryable: false,
+        sourceTag: "production-runtime",
+        workflowRunId,
+      })
+    ),
+  complete: (input) =>
+    Effect.fail(
+      new CheckoutCompletionFailure({
+        message: "Checkout completion persistence is not configured.",
+        retryable: false,
+        sourceTag: "production-runtime",
+        workflowRunId: input.idempotencyKey,
+      })
+    ),
+  markCompletionEventPersisted: (input) =>
+    Effect.fail(
+      new CheckoutCompletionFailure({
+        message: "Checkout completion persistence is not configured.",
+        retryable: false,
+        sourceTag: "production-runtime",
+        workflowRunId: input.idempotencyKey,
+      })
+    ),
+  markUncertain: (input) =>
+    Effect.fail(
+      new CheckoutCompletionFailure({
+        message: "Checkout completion persistence is not configured.",
+        retryable: false,
+        sourceTag: "production-runtime",
+        workflowRunId: input.idempotencyKey,
+      })
+    ),
+  release: (input) =>
+    Effect.fail(
+      new CheckoutCompletionFailure({
+        message: "Checkout completion persistence is not configured.",
+        retryable: false,
+        sourceTag: "production-runtime",
+        workflowRunId: input.idempotencyKey,
+      })
+    ),
+};
 
 export interface ProductionCommerceRuntimeDiagnostics {
   readonly adapters: {
@@ -365,9 +428,14 @@ export const createProductionCommerceRuntimeComposition = ({
     ),
     Layer.succeed(PaymentProviderRegistryService, emptyPaymentProviderRegistry)
   );
+  const checkoutCompletionStoreLayer = Layer.succeed(
+    CheckoutCompletionStore,
+    failClosedCheckoutCompletionStore
+  );
   const serviceDependenciesLayer = Layer.mergeAll(
     repositoryLayer,
     cartRuntimeAdaptersLayer,
+    checkoutCompletionStoreLayer,
     clockDependencyLayer,
     idGeneratorDependencyLayer,
     mutationPersistenceLayer,

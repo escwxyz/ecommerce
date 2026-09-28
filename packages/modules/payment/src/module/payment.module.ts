@@ -8,6 +8,7 @@ import { Effect, Layer } from "effect";
 
 import { paymentAdminSurfaces } from "../admin";
 import { PaymentRepositoryService } from "../domain";
+import { paymentEffectHttpApiContribution } from "../http/api";
 import { paymentPermissionList } from "../permissions";
 import { PaymentProviderRegistryService } from "../providers";
 import {
@@ -42,6 +43,7 @@ export const paymentExtensionPoints = {
 export const paymentModule = defineCommerceModule({
   contributions: {
     adminSurfaces: paymentAdminSurfaces,
+    apiGroups: paymentEffectHttpApiContribution.groups,
     eventTypes: [
       PAYMENT_COLLECTION_CREATED_EVENT,
       PAYMENT_SESSION_CREATED_EVENT,

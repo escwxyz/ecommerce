@@ -5,6 +5,7 @@ import {
 import { Effect } from "effect";
 
 import { cartAdminSurfaces } from "../admin";
+import { cartEffectHttpApiContribution } from "../http/api";
 import { cartPermissionList } from "../permissions";
 import {
   CART_ADJUSTMENT_APPLIED_EVENT,
@@ -27,6 +28,7 @@ export const cartExtensionPoints = {
 export const cartModule = defineCommerceModule({
   contributions: {
     adminSurfaces: cartAdminSurfaces,
+    apiGroups: cartEffectHttpApiContribution.groups,
     eventTypes: [
       CART_CREATED_EVENT,
       CART_LINE_ITEM_ADDED_EVENT,

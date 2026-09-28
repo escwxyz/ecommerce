@@ -10,6 +10,7 @@ import { Effect, Layer } from "effect";
 
 import { notificationEventAdminSurfaces } from "../admin";
 import { NotificationEventRepositoryService } from "../domain";
+import { notificationEventEffectHttpApiContribution } from "../http/api";
 import { notificationEventPermissionList } from "../permissions";
 import {
   EVENT_OUTBOX_DEAD_LETTERED_EVENT,
@@ -61,6 +62,7 @@ export const notificationEventExtensionPoints = {
 export const notificationEventModule = defineCommerceModule({
   contributions: {
     adminSurfaces: notificationEventAdminSurfaces,
+    apiGroups: notificationEventEffectHttpApiContribution.groups,
     eventTypes: [
       NOTIFICATION_DISPATCH_REQUESTED_EVENT,
       NOTIFICATION_DISPATCH_DELIVERED_EVENT,

@@ -159,3 +159,13 @@
 - [x] 14.4 Compose all built-in definitions through one explicit catalog and make module disablement remove every contribution together
 - [x] 14.5 Make the Worker consume HTTP groups, permissions, diagnostics, and application Layers from the selected composition instead of parallel entrypoint arrays
 - [x] 14.6 Run targeted package verification, repository tests, formatting/static analysis, typecheck, and build; record completion evidence
+
+## 15. Module-owned Effect HTTP contributions (Issue 25)
+
+- [x] 15.1 Move every built-in commerce HTTP contract, handler Layer, serializer, declared error, and contribution descriptor into its owning module package
+- [x] 15.2 Expose contract-only and executable HTTP entry points from each module package and register the contribution on its `CommerceModuleDefinition`
+- [x] 15.3 Remove concrete commerce imports, dependencies, exports, handlers, contracts, and interface tests from the shared API package
+- [x] 15.4 Make server composition select the built-in module catalog once and derive HTTP groups, handler Layers, permissions, diagnostics, and OpenAPI from that registration
+- [x] 15.5 Move focused interface tests beside each module and retain synthetic shared-assembler ordering and conflict tests
+- [x] 15.6 Add import-boundary coverage for shared API independence and module runtime portability
+- [x] 15.7 Update architecture documentation and run module, API, SDK, server, repository-wide typecheck, test, lint/static-analysis, and build verification

@@ -4,6 +4,7 @@ import {
 } from "@ecommerce/core";
 
 import { regionSalesChannelAdminSurfaces } from "../admin";
+import { regionSalesChannelEffectHttpApiContribution } from "../http/api";
 import { regionSalesChannelPermissionList } from "../permissions";
 import {
   REGION_CREATED_EVENT,
@@ -28,6 +29,7 @@ export const salesChannelExtensionPoints = {
 export const regionSalesChannelModule = defineCommerceModule({
   contributions: {
     adminSurfaces: regionSalesChannelAdminSurfaces,
+    apiGroups: regionSalesChannelEffectHttpApiContribution.groups,
     eventTypes: [
       REGION_CREATED_EVENT,
       SALES_CHANNEL_CREATED_EVENT,

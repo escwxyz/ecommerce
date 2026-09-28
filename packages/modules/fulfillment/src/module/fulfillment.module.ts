@@ -10,6 +10,7 @@ import { Effect, Layer } from "effect";
 
 import { fulfillmentAdminSurfaces } from "../admin";
 import { FulfillmentRepositoryService } from "../domain";
+import { fulfillmentEffectHttpApiContribution } from "../http/api";
 import { fulfillmentPermissionList } from "../permissions";
 import { FulfillmentProviderRegistryService } from "../providers";
 import {
@@ -45,6 +46,7 @@ export const fulfillmentExtensionPoints = {
 export const fulfillmentModule = defineCommerceModule({
   contributions: {
     adminSurfaces: fulfillmentAdminSurfaces,
+    apiGroups: fulfillmentEffectHttpApiContribution.groups,
     eventTypes: [
       FULFILLMENT_SET_CREATED_EVENT,
       SHIPPING_OPTION_CREATED_EVENT,

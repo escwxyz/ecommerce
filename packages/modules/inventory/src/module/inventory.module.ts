@@ -5,6 +5,7 @@ import {
 import { Effect } from "effect";
 
 import { inventoryAdminSurfaces } from "../admin";
+import { inventoryEffectHttpApiContribution } from "../http/api";
 import { inventoryPermissionList } from "../permissions";
 import {
   INVENTORY_ADJUSTED_EVENT,
@@ -22,6 +23,7 @@ export const inventoryExtensionPoints = {
 export const inventoryModule = defineCommerceModule({
   contributions: {
     adminSurfaces: inventoryAdminSurfaces,
+    apiGroups: inventoryEffectHttpApiContribution.groups,
     eventTypes: [INVENTORY_RESERVED_EVENT, INVENTORY_ADJUSTED_EVENT],
     permissions: inventoryPermissionList,
     services: [
